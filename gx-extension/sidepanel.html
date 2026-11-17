@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GX Sidebar</title>
+  <style>
+    :root {
+      --bg-deep: #12101b;
+      --bg-panel: #191626;
+      --bg-card: #231f34;
+      --accent: #9d4edd;
+      --accent-bright: #c77dff;
+      --text-main: #f3f1f8;
+      --text-muted: #9690ab;
+      --border: rgba(255, 255, 255, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: var(--bg-deep);
+      color: var(--text-main);
+      font-family: 'Inter', 'Segoe UI', Ubuntu, sans-serif;
+      display: flex;
+    }
+
+    /* Left Opera GX Icon Strip inside Side Panel */
+    .gx-rail {
+      width: 44px;
+      min-width: 44px;
+      height: 100%;
+      background: #0e0c16;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+    }
+
+    .rail-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .rail-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 7px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: 0.15s;
+    }
+
+    .rail-btn:hover,
+    .rail-btn.active {
+      background: rgba(157, 78, 221, 0.2);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    /* Main Panel Content */
+    .gx-content {
+      flex: 1;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .panel-topbar {
+      height: 40px;
+      min-height: 40px;
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 10px;
+      gap: 6px;
+    }
+
+    .service-select {
+      background: var(--bg-card);
+      color: var(--text-main);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 9px;
+      font-size: 12px;
+      font-weight: 600;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .icon-btn {
+      height: 26px;
+      padding: 0 7px;
+      border-radius: 5px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text-main);
+      font-size: 11px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .icon-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent-bright);
+    }
+
+    .web-frame-wrap {
+      flex: 1;
+      position: relative;
+      background: #09080f;
+    }
+
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    .tool-view {
+      flex: 1;
+      padding: 12px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .gx-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .card-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--accent-bright);
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+    }
+
+    .sub {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .primary-btn {
+      padding: 9px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--accent);
+      background: rgba(157, 78, 221, 0.22);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .primary-btn:hover {
+      background: var(--accent);
+    }
+
+    .tab-item {
+      padding: 7px 9px;
+      background: var(--bg-deep);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 11.5px;
+    }
+
+    .tab-item span {
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  </style>
+</head>
+<body>
+  <aside class="gx-rail">
+    <div class="rail-group">
+      <button class="rail-btn active" data-tool="music" title="Player — YouTube Music, Spotify, SoundCloud">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor"/></svg>
+      </button>
+      <button class="rail-btn" data-tool="ai" title="ChatGPT / AI">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#10a37f" stroke-width="2"><path d="M12 2a4 4 0 0 1 4 4v1a4 4 0 0 1 2.5 6.8A4 4 0 0 1 15 20h-1a4 4 0 0 1-7-2.2A4 4 0 0 1 5.5 11 4 4 0 0 1 8 4.2 4 4 0 0 1 12 2z"/></svg>
+      </button>
+      <button class="rail-btn" data-tool="twitch" title="Twitch">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#a970ff" stroke-width="2"><path d="M21 2H3v16h5v4l4-4h5l4-4V2zm-10 9V7m5 4V7"/></svg>
+      </button>
+      <button class="rail-btn" data-tool="control" title="GX Control — RAM Saver & AdBlocker">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10H12V2z"/><path d="M12 12 19 5"/></svg>
+      </button>
+      <button class="rail-btn" data-tool="cleaner" title="GX Cleaner">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+      </button>
+    </div>
+
+    <div class="rail-group">
+      <button class="rail-btn" data-tool="setup" title="Sidebar Setup">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
+      </button>
+    </div>
+  </aside>
+
+  <main class="gx-content">
+    <div class="panel-topbar">
+      <select id="serviceSelect" class="service-select"></select>
+      <div class="top-actions">
+        <button class="icon-btn" id="btnReloadFrame" title="Reload">↻</button>
+        <button class="icon-btn" id="btnPopoutWindow" title="Open as Floating App Player">↗ App</button>
+      </div>
+    </div>
+
+    <!-- Embedded Web Player View (YouTube Music / Spotify / SoundCloud / ChatGPT / Twitch) -->
+    <div class="web-frame-wrap" id="webFrameWrap">
+      <iframe id="webFrame" src="https://music.youtube.com" allow="autoplay; encrypted-media; clipboard-write"></iframe>
+    </div>
+
+    <!-- GX Control & AdBlocker View -->
+    <div class="tool-view hidden" id="controlView">
+      <div class="gx-card">
+        <div class="card-title">Built-in Ad & Tracker Shield</div>
+        <label class="row">
+          <span>Block Ads & Trackers</span>
+          <input type="checkbox" id="chkAdblock" checked />
+        </label>
+        <div class="sub">Network-level Chromium declarativeNetRequest + Cosmetic Filtering active.</div>
+      </div>
+
+      <div class="gx-card">
+        <div class="card-title">8 GB RAM Saver (Tab Hibernation)</div>
+        <button class="primary-btn" id="btnSleepBgTabs">💤 Hibernate Background Tabs Now</button>
+        <div class="sub" id="sleepStatus">Frees RAM from inactive background tabs immediately.</div>
+      </div>
+
+      <div class="gx-card">
+        <div class="card-title">Open Browser Tabs</div>
+        <div id="openTabsList" style="display:flex;flex-direction:column;gap:5px;"></div>
+      </div>
+    </div>
+
+    <!-- GX Cleaner View -->
+    <div class="tool-view hidden" id="cleanerView">
+      <div class="gx-card">
+        <div class="card-title">GX Cleaner</div>
+        <label class="row"><span>Cached Images & Files</span><input type="checkbox" id="chkCleanCache" checked /></label>
+        <label class="row"><span>Cookies</span><input type="checkbox" id="chkCleanCookies" /></label>
+        <label class="row"><span>Browsing History</span><input type="checkbox" id="chkCleanHistory" /></label>
+        <button class="primary-btn" id="btnRunClean">Start Cleaning</button>
+        <div class="sub" id="cleanResult"></div>
+      </div>
+    </div>
+
+    <!-- Sidebar Setup View -->
+    <div class="tool-view hidden" id="setupView">
+      <div class="gx-card">
+        <div class="card-title">Customize GX Sidebar</div>
+        <div class="sub">Drag the right border of this Side Panel to resize it anytime. All standard Chrome features (History, Passwords, Settings, Extensions) are in the top-right ⋮ menu!</div>
+        <button class="primary-btn" id="btnOpenChromeSettings">Open Native Chrome Settings</button>
+        <button class="primary-btn" id="btnOpenChromePasswords">Open Native Password Manager</button>
+        <button class="primary-btn" id="btnOpenChromeHistory">Open Native Chrome History</button>
+      </div>
+    </div>
+  </main>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>

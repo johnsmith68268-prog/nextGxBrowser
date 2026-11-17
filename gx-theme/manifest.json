@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "GX Ultraviolet Dark Theme",
+  "version": "1.0.0",
+  "description": "Authentic Opera GX Ultraviolet & Neon Dark Theme for Chromium Browser",
+  "theme": {
+    "colors": {
+      "frame": [18, 16, 27],
+      "frame_inactive": [14, 12, 22],
+      "frame_incognito": [15, 10, 28],
+      "frame_incognito_inactive": [12, 8, 22],
+      "toolbar": [27, 24, 40],
+      "tab_text": [243, 241, 248],
+      "tab_background_text": [150, 144, 171],
+      "tab_background_text_inactive": [120, 115, 140],
+      "bookmark_text": [230, 226, 242],
+      "ntp_background": [21, 19, 32],
+      "ntp_text": [243, 241, 248],
+      "ntp_link": [199, 125, 255],
+      "button_background": [38, 34, 56],
+      "omnibox_background": [16, 14, 24],
+      "omnibox_text": [243, 241, 248]
+    },
+    "tints": {
+      "buttons": [0.78, 0.65, 0.85]
+    }
+  }
+}

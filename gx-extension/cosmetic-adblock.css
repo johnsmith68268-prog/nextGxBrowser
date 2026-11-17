@@ -1,0 +1,27 @@
+/* Built-in Cosmetic AdBlocker for GX Chromium Browser */
+ins.adsbygoogle,
+iframe[id^="google_ads_"],
+div[id^="google_ads_"],
+div[id^="div-gpt-ad"],
+[id*="taboola-"],
+[class*="taboola-"],
+[id*="outbrain_"],
+[class*="outbrain-"],
+.ad-slot,
+.ad-leaderboard,
+.advertisement-banner,
+ytd-companion-slot-renderer,
+ytd-action-companion-ad-renderer,
+ytd-watch-next-secondary-results-renderer > ytd-compact-promoted-video-renderer,
+ytd-promoted-sparkles-web-renderer,
+ytd-ad-slot-renderer,
+ytd-in-feed-ad-layout-renderer,
+ytd-banner-promo-renderer,
+.ytp-ad-overlay-container,
+.ytp-ad-message-container {
+  display: none !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+}
