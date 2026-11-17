@@ -1,0 +1,7 @@
+node_modules/
+chromium-runtime/
+gx-chromium-profile/
+dist/
+out/
+*.log
+.DS_Store

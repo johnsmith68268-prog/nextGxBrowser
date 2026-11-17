@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Speed Dial — nextGx Browser</title>
+  <style>
+    :root {
+      --bg-base: #13111c;
+      --bg-input: #201c2f;
+      --bg-card: #1b1828;
+      --text-main: #f3f1f8;
+      --text-muted: #938da9;
+      --accent: #9d4edd;
+      --accent-bright: #c77dff;
+      --border: rgba(255, 255, 255, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body {
+      min-height: 100vh;
+      background-color: var(--bg-base);
+      background-image:
+        linear-gradient(rgba(157, 78, 221, 0.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(157, 78, 221, 0.045) 1px, transparent 1px),
+        radial-gradient(circle at 50% 0%, rgba(157, 78, 221, 0.16), transparent 60%);
+      background-size: 44px 44px, 44px 44px, 100% 100%;
+      color: var(--text-main);
+      font-family: 'Inter', 'Segoe UI', Ubuntu, Cantarell, system-ui, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 64px 28px 40px;
+    }
+
+    .brand-hero {
+      font-size: 24px;
+      font-weight: 600;
+      letter-spacing: -0.4px;
+      margin-bottom: 18px;
+    }
+
+    .brand-hero strong {
+      font-weight: 800;
+      color: var(--accent-bright);
+    }
+
+    /* Search Bar */
+    .nx-search-bar {
+      width: 100%;
+      max-width: 560px;
+      height: 44px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      gap: 12px;
+      margin-bottom: 36px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+      transition: border-color 0.18s;
+    }
+
+    .nx-search-bar:focus-within {
+      border-color: var(--accent);
+    }
+
+    .google-badge {
+      width: 24px;
+      height: 24px;
+      background: #fff;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 14px;
+      color: #4285f4;
+      flex-shrink: 0;
+    }
+
+    .nx-search-bar input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text-main);
+      font-size: 13.5px;
+    }
+
+    .nx-search-bar input::placeholder {
+      color: var(--text-muted);
+    }
+
+    /* Chamfered Speed Dial Tiles Grid */
+    .dial-section {
+      width: 100%;
+      max-width: 840px;
+      margin-bottom: 32px;
+    }
+
+    .section-heading {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+    }
+
+    .dial-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+      gap: 14px;
+    }
+
+    .dial-tile {
+      height: 82px;
+      border-radius: 8px;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 12px;
+      cursor: pointer;
+      overflow: hidden;
+      clip-path: polygon(0 0, 100% 0, 100% calc(100% - 11px), calc(100% - 11px) 100%, 0 100%);
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.34);
+      transition: transform 0.15s ease, filter 0.15s ease;
+    }
+
+    .dial-tile:hover {
+      transform: translateY(-2px);
+      filter: brightness(1.08);
+    }
+
+    .tile-title {
+      font-size: 14px;
+      font-weight: 800;
+      color: #fff;
+      text-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+      text-align: center;
+    }
+
+    .tile-del {
+      position: absolute;
+      top: 5px;
+      right: 6px;
+      width: 18px;
+      height: 18px;
+      border-radius: 4px;
+      border: none;
+      background: rgba(0, 0, 0, 0.5);
+      color: #fff;
+      font-size: 10px;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .dial-tile:hover .tile-del {
+      opacity: 1;
+    }
+
+    .dial-tile.add-tile {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+      font-size: 22px;
+      color: var(--text-muted);
+    }
+
+    .dial-tile.add-tile:hover {
+      background: rgba(255, 255, 255, 0.07);
+      color: #fff;
+    }
+
+    /* Stats & Quick Notes Row */
+    .bottom-row {
+      width: 100%;
+      max-width: 840px;
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 14px;
+    }
+
+    .gx-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 8px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .stat-num {
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--accent-bright);
+    }
+
+    .stat-sub {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    .notes-area {
+      width: 100%;
+      height: 74px;
+      background: #100e17;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      color: var(--text-main);
+      font-family: inherit;
+      font-size: 12px;
+      resize: none;
+      outline: none;
+    }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+    }
+
+    .modal-backdrop.open {
+      display: flex;
+    }
+
+    .modal-box {
+      width: 340px;
+      background: #1d1a2b;
+      border: 1px solid var(--accent);
+      border-radius: 10px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .modal-box input {
+      background: #12101b;
+      border: 1px solid var(--border);
+      color: #fff;
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 12.5px;
+      outline: none;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .btn {
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: #28243b;
+      color: #fff;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .btn.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      font-weight: 600;
+    }
+
+    /* Private / Incognito Mode Layout */
+    body.private-mode {
+      background-color: #07070b;
+      background-image:
+        radial-gradient(circle at 50% 0%, rgba(124, 58, 237, 0.22), transparent 55%),
+        linear-gradient(180deg, #07070b 0%, #0d0d15 100%);
+    }
+
+    .private-hero {
+      width: 100%;
+      max-width: 760px;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+      margin-top: 12px;
+    }
+
+    body.private-mode .private-hero {
+      display: flex;
+    }
+
+    body.private-mode .normal-only {
+      display: none !important;
+    }
+
+    .private-icon-ring {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      background: rgba(124, 58, 237, 0.16);
+      border: 1.5px solid #8b5cf6;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #c4b5fd;
+      box-shadow: 0 0 28px rgba(124, 58, 237, 0.25);
+    }
+
+    .private-title {
+      font-size: 26px;
+      font-weight: 700;
+      color: #f5f3ff;
+      text-align: center;
+    }
+
+    .private-desc {
+      font-size: 13.5px;
+      color: #a1a1aa;
+      text-align: center;
+      max-width: 580px;
+      line-height: 1.55;
+    }
+
+    .private-cols {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 8px;
+    }
+
+    .private-box {
+      background: #11111a;
+      border: 1px solid rgba(167, 139, 250, 0.22);
+      border-radius: 10px;
+      padding: 18px;
+    }
+
+    .private-box h4 {
+      font-size: 13px;
+      font-weight: 700;
+      color: #c4b5fd;
+      margin-bottom: 10px;
+    }
+
+    .private-box ul {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      font-size: 12.5px;
+      color: #a1a1aa;
+    }
+
+    .private-box ul li::before {
+      content: "• ";
+      color: #8b5cf6;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="brand-hero normal-only">next<strong>Gx</strong> Browser</div>
+
+  <div class="private-hero">
+    <div class="private-icon-ring">
+      <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M2 12h20M5 12l2-5h10l2 5" />
+        <circle cx="8" cy="16.5" r="2.5" />
+        <circle cx="16" cy="16.5" r="2.5" />
+        <path d="M10.5 16.5h3" />
+      </svg>
+    </div>
+    <div class="private-title">You are in Private Mode</div>
+    <div class="private-desc">
+      Pages you view in this Private window won't appear in your browsing history, cookie store, or search history after you close all Private windows.
+    </div>
+  </div>
+
+  <form class="nx-search-bar" id="searchForm">
+    <div class="google-badge">G</div>
+    <input type="text" id="searchInput" placeholder="Search the web or enter URL" autocomplete="off" />
+  </form>
+
+  <div class="private-hero" style="margin-top:0;">
+    <div class="private-cols">
+      <div class="private-box">
+        <h4>nextGx Browser won't save:</h4>
+        <ul>
+          <li>Your browsing history</li>
+          <li>Cookies and site data</li>
+          <li>Information entered in forms & passwords</li>
+        </ul>
+      </div>
+      <div class="private-box">
+        <h4>Your activity might still be visible to:</h4>
+        <ul>
+          <li>Websites you visit</li>
+          <li>Your employer or school network</li>
+          <li>Your internet service provider (ISP)</li>
+          <li>Files you download remain on your device</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <section class="dial-section normal-only">
+    <div class="section-heading">Speed Dial</div>
+    <div class="dial-grid" id="dialGrid"></div>
+  </section>
+
+  <section class="bottom-row normal-only">
+    <div class="gx-panel">
+      <div class="section-heading" style="margin:0;">Shield & 8 GB RAM Status</div>
+      <div class="stat-num" id="sdBlockedCount">0 Ads & Trackers Blocked</div>
+      <div class="stat-sub" id="sdRamReport">Browser Memory: -- MB • Optimized for 8 GB RAM</div>
+    </div>
+
+    <div class="gx-panel">
+      <div class="section-heading" style="margin:0;">Quick Scratchpad</div>
+      <textarea class="notes-area" id="quickNotesInput" placeholder="Write quick notes or links..."></textarea>
+    </div>
+  </section>
+
+  <div class="modal-backdrop" id="addModal">
+    <form class="modal-box" id="addDialForm">
+      <h3>Add Speed Dial</h3>
+      <input type="text" id="dialTitleInput" placeholder="Title (e.g. Twitch)" required />
+      <input type="text" id="dialUrlInput" placeholder="Address (e.g. twitch.tv)" required />
+      <div class="modal-actions">
+        <button type="button" class="btn" id="btnCancelModal">Cancel</button>
+        <button type="submit" class="btn primary">Add</button>
+      </div>
+    </form>
+  </div>
+
+  <script>
+    const dialGrid = document.getElementById('dialGrid');
+    const addModal = document.getElementById('addModal');
+    const quickNotesInput = document.getElementById('quickNotesInput');
+
+    const GRADIENTS = [
+      'linear-gradient(135deg, #e52d27, #b31217)',
+      'linear-gradient(135deg, #6441a5, #4b2d83)',
+      'linear-gradient(135deg, #10a37f, #0b6e56)',
+      'linear-gradient(135deg, #ff0055, #990033)',
+      'linear-gradient(135deg, #ff4500, #cc3700)',
+      'linear-gradient(135deg, #1877f2, #0d52ad)',
+      'linear-gradient(135deg, #ff7700, #ff3300)',
+      'linear-gradient(135deg, #24292e, #121518)'
+    ];
+
+    function renderDials(list) {
+      dialGrid.innerHTML = '';
+      (list || []).forEach((item, idx) => {
+        const card = document.createElement('div');
+        card.className = 'dial-tile';
+        card.style.background = item.bg || GRADIENTS[idx % GRADIENTS.length];
+        card.innerHTML = `
+          <button class="tile-del" title="Remove">✕</button>
+          <span class="tile-title">${item.title}</span>
+        `;
+        card.addEventListener('click', async (e) => {
+          if (e.target.closest('.tile-del')) {
+            e.stopPropagation();
+            const updated = await window.gxNewTabAPI.removeSpeedDial(item.id);
+            renderDials(updated);
+            return;
+          }
+          window.gxNewTabAPI.navigate(item.url);
+        });
+        dialGrid.appendChild(card);
+      });
+
+      const addCard = document.createElement('div');
+      addCard.className = 'dial-tile add-tile';
+      addCard.textContent = '+';
+      addCard.title = 'Add site to Speed Dial';
+      addCard.addEventListener('click', () => addModal.classList.add('open'));
+      dialGrid.appendChild(addCard);
+    }
+
+    document.getElementById('btnCancelModal').addEventListener('click', () => {
+      addModal.classList.remove('open');
+    });
+
+    document.getElementById('addDialForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const title = document.getElementById('dialTitleInput').value.trim();
+      const url = document.getElementById('dialUrlInput').value.trim();
+      if (title && url && window.gxNewTabAPI) {
+        const updated = await window.gxNewTabAPI.addSpeedDial({ title, url });
+        renderDials(updated);
+        addModal.classList.remove('open');
+        e.target.reset();
+      }
+    });
+
+    document.getElementById('searchForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const q = document.getElementById('searchInput').value.trim();
+      if (q && window.gxNewTabAPI) {
+        window.gxNewTabAPI.navigate(q);
+      }
+    });
+
+    let noteTimer = null;
+    quickNotesInput.addEventListener('input', () => {
+      clearTimeout(noteTimer);
+      noteTimer = setTimeout(() => {
+        if (window.gxNewTabAPI) window.gxNewTabAPI.saveNote(quickNotesInput.value);
+      }, 400);
+    });
+
+    async function init() {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('incognito') === '1') {
+        document.body.classList.add('private-mode');
+        document.title = 'Private Browsing — nextGx';
+        document.getElementById('searchInput').placeholder = 'Search privately...';
+        return;
+      }
+      if (!window.gxNewTabAPI) return;
+      const data = await window.gxNewTabAPI.getInitialData();
+      renderDials(data.speedDial);
+      if (data.adblock) {
+        document.getElementById('sdBlockedCount').textContent =
+          `${data.adblock.totalBlocked || 0} Ads & Trackers Blocked`;
+      }
+      if (data.system) {
+        document.getElementById('sdRamReport').textContent =
+          `Browser RAM: ${data.system.browserRamMB} MB • Active Tabs: ${data.system.activeTabsCount} • Sleeping: ${data.system.sleepingTabsCount}`;
+      }
+      if (data.notes && data.notes[0]) {
+        quickNotesInput.value = data.notes[0].text || '';
+      }
+    }
+    init();
+  </script>
+</body>
+</html>

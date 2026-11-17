@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Area Screenshot</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: #000;
+      position: relative;
+      cursor: crosshair;
+      font-family: 'Inter', 'Segoe UI', Ubuntu, sans-serif;
+    }
+
+    #bgImg {
+      width: 100%;
+      height: 100%;
+      object-fit: fill;
+      filter: brightness(0.55);
+      pointer-events: none;
+    }
+
+    #selectionBox {
+      position: absolute;
+      border: 2px solid #c77dff;
+      background: rgba(157, 78, 221, 0.14);
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
+      display: none;
+      pointer-events: none;
+    }
+
+    .hint-pill {
+      position: fixed;
+      top: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(18, 16, 27, 0.92);
+      border: 1px solid #9d4edd;
+      color: #f3f1f8;
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      z-index: 20;
+    }
+
+    .cancel-btn {
+      background: #e11d48;
+      border: none;
+      color: #fff;
+      padding: 3px 9px;
+      border-radius: 5px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="hint-pill">
+    <span>Drag on the screen to select screenshot area</span>
+    <button class="cancel-btn" id="btnCancel">Cancel (Esc)</button>
+  </div>
+  <img id="bgImg" alt="" />
+  <div id="selectionBox"></div>
+
+  <script>
+    const bgImg = document.getElementById('bgImg');
+    const box = document.getElementById('selectionBox');
+    let startX = 0, startY = 0, dragging = false;
+
+    window.gxAPI.onScreenshotCaptured(({ dataUrl }) => {
+      if (dataUrl) bgImg.src = dataUrl;
+    });
+
+    window.addEventListener('mousedown', (e) => {
+      if (e.target.id === 'btnCancel') return;
+      dragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      box.style.left = startX + 'px';
+      box.style.top = startY + 'px';
+      box.style.width = '0px';
+      box.style.height = '0px';
+      box.style.display = 'block';
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      const x = Math.min(startX, e.clientX);
+      const y = Math.min(startY, e.clientY);
+      const w = Math.abs(e.clientX - startX);
+      const h = Math.abs(e.clientY - startY);
+      box.style.left = x + 'px';
+      box.style.top = y + 'px';
+      box.style.width = w + 'px';
+      box.style.height = h + 'px';
+    });
+
+    window.addEventListener('mouseup', (e) => {
+      if (!dragging) return;
+      dragging = false;
+      const x = Math.min(startX, e.clientX);
+      const y = Math.min(startY, e.clientY);
+      const width = Math.abs(e.clientX - startX);
+      const height = Math.abs(e.clientY - startY);
+      box.style.display = 'none';
+      if (width > 6 && height > 6) {
+        const scaleX = bgImg.naturalWidth ? bgImg.naturalWidth / window.innerWidth : 1;
+        const scaleY = bgImg.naturalHeight ? bgImg.naturalHeight / window.innerHeight : 1;
+        window.gxAPI.finishAreaScreenshot({
+          x: x * scaleX,
+          y: y * scaleY,
+          width: width * scaleX,
+          height: height * scaleY
+        });
+      }
+    });
+
+    document.getElementById('btnCancel').addEventListener('click', () => {
+      window.gxAPI.cancelAreaScreenshot();
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') window.gxAPI.cancelAreaScreenshot();
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="gx-violet">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nextGx Browser</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- TOP CHROME (82px total: 40px Title/Tab Bar + 42px Unified Navigation Bar) -->
+  <header class="nx-top-chrome">
+    <!-- Row 1: Titlebar + Brand + Workspace Switcher + Pill Tabs -->
+    <div class="nx-titlebar">
+      <div class="nx-brand" id="btnBrandHome" title="nextGx Browser — Start Page">
+        <div class="nx-brand-mark">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.3">
+            <path d="M12 2L3 7v10l9 5 9-5V7l-9-5z" />
+            <path d="M12 8v8M8 12h8" />
+          </svg>
+        </div>
+        <span class="nx-brand-text">next<strong>Gx</strong></span>
+      </div>
+
+      <!-- Safari / Arc Style Workspace Switcher Pill -->
+      <div class="nx-workspace-pills" id="workspacePills" title="Switch Workspace">
+        <button class="ws-pill active" data-ws="Personal">Personal</button>
+        <button class="ws-pill" data-ws="Work">Work</button>
+        <button class="ws-pill" data-ws="Gaming">Gaming</button>
+      </div>
+
+      <div class="nx-tabs-container" id="tabsContainer"></div>
+
+      <button class="nx-newtab-btn" id="btnNewTab" title="New Tab (Ctrl+T)">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+      </button>
+
+      <div class="nx-window-drag-spacer"></div>
+
+      <!-- Toast Notification Pill in Titlebar -->
+      <div class="nx-toast hidden" id="topToast"></div>
+
+      <div class="nx-window-controls">
+        <button class="win-btn" id="btnWinMin" title="Minimize">
+          <svg viewBox="0 0 12 12" width="10" height="10"><path d="M1.5 6h9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </button>
+        <button class="win-btn" id="btnWinMax" title="Maximize">
+          <svg viewBox="0 0 12 12" width="10" height="10"><rect x="2" y="2" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
+        </button>
+        <button class="win-btn win-close" id="btnWinClose" title="Close">
+          <svg viewBox="0 0 12 12" width="10" height="10"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Row 2: Unified Safari-Style Address & Action Bar -->
+    <div class="nx-navbar">
+      <div class="nx-nav-buttons">
+        <button class="nav-icon-btn" id="btnBack" title="Back">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <button class="nav-icon-btn" id="btnForward" title="Forward">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+        <button class="nav-icon-btn" id="btnReload" title="Reload (Ctrl+R)">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>
+        </button>
+        <button class="nav-icon-btn" id="btnHome" title="Start Page">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1V9.5z"/></svg>
+        </button>
+      </div>
+
+      <!-- Address Capsule -->
+      <form class="nx-address-capsule" id="addressForm">
+        <button type="button" class="address-lead-btn" id="btnSiteSecurity" title="View Site Security & Permissions">
+          <svg id="secLockSvg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <span id="secNotSecureLabel" class="hidden">Not Secure</span>
+        </button>
+
+        <input
+          type="text"
+          id="addressInput"
+          class="nx-address-input"
+          placeholder="Search or enter website name"
+          autocomplete="off"
+          spellcheck="false"
+        />
+
+        <span class="private-pill hidden" id="incognitoIndicator">Private</span>
+
+        <!-- Reader Mode Button inside Address Bar (Safari style) -->
+        <button type="button" class="capsule-btn" id="btnReaderMode" title="Toggle Reader View">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        </button>
+
+        <!-- Privacy Shield Pill inside Address Bar -->
+        <button type="button" class="capsule-btn shield-capsule" id="btnAddressShield" title="nextGx Privacy Shield — Ads & Trackers Blocked">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <span id="topBlockedCount">0</span>
+        </button>
+
+        <!-- Bookmark Star -->
+        <button type="button" class="capsule-btn" id="btnBookmarkStar" title="Bookmark this page (Ctrl+D)">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        </button>
+      </form>
+
+      <!-- Right Action Toolbar -->
+      <div class="nx-right-toolbar">
+        <button class="toolbar-icon-btn" id="btnScreenshot" title="Capture Full Page Screenshot">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        </button>
+
+        <button class="toolbar-icon-btn" id="btnTopDownloads" title="Pro Download Manager (Ctrl+J)">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span class="dl-active-dot hidden" id="dlActiveDot"></span>
+        </button>
+
+        <button class="toolbar-icon-btn" id="btnTopExtensions" title="Extensions Manager">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5a2.5 2.5 0 0 0-5 0V5H4c-1.1 0-2 .9-2 2v3.8h1.5c1.5 0 2.7 1.2 2.7 2.7S5 16.2 3.5 16.2H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.5 1.2-2.7 2.7-2.7s2.7 1.2 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5a2.5 2.5 0 0 0 0-5z"/></svg>
+        </button>
+
+        <!-- Apple Control Center Button -->
+        <button class="toolbar-icon-btn" id="btnEasySetup" title="nextGx Control Center — Theme, Privacy Shield & Memory">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="6" rx="3"/><circle cx="16" cy="7" r="1.5" fill="currentColor"/><rect x="3" y="14" width="18" height="6" rx="3"/><circle cx="8" cy="17" r="1.5" fill="currentColor"/></svg>
+        </button>
+
+        <!-- Main Menu Button (⋮) -->
+        <button class="toolbar-icon-btn" id="btnChromeMenu" title="Browser Menu">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- FIND IN PAGE BAR (Ctrl+F) -->
+  <div class="nx-find-bar hidden" id="findBar">
+    <input type="text" id="findInput" placeholder="Find on page..." />
+    <button class="mini-icon-btn" id="btnFindPrev" title="Previous">▲</button>
+    <button class="mini-icon-btn" id="btnFindNext" title="Next">▼</button>
+    <button class="mini-icon-btn" id="btnFindClose" title="Done">Done</button>
+  </div>
+
+  <!-- MAIN BODY -->
+  <div class="nx-body">
+    <!-- LEFT FLOATING GLASS MEDIA & TOOLS DOCK (50px) -->
+    <aside class="nx-sidebar">
+      <div class="sidebar-group">
+        <!-- Music Player Dock -->
+        <button class="sidebar-btn" data-web-panel="music" data-sidebar-item="musicPlayer" title="Music Player — YouTube Music, Spotify, Apple Music, SoundCloud">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          <span class="sb-audio-dot hidden" id="sidebarMusicDot"></span>
+        </button>
+
+        <!-- AI Assistant Dock -->
+        <button class="sidebar-btn" data-web-panel="ai" data-sidebar-item="chatgpt" title="AI Workspace — ChatGPT, Claude, Gemini">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8L12 2z"/></svg>
+        </button>
+
+        <!-- Twitch Dock -->
+        <button class="sidebar-btn" data-web-panel="twitch" data-sidebar-item="twitch" title="Twitch Stream Dock">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M21 2H3v16h5v4l4-4h5l4-4V2zm-10 9V7m5 4V7"/></svg>
+        </button>
+
+        <!-- Optional WhatsApp -->
+        <button class="sidebar-btn hidden" data-web-panel="whatsapp" data-sidebar-item="whatsapp" title="WhatsApp">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+        </button>
+
+        <!-- Optional Discord -->
+        <button class="sidebar-btn hidden" data-web-panel="discord" data-sidebar-item="discord" title="Discord">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><path d="M7.5 7.5c3.5-1 5.5-1 9 0M7 16.5c3.5 1 6.5 1 10 0"/><path d="M15.5 17 17 20l4-2c.5-4.5 0-8.5-1.5-11.5-1.5-1-3-1.5-4.5-1.5l-1 2M8.5 17 7 20l-4-2C2.5 13.5 3 9.5 4.5 6.5 6 5.5 7.5 5 9 5l1 2"/></svg>
+        </button>
+
+        <div class="sidebar-divider"></div>
+
+        <!-- System Memory & Performance -->
+        <button class="sidebar-btn" data-left-tool="gxControl" data-sidebar-item="gxControl" title="Memory & CPU Optimizer">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>
+        </button>
+
+        <!-- Privacy Cleaner -->
+        <button class="sidebar-btn" data-left-tool="gxCleaner" data-sidebar-item="gxCleaner" title="Instant Cache & Privacy Cleaner">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+        </button>
+      </div>
+
+      <!-- Bottom Dock Setup -->
+      <div class="sidebar-group bottom">
+        <button class="sidebar-btn" data-left-tool="sidebarSetup" title="Customize Dock Icons">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>
+        </button>
+      </div>
+    </aside>
+
+    <!-- LEFT RESIZABLE MEDIA & AI WEB PANEL -->
+    <section class="nx-left-web-shell hidden" id="leftWebShell">
+      <div class="left-web-header">
+        <!-- Custom Segmented Pill Bar for Services (No ugly raw <select>!) -->
+        <div class="nx-service-pills" id="leftWebServicePills"></div>
+
+        <div class="left-web-actions">
+          <button class="panel-hdr-btn" id="btnReloadLeftWeb" title="Reload">↻</button>
+          <button class="panel-hdr-btn" id="btnPinLeftWeb" title="Pin Dock Open">📌</button>
+          <button class="panel-hdr-btn" id="btnCloseLeftWeb" title="Close">✕</button>
+        </div>
+      </div>
+
+      <div class="left-web-body-spacer"></div>
+      <div class="left-web-resizer" id="leftWebResizer" title="Drag to resize width"></div>
+    </section>
+
+    <!-- LEFT SYSTEM DRAWER (Memory Optimizer, Privacy Cleaner, Customize Dock) -->
+    <section class="nx-left-tool-drawer hidden" id="leftToolDrawer">
+      <div class="drawer-header">
+        <h2 id="leftToolTitle">System Optimizer</h2>
+        <button class="panel-hdr-btn" id="btnCloseLeftTool">✕</button>
+      </div>
+
+      <!-- Tool 1: Memory & CPU Optimizer -->
+      <div class="tool-body hidden" id="left-tool-gxControl">
+        <div class="bento-grid-two">
+          <div class="bento-box">
+            <span class="bento-label">Browser RAM</span>
+            <strong class="bento-val" id="perfBrowserRam">-- MB</strong>
+            <div class="nx-meter"><div class="nx-meter-fill" id="perfBrowserRamBar"></div></div>
+          </div>
+          <div class="bento-box">
+            <span class="bento-label">CPU Load</span>
+            <strong class="bento-val" id="perfCpuPercent">0%</strong>
+            <div class="nx-meter"><div class="nx-meter-fill cyan" id="perfCpuBar"></div></div>
+          </div>
+        </div>
+
+        <div class="nx-card">
+          <div class="card-sub" id="perfSysRamText">System RAM: -- / -- MB</div>
+          <div class="card-sub" id="perfTabCounts">Active Tabs: 1 • Hibernated: 0</div>
+          <button class="nx-primary-btn" id="btnSleepBackgroundTabs">
+            Hibernate Background Tabs Now
+          </button>
+        </div>
+
+        <div class="nx-card">
+          <div class="setting-item">
+            <div>
+              <div class="setting-title">Auto-Memory Saver (8 GB Mode)</div>
+              <div class="card-sub">Automatically suspends idle background tabs</div>
+            </div>
+            <label class="nx-switch">
+              <input type="checkbox" id="chkAutoSleep" checked />
+              <span class="nx-slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-item">
+            <span class="setting-title">Suspend idle tabs after</span>
+            <div class="nx-segmented" id="autoSleepSegments">
+              <button type="button" class="seg-btn" data-mins="2">2m</button>
+              <button type="button" class="seg-btn" data-mins="5">5m</button>
+              <button type="button" class="seg-btn active" data-mins="10">10m</button>
+              <button type="button" class="seg-btn" data-mins="20">20m</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="nx-card">
+          <div class="card-title">Open Tabs Memory Control</div>
+          <div class="scroll-list" id="perfTabsList"></div>
+        </div>
+      </div>
+
+      <!-- Tool 2: Privacy & Cache Cleaner -->
+      <div class="tool-body hidden" id="left-tool-gxCleaner">
+        <div class="nx-card">
+          <div class="card-title">Instant Privacy & Cache Optimization</div>
+
+          <div class="setting-item">
+            <span>Cached Images & Files</span>
+            <label class="nx-switch">
+              <input type="checkbox" id="chkCleanCache" checked />
+              <span class="nx-slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-item">
+            <span>Cookies & Website Storage</span>
+            <label class="nx-switch">
+              <input type="checkbox" id="chkCleanCookies" />
+              <span class="nx-slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-item">
+            <span>Browsing History</span>
+            <label class="nx-switch">
+              <input type="checkbox" id="chkCleanHistory" />
+              <span class="nx-slider"></span>
+            </label>
+          </div>
+
+          <button class="nx-primary-btn" id="btnRunCleaner">Clean Selected Data</button>
+          <div class="card-sub" id="cleanerStatusText">Frees disk space and memory caches instantly.</div>
+        </div>
+      </div>
+
+      <!-- Tool 3: Customize Dock Icons -->
+      <div class="tool-body hidden" id="left-tool-sidebarSetup">
+        <div class="nx-card">
+          <div class="card-title">Customize Dock Items</div>
+
+          <div class="setting-item">
+            <span>Music Player (YouTube Music / Spotify)</span>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="musicPlayer" checked /><span class="nx-slider"></span></label>
+          </div>
+          <div class="setting-item">
+            <span>AI Workspace (ChatGPT / Claude / Gemini)</span>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="chatgpt" checked /><span class="nx-slider"></span></label>
+          </div>
+          <div class="setting-item">
+            <span>Twitch Stream Dock</span>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="twitch" checked /><span class="nx-slider"></span></label>
+          </div>
+          <div class="setting-item">
+            <span>WhatsApp Messenger</span>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="whatsapp" /><span class="nx-slider"></span></label>
+          </div>
+          <div class="setting-item">
+            <span>Discord</span>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="discord" /><span class="nx-slider"></span></label>
+          </div>
+          <div class="menu-sep"></div>
+          <div class="setting-item">
+            <span>Memory & CPU Optimizer</span>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="gxControl" checked /><span class="nx-slider"></span></label>
+          </div>
+          <div class="setting-item">
+            <span>Instant Privacy Cleaner</span>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="gxCleaner" checked /><span class="nx-slider"></span></label>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CENTER VIEWPORT PLACEHOLDER -->
+    <main class="nx-viewport-placeholder" id="viewportPlaceholder"></main>
+
+    <!-- RIGHT-SIDE MAIN MENU (Chrome / Safari Hybrid Menu) -->
+    <section class="nx-menu-panel hidden" id="chromeMenuPanel">
+      <div class="nx-menu-list">
+        <button class="cmenu-item" data-cmenu="new-tab">
+          <span>New Tab</span><kbd>Ctrl+T</kbd>
+        </button>
+        <button class="cmenu-item" data-cmenu="new-window">
+          <span>New Window</span><kbd>Ctrl+N</kbd>
+        </button>
+        <button class="cmenu-item" data-cmenu="new-incognito">
+          <span>New Private Tab</span><kbd>Ctrl+Shift+N</kbd>
+        </button>
+
+        <div class="menu-sep"></div>
+
+        <button class="cmenu-item" data-cmenu="passwords">
+          <span>Passwords & Autofill</span><span>↗</span>
+        </button>
+        <button class="cmenu-item" data-cmenu="history">
+          <span>History</span><kbd>Ctrl+H</kbd>
+        </button>
+        <button class="cmenu-item" data-cmenu="downloads">
+          <span>Downloads</span><kbd>Ctrl+J</kbd>
+        </button>
+        <button class="cmenu-item" data-cmenu="bookmarks">
+          <span>Bookmarks</span><kbd>Ctrl+D</kbd>
+        </button>
+        <button class="cmenu-item" data-cmenu="extensions">
+          <span>Extensions</span><span>↗</span>
+        </button>
+
+        <div class="menu-sep"></div>
+
+        <div class="cmenu-zoom-row">
+          <span>Page Zoom</span>
+          <div class="zoom-controls">
+            <button class="zoom-btn" id="btnZoomOut">−</button>
+            <span id="zoomValueText">100%</span>
+            <button class="zoom-btn" id="btnZoomIn">+</button>
+            <button class="zoom-btn" id="btnFullscreen" title="Fullscreen (F11)">⛶</button>
+          </div>
+        </div>
+
+        <button class="cmenu-item" data-cmenu="screenshot">
+          <span>Capture Page Screenshot</span><span>📷</span>
+        </button>
+        <button class="cmenu-item" data-cmenu="print">
+          <span>Print...</span><kbd>Ctrl+P</kbd>
+        </button>
+        <button class="cmenu-item" data-cmenu="find">
+          <span>Find on Page...</span><kbd>Ctrl+F</kbd>
+        </button>
+        <button class="cmenu-item" data-cmenu="cleaner">
+          <span>Delete Browsing Data...</span><span>↗</span>
+        </button>
+        <button class="cmenu-item" data-cmenu="devtools">
+          <span>Developer Tools</span><kbd>F12</kbd>
+        </button>
+
+        <div class="menu-sep"></div>
+
+        <button class="cmenu-item" data-cmenu="settings">
+          <span>Settings...</span><span>↗</span>
+        </button>
+        <button class="cmenu-item" data-cmenu="exit">
+          <span>Quit nextGx Browser</span><span></span>
+        </button>
+      </div>
+    </section>
+
+    <!-- RIGHT-SIDE BENTO CONTROL CENTER & PRO DOWNLOAD MANAGER DRAWER -->
+    <aside class="nx-right-drawer hidden" id="rightDrawer">
+      <div class="drawer-header">
+        <h2 id="rightDrawerTitle">Control Center</h2>
+        <button class="panel-hdr-btn" id="btnCloseRightDrawer">✕</button>
+      </div>
+
+      <!-- Right Panel 1: Apple Bento Control Center (Themes, Privacy Shield, Dark Web, Search) -->
+      <div class="tool-body hidden" id="right-panel-easySetup">
+        <div class="bento-grid-two">
+          <div class="bento-box highlight">
+            <span class="bento-label">Session Blocked</span>
+            <strong class="bento-val" id="adPanelSessionCount">0</strong>
+            <span class="card-sub">Ads & Trackers</span>
+          </div>
+          <div class="bento-box">
+            <span class="bento-label">Lifetime Shield</span>
+            <strong class="bento-val" id="adPanelTotalCount">0</strong>
+            <span class="card-sub">Total Blocked</span>
+          </div>
+        </div>
+
+        <div class="nx-card">
+          <div class="setting-item">
+            <div>
+              <div class="setting-title">nextGx Privacy Shield</div>
+              <div class="card-sub">Blocks ads, trackers & fingerprinting</div>
+            </div>
+            <label class="nx-switch">
+              <input type="checkbox" id="chkAdblockEnabled" checked />
+              <span class="nx-slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-item">
+            <div>
+              <div class="setting-title">Force Dark Mode on Websites</div>
+              <div class="card-sub">Applies dark appearance to bright pages</div>
+            </div>
+            <label class="nx-switch">
+              <input type="checkbox" id="chkForceDarkWeb" />
+              <span class="nx-slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-item">
+            <div>
+              <div class="setting-title">UI Sound Effects</div>
+              <div class="card-sub">Subtle clicks, tab open/close & panel sounds</div>
+            </div>
+            <label class="nx-switch">
+              <input type="checkbox" id="chkUiSounds" checked />
+              <span class="nx-slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-item">
+            <div>
+              <div class="setting-title">Close Window on Last Tab</div>
+              <div class="card-sub">Closes browser when the final tab is closed</div>
+            </div>
+            <label class="nx-switch">
+              <input type="checkbox" id="chkCloseLastTab" />
+              <span class="nx-slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="nx-card">
+          <div class="card-title">nextGx Theme Presets</div>
+          <div class="theme-grid">
+            <button class="theme-chip" data-theme-choice="gx-violet">
+              <span class="dot" style="background:#9d4edd"></span> nextGx Violet
+            </button>
+            <button class="theme-chip" data-theme-choice="crimson">
+              <span class="dot" style="background:#fa1e4e"></span> Crimson Red
+            </button>
+            <button class="theme-chip" data-theme-choice="cyan">
+              <span class="dot" style="background:#00e5ff"></span> Cyber Cyan
+            </button>
+            <button class="theme-chip" data-theme-choice="emerald">
+              <span class="dot" style="background:#10b981"></span> Matrix Emerald
+            </button>
+          </div>
+        </div>
+
+        <div class="nx-card">
+          <div class="card-title">Default Search Engine</div>
+          <div class="nx-segmented" id="searchEngineSegments">
+            <button type="button" class="seg-btn active" data-engine="google">Google</button>
+            <button type="button" class="seg-btn" data-engine="duckduckgo">DuckDuckGo</button>
+            <button type="button" class="seg-btn" data-engine="bing">Bing</button>
+          </div>
+        </div>
+
+        <div class="nx-card">
+          <div class="card-row">
+            <span class="card-title">Blocked Tracker Domains</span>
+            <button class="mini-action-btn accent" id="btnOpenFullSettings">All Settings ↗</button>
+          </div>
+          <div class="scroll-list" id="recentBlockedList"></div>
+        </div>
+      </div>
+
+      <!-- Right Panel 2: Pro Download Manager Popover Drawer -->
+      <div class="tool-body hidden" id="right-panel-downloads">
+        <div class="nx-card">
+          <div class="card-row">
+            <div class="nx-segmented" id="dlFilterSegments">
+              <button type="button" class="seg-btn active" data-dl-cat="all">All</button>
+              <button type="button" class="seg-btn" data-dl-cat="media">Media</button>
+              <button type="button" class="seg-btn" data-dl-cat="documents">Docs</button>
+              <button type="button" class="seg-btn" data-dl-cat="apps">Apps</button>
+            </div>
+          </div>
+
+          <div class="card-row">
+            <button class="mini-action-btn accent" id="btnOpenFullDownloads">Open Full Manager ↗</button>
+            <button class="mini-action-btn" id="btnClearDownloads">Clear Done</button>
+          </div>
+
+          <div class="scroll-list tall" id="downloadsList"></div>
+        </div>
+      </div>
+
+      <!-- Right Panel 3: Extensions Quick View -->
+      <div class="tool-body hidden" id="right-panel-extensions">
+        <div class="nx-card">
+          <div class="card-row">
+            <span class="card-title">Active Extensions</span>
+            <button class="mini-action-btn accent" id="btnOpenFullExtensions">Manage All ↗</button>
+          </div>
+          <div class="ext-item">
+            <div>
+              <strong>nextGx Privacy Shield</strong>
+              <div class="card-sub">Network & cosmetic ad/tracker blocker</div>
+            </div>
+            <span class="ext-badge">BUILT-IN</span>
+          </div>
+          <div class="ext-item">
+            <div>
+              <strong>nextGx 8 GB Memory Saver</strong>
+              <div class="card-sub">Automatic background tab hibernation</div>
+            </div>
+            <span class="ext-badge">BUILT-IN</span>
+          </div>
+          <div class="ext-item">
+            <div>
+              <strong>nextGx Password Autofill</strong>
+              <div class="card-sub">Automatic website login vault</div>
+            </div>
+            <span class="ext-badge">BUILT-IN</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <script src="sounds.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>

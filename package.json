@@ -1,0 +1,48 @@
+{
+  "name": "nextgx-browser",
+  "productName": "nextGx Browser",
+  "version": "2.5.0",
+  "description": "nextGx Browser — Modern Apple-Crafted Chromium Desktop Browser with Built-in Privacy Shield, Media Dock, Pro Download Manager, and 8 GB Memory Saver",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "env -u ELECTRON_RUN_AS_NODE electron . --no-sandbox",
+    "dev": "env -u ELECTRON_RUN_AS_NODE electron . --no-sandbox --enable-logging",
+    "build:linux": "electron-builder --linux AppImage deb",
+    "build:win": "electron-builder --win nsis appx"
+  },
+  "keywords": [
+    "nextgx",
+    "browser",
+    "chromium",
+    "electron",
+    "adblocker",
+    "music-player"
+  ],
+  "author": "Marjan",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^45.3.3"
+  },
+  "build": {
+    "appId": "com.marjan.nextgxbrowser",
+    "productName": "nextGx Browser",
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Network;WebBrowser"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "appx"
+      ]
+    },
+    "appx": {
+      "applicationId": "Marjan.nextGxBrowser",
+      "backgroundColor": "#0d0e12",
+      "displayName": "nextGx Browser"
+    }
+  }
+}
