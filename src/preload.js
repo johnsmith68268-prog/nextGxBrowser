@@ -5,13 +5,16 @@ contextBridge.exposeInMainWorld('gxAPI', {
   createTab: (options) => ipcRenderer.invoke('tabs:create', options),
   switchTab: (tabId) => ipcRenderer.invoke('tabs:switch', tabId),
   closeTab: (tabId) => ipcRenderer.invoke('tabs:close', tabId),
+  closeOtherTabs: (tabId) => ipcRenderer.invoke('tabs:close-others', tabId),
+  duplicateTab: (tabId) => ipcRenderer.invoke('tabs:duplicate', tabId),
+  reorderTab: (options) => ipcRenderer.invoke('tabs:reorder', options),
   pinTab: (tabId) => ipcRenderer.invoke('tabs:pin', tabId),
   sleepTab: (tabId) => ipcRenderer.invoke('tabs:sleep', tabId),
   sleepBackgroundTabs: () => ipcRenderer.invoke('tabs:sleep-background'),
   navigate: (input) => ipcRenderer.invoke('tabs:navigate', input),
   goBack: () => ipcRenderer.invoke('tabs:back'),
   goForward: () => ipcRenderer.invoke('tabs:forward'),
-  reload: () => ipcRenderer.invoke('tabs:reload'),
+  reload: (tabId) => ipcRenderer.invoke('tabs:reload', tabId),
   stopLoading: () => ipcRenderer.invoke('tabs:stop'),
   goHome: () => ipcRenderer.invoke('tabs:home'),
   toggleDevTools: () => ipcRenderer.invoke('tabs:devtools'),
@@ -33,6 +36,7 @@ contextBridge.exposeInMainWorld('gxAPI', {
 
   // Floating Popover Overlay Management
   openPopover: (options) => ipcRenderer.invoke('popover:open', options),
+  resizePopover: (options) => ipcRenderer.invoke('popover:resize', options),
   closePopover: () => ipcRenderer.invoke('popover:close'),
   triggerMenuAction: (action) => ipcRenderer.invoke('menu:action', action),
 
@@ -43,21 +47,32 @@ contextBridge.exposeInMainWorld('gxAPI', {
   // Layout / Bounds for WebContentsView
   setLayoutOffsets: (offsets) => ipcRenderer.invoke('layout:set-offsets', offsets),
 
-  // Left Overlay Dock (Music Player / AI / Twitch)
-  setLeftWebPanel: (options) => ipcRenderer.invoke('sidebar:set-web-panel', options),
-  reloadLeftWebPanel: () => ipcRenderer.invoke('sidebar:reload-web-panel'),
-  togglePinLeftWebPanel: () => ipcRenderer.invoke('sidebar:toggle-pin'),
-  resizeLeftWebPanel: (width) => ipcRenderer.invoke('sidebar:resize', width),
-
   // Bookmarks
   getBookmarks: () => ipcRenderer.invoke('bookmarks:get'),
   toggleBookmark: () => ipcRenderer.invoke('bookmarks:toggle'),
+  addBookmark: (entry) => ipcRenderer.invoke('bookmarks:add', entry),
+  updateBookmark: (entry) => ipcRenderer.invoke('bookmarks:update', entry),
   removeBookmark: (id) => ipcRenderer.invoke('bookmarks:remove', id),
+  renameBookmarkFolder: (oldName, newName) =>
+    ipcRenderer.invoke('bookmarks:rename-folder', { oldName, newName }),
 
   // History
   getHistory: () => ipcRenderer.invoke('history:get'),
   clearHistory: (range) => ipcRenderer.invoke('history:clear', range),
   removeHistoryItem: (id) => ipcRenderer.invoke('history:remove', id),
+  getClosedTabs: () => ipcRenderer.invoke('history:closed-get'),
+  clearClosedTabs: () => ipcRenderer.invoke('history:closed-clear'),
+  removeClosedTab: (id) => ipcRenderer.invoke('history:closed-remove', id),
+
+  // Cookies
+  getCookies: (filter) => ipcRenderer.invoke('cookies:get', filter),
+  removeCookie: (urlOrObj, name) =>
+    ipcRenderer.invoke(
+      'cookies:remove',
+      typeof urlOrObj === 'object' ? urlOrObj : { url: urlOrObj, name }
+    ),
+  clearSiteCookies: (originOrDomain) => ipcRenderer.invoke('cookies:clear-site', originOrDomain),
+  clearAllCookies: () => ipcRenderer.invoke('cookies:clear-all'),
 
   // Pro Download Manager
   getDownloads: () => ipcRenderer.invoke('downloads:get'),
@@ -79,6 +94,14 @@ contextBridge.exposeInMainWorld('gxAPI', {
   // AdBlocker & Settings
   getAdblockStats: () => ipcRenderer.invoke('adblock:stats'),
   toggleAdblock: (enabled) => ipcRenderer.invoke('adblock:toggle', enabled),
+  toggleTrackerBlock: (enabled) => ipcRenderer.invoke('adblock:toggle-trackers', enabled),
+  getAdblockSite: (origin) => ipcRenderer.invoke('adblock:get-site', origin),
+  setAdblockSite: (origin, enabled) =>
+    ipcRenderer.invoke(
+      'adblock:set-site',
+      typeof origin === 'object' && origin !== null ? origin : { origin, enabled }
+    ),
+  getAdblockSites: () => ipcRenderer.invoke('adblock:get-sites'),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   updateSettings: (partial) => ipcRenderer.invoke('settings:update', partial),
 
@@ -95,9 +118,11 @@ contextBridge.exposeInMainWorld('gxAPI', {
   onAdblockUpdate: (cb) => ipcRenderer.on('adblock:update', (_e, data) => cb(data)),
   onDownloadsUpdate: (cb) => ipcRenderer.on('downloads:update', (_e, data) => cb(data)),
   onSystemStats: (cb) => ipcRenderer.on('system:stats-update', (_e, data) => cb(data)),
+  onSettingsUpdate: (cb) => ipcRenderer.on('settings:update', (_e, data) => cb(data)),
+  onBookmarksUpdate: (cb) => ipcRenderer.on('bookmarks:update', (_e, data) => cb(data)),
   onShortcutAction: (cb) => ipcRenderer.on('shortcut:action', (_e, action) => cb(action)),
   onPopoverData: (cb) => ipcRenderer.on('popover:data', (_e, data) => cb(data)),
-  onLeftDockUpdate: (cb) => ipcRenderer.on('leftdock:update', (_e, data) => cb(data)),
+  onFindResult: (cb) => ipcRenderer.on('find:result', (_e, data) => cb(data)),
   onScreenshotCaptured: (cb) => ipcRenderer.on('screenshot:captured', (_e, data) => cb(data)),
   onToast: (cb) => ipcRenderer.on('ui:toast', (_e, msg) => cb(msg))
 });

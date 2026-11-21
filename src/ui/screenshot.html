@@ -3,16 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <title>Area Screenshot</title>
+  <link rel="stylesheet" href="theme.css" />
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
     body {
       width: 100vw;
       height: 100vh;
       overflow: hidden;
-      background: #000;
+      background: var(--nx-overlay-black);
       position: relative;
       cursor: crosshair;
-      font-family: 'Inter', 'Segoe UI', Ubuntu, sans-serif;
+      font-family: var(--nx-font-sans);
     }
 
     #bgImg {
@@ -25,9 +26,9 @@
 
     #selectionBox {
       position: absolute;
-      border: 2px solid #c77dff;
-      background: rgba(157, 78, 221, 0.14);
-      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
+      border: 2px solid var(--nx-accent-bright);
+      background: var(--nx-accent-soft);
+      box-shadow: 0 0 0 9999px var(--nx-overlay-dim), var(--nx-glow-md);
       display: none;
       pointer-events: none;
     }
@@ -37,11 +38,13 @@
       top: 14px;
       left: 50%;
       transform: translateX(-50%);
-      background: rgba(18, 16, 27, 0.92);
-      border: 1px solid #9d4edd;
-      color: #f3f1f8;
+      background: color-mix(in srgb, var(--bg-deep) 92%, transparent);
+      border: 1px solid var(--nx-accent);
+      box-shadow: var(--nx-glow-md);
+      color: var(--text-main);
       padding: 6px 14px;
-      border-radius: 999px;
+      border-radius: var(--nx-radius-md);
+      clip-path: var(--nx-chamfer-sm);
       font-size: 12px;
       display: flex;
       align-items: center;
@@ -50,12 +53,14 @@
     }
 
     .cancel-btn {
-      background: #e11d48;
+      background: var(--danger);
       border: none;
-      color: #fff;
+      color: var(--nx-white);
       padding: 3px 9px;
-      border-radius: 5px;
+      border-radius: var(--nx-radius-xs);
+      clip-path: var(--nx-chamfer-sm);
       font-size: 11px;
+      font-weight: 600;
       cursor: pointer;
     }
   </style>
@@ -69,6 +74,23 @@
   <div id="selectionBox"></div>
 
   <script>
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme || 'gx-violet');
+    }
+
+    (function initThemeSync() {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('incognito') === '1') {
+        document.documentElement.setAttribute('data-incognito', 'true');
+      }
+      const initialTheme = params.get('theme');
+      if (initialTheme) applyTheme(initialTheme);
+      window.gxAPI?.getSettings?.().then((s) => applyTheme(s?.theme)).catch(() => {});
+      window.gxAPI?.onSettingsUpdate?.((s) => {
+        if (s && s.theme) applyTheme(s.theme);
+      });
+    })();
+
     const bgImg = document.getElementById('bgImg');
     const box = document.getElementById('selectionBox');
     let startX = 0, startY = 0, dragging = false;
