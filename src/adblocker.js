@@ -1,14 +1,12 @@
 // Built-in Engine-Level Ad & Tracker Blocker (EasyList & EasyPrivacy rules + Cosmetic CSS)
 
-const BLOCKED_DOMAINS = [
+const AD_DOMAINS = [
   'doubleclick.net',
   'googlesyndication.com',
   'googleadservices.com',
   'adservice.google.com',
   'pagead2.googlesyndication.com',
   'tpc.googlesyndication.com',
-  'google-analytics.com',
-  'googletagmanager.com',
   'googletagservices.com',
   'adnxs.com',
   'adsrvr.org',
@@ -21,9 +19,6 @@ const BLOCKED_DOMAINS = [
   'pubmatic.com',
   'openx.net',
   'casalemedia.com',
-  'moatads.com',
-  'scorecardresearch.com',
-  'quantserve.com',
   'zedo.com',
   'popads.net',
   'popcash.net',
@@ -39,12 +34,37 @@ const BLOCKED_DOMAINS = [
   'advertising.com',
   'amazon-adsystem.com',
   'aax.amazon-adsystem.com',
-  'connect.facebook.net/en_US/fbevents.js',
-  'pixel.facebook.com',
   'an.facebook.com',
-  'analytics.tiktok.com',
   'ads-twitter.com',
   'static.ads-twitter.com',
+  '2mdn.net',
+  'adroll.com',
+  'sharethrough.com',
+  'indexexchange.com',
+  '3lift.com',
+  'bidswitch.net',
+  'contextweb.com',
+  'lijit.com',
+  'sovrn.com',
+  'spotxchange.com',
+  'yieldmo.com',
+  'zemanta.com',
+  'adcolony.com',
+  'unityads.unity3d.com',
+  'applovin.com',
+  'vungle.com',
+  'inmobi.com'
+];
+
+const TRACKER_DOMAINS = [
+  'google-analytics.com',
+  'googletagmanager.com',
+  'moatads.com',
+  'scorecardresearch.com',
+  'quantserve.com',
+  'connect.facebook.net/en_us/fbevents.js',
+  'pixel.facebook.com',
+  'analytics.tiktok.com',
   'bat.bing.com',
   'clarity.ms',
   'hotjar.com',
@@ -63,30 +83,13 @@ const BLOCKED_DOMAINS = [
   'chartbeat.net',
   'omtrdc.net',
   'demdex.net',
-  '2mdn.net',
-  'adroll.com',
-  'sharethrough.com',
-  'indexexchange.com',
-  '3lift.com',
-  'bidswitch.net',
-  'contextweb.com',
-  'lijit.com',
-  'sovrn.com',
-  'spotxchange.com',
-  'yieldmo.com',
-  'zemanta.com',
-  'adcolony.com',
-  'unityads.unity3d.com',
-  'applovin.com',
-  'vungle.com',
-  'inmobi.com',
-  'Appsflyer.com',
+  'appsflyer.com',
   'adjust.com',
   'branch.io',
   'kochava.com'
 ];
 
-const BLOCKED_URL_PATTERNS = [
+const AD_URL_PATTERNS = [
   /\/pagead\//i,
   /\/ads\/(?!.*(?:\.css|player))/i,
   /\/adserver\//i,
@@ -97,10 +100,15 @@ const BLOCKED_URL_PATTERNS = [
   /\/pbar\.js/i,
   /\/prebid(\.min)?\.js/i,
   /\/gpt\.js/i,
-  /\/ analytics\.js/i,
-  /\/gtag\/js/i,
   /[?&](?:ad_id|ad_type|ad_slot|adunit|banner_id)=/i
 ];
+
+const TRACKER_URL_PATTERNS = [
+  /\/analytics\.js/i,
+  /\/gtag\/js/i
+];
+
+const MAX_PER_SITE_ORIGINS = 100;
 
 const COSMETIC_AD_CSS = `
   /* GX Browser Built-in AdBlocker Cosmetic Filters */
@@ -134,13 +142,52 @@ const COSMETIC_AD_CSS = `
   }
 `;
 
+function extractOrigin(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed === 'null') return '';
+  try {
+    const u = new URL(trimmed);
+    if (u.protocol === 'http:' || u.protocol === 'https:') {
+      return u.origin.toLowerCase();
+    }
+  } catch (_) {}
+  return '';
+}
+
+function matchesDomainRule(parsedUrl, lowerUrl, rule) {
+  const slashIdx = rule.indexOf('/');
+  if (slashIdx !== -1) {
+    const ruleHost = rule.slice(0, slashIdx);
+    const rulePath = rule.slice(slashIdx);
+    if (parsedUrl) {
+      const host = parsedUrl.hostname.toLowerCase();
+      const pathname = parsedUrl.pathname.toLowerCase();
+      return (host === ruleHost || host.endsWith(`.${ruleHost}`)) && pathname.startsWith(rulePath);
+    }
+    return lowerUrl.includes(`://${rule}`) || lowerUrl.includes(`.${rule}`);
+  }
+  if (parsedUrl) {
+    const host = parsedUrl.hostname.toLowerCase();
+    return host === rule || host.endsWith(`.${rule}`);
+  }
+  return (
+    lowerUrl.includes(`://${rule}`) ||
+    lowerUrl.includes(`.${rule}/`) ||
+    lowerUrl.includes(`.${rule}?`) ||
+    lowerUrl.endsWith(`.${rule}`)
+  );
+}
+
 class AdBlocker {
   constructor(storage, onBlockedCallback) {
     this.storage = storage;
     this.onBlockedCallback = onBlockedCallback;
     this.sessionBlocked = 0;
     this.recentBlocked = [];
+    this.perSiteBlocked = new Map(); // origin -> count (LRU: oldest first, newest last)
     this.attachedSessions = new WeakSet();
+    this.cosmeticState = new Map(); // WebContents -> { keys: Set<string>, injecting: boolean, generation: number }
   }
 
   isEnabled() {
@@ -148,36 +195,140 @@ class AdBlocker {
     return Boolean(settings.adblockEnabled);
   }
 
-  shouldBlock(urlStr, resourceType) {
+  isTrackersEnabled() {
+    const settings = this.storage.getSettings();
+    if (!settings.adblockEnabled) return false;
+    return typeof settings.trackerBlockEnabled === 'boolean'
+      ? settings.trackerBlockEnabled
+      : true;
+  }
+
+  isSiteAllowlisted(origin) {
+    const norm = extractOrigin(origin);
+    if (!norm) return false;
+    if (typeof this.storage.getAdblockSite === 'function') {
+      const site = this.storage.getAdblockSite(norm);
+      return Boolean(site && site.hasOverride && site.enabled === false);
+    }
+    return false;
+  }
+
+  isSiteBlockingActive(origin) {
     if (!this.isEnabled()) return false;
-    if (!urlStr || urlStr.startsWith('file://') || urlStr.startsWith('data:') || urlStr.startsWith('devtools://')) {
+    const norm = extractOrigin(origin);
+    if (!norm) return true;
+    return !this.isSiteAllowlisted(norm);
+  }
+
+  shouldInjectCosmetic(origin) {
+    if (!this.isEnabled()) return false;
+    const norm = extractOrigin(origin);
+    if (!norm) return false;
+    return !this.isSiteAllowlisted(norm);
+  }
+
+  shouldBlock(urlStr, resourceType, initiator = '') {
+    if (
+      !urlStr ||
+      urlStr.startsWith('file://') ||
+      urlStr.startsWith('data:') ||
+      urlStr.startsWith('devtools://') ||
+      urlStr.startsWith('about:') ||
+      urlStr.startsWith('chrome://') ||
+      urlStr.startsWith('chrome-extension://') ||
+      urlStr.startsWith('nextgx://')
+    ) {
       return false;
     }
-    // Never block main top-level navigation documents unless it's a known popup ad domain
+
+    // Never block main top-level navigation documents
     if (resourceType === 'mainFrame') {
       return false;
     }
 
-    const lower = urlStr.toLowerCase();
+    const settings = this.storage.getSettings();
+    const adsEnabled = Boolean(settings.adblockEnabled);
+    if (!adsEnabled) {
+      return false;
+    }
+    const trackersEnabled =
+      typeof settings.trackerBlockEnabled === 'boolean'
+        ? settings.trackerBlockEnabled
+        : true;
 
-    for (const domain of BLOCKED_DOMAINS) {
-      if (
-        lower.includes(`://${domain}`) ||
-        lower.includes(`.${domain}/`) ||
-        lower.includes(`.${domain}?`) ||
-        lower.endsWith(`.${domain}`)
-      ) {
-        return { blocked: true, reason: domain };
+    const rawInitiator =
+      typeof initiator === 'object' && initiator !== null
+        ? initiator.initiatorOrigin || initiator.initiator
+        : initiator;
+    const initiatorOrigin = extractOrigin(rawInitiator);
+    if (initiatorOrigin && this.isSiteAllowlisted(initiatorOrigin)) {
+      return false;
+    }
+
+    const lower = urlStr.toLowerCase();
+    let parsedUrl = null;
+    try {
+      parsedUrl = new URL(urlStr);
+    } catch (_) {}
+
+    // Check tracker domains first so tracker domains are never blocked when trackerBlockEnabled is off
+    for (const domain of TRACKER_DOMAINS) {
+      if (matchesDomainRule(parsedUrl, lower, domain)) {
+        return trackersEnabled ? { blocked: true, reason: domain, category: 'tracker' } : false;
       }
     }
 
-    for (const pattern of BLOCKED_URL_PATTERNS) {
+    for (const domain of AD_DOMAINS) {
+      if (matchesDomainRule(parsedUrl, lower, domain)) {
+        return { blocked: true, reason: domain, category: 'ad' };
+      }
+    }
+
+    for (const pattern of AD_URL_PATTERNS) {
       if (pattern.test(urlStr)) {
-        return { blocked: true, reason: pattern.source };
+        return { blocked: true, reason: pattern.source, category: 'ad' };
+      }
+    }
+
+    if (trackersEnabled) {
+      for (const pattern of TRACKER_URL_PATTERNS) {
+        if (pattern.test(urlStr)) {
+          return { blocked: true, reason: pattern.source, category: 'tracker' };
+        }
       }
     }
 
     return false;
+  }
+
+  _recordSiteBlocked(origin) {
+    const norm = extractOrigin(origin);
+    if (!norm) return 0;
+    const next = (this.perSiteBlocked.get(norm) || 0) + 1;
+    this.perSiteBlocked.delete(norm);
+    this.perSiteBlocked.set(norm, next);
+    if (this.perSiteBlocked.size > MAX_PER_SITE_ORIGINS) {
+      const oldestKey = this.perSiteBlocked.keys().next().value;
+      if (oldestKey !== undefined) {
+        this.perSiteBlocked.delete(oldestKey);
+      }
+    }
+    return next;
+  }
+
+  getSiteBlockedCount(origin) {
+    const norm = extractOrigin(origin);
+    if (!norm) return 0;
+    return this.perSiteBlocked.get(norm) || 0;
+  }
+
+  getPerSiteCounts() {
+    const entries = Array.from(this.perSiteBlocked.entries()).reverse();
+    const perSite = {};
+    for (const [origin, count] of entries) {
+      perSite[origin] = count;
+    }
+    return perSite;
   }
 
   attachToSession(ses) {
@@ -185,10 +336,15 @@ class AdBlocker {
     this.attachedSessions.add(ses);
 
     ses.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, (details, callback) => {
-      const match = this.shouldBlock(details.url, details.resourceType);
+      const initiatorOrigin = extractOrigin(details.initiatorOrigin || details.initiator);
+      const match = this.shouldBlock(details.url, details.resourceType, initiatorOrigin);
       if (match && match.blocked) {
         this.sessionBlocked += 1;
         const total = this.storage.incrementBlockedCount(1);
+
+        if (initiatorOrigin) {
+          this._recordSiteBlocked(initiatorOrigin);
+        }
 
         let host = match.reason;
         try {
@@ -198,6 +354,8 @@ class AdBlocker {
         this.recentBlocked.unshift({
           host,
           type: details.resourceType,
+          category: match.category || 'ad',
+          origin: initiatorOrigin || '',
           time: Date.now()
         });
         if (this.recentBlocked.length > 25) {
@@ -206,10 +364,10 @@ class AdBlocker {
 
         if (typeof this.onBlockedCallback === 'function') {
           this.onBlockedCallback({
-            sessionBlocked: this.sessionBlocked,
+            ...this.getStats(),
             totalBlocked: total,
             lastBlockedHost: host,
-            recentBlocked: this.recentBlocked
+            lastBlockedOrigin: initiatorOrigin || ''
           });
         }
 
@@ -219,20 +377,214 @@ class AdBlocker {
     });
   }
 
+  _ensureCosmeticState(webContents) {
+    let state = this.cosmeticState.get(webContents);
+    if (!state) {
+      state = { keys: new Set(), injecting: false, generation: 0 };
+      this.cosmeticState.set(webContents, state);
+      if (typeof webContents.once === 'function') {
+        webContents.once('destroyed', () => {
+          this.cosmeticState.delete(webContents);
+        });
+      }
+    }
+    return state;
+  }
+
+  clearCosmeticKeys(webContents) {
+    if (!webContents) return;
+    const state = this.cosmeticState.get(webContents);
+    if (state) {
+      state.generation += 1;
+      state.injecting = false;
+      state.keys.clear();
+    }
+  }
+
   injectCosmeticFilters(webContents) {
-    if (!this.isEnabled() || !webContents || webContents.isDestroyed()) return;
-    webContents.insertCSS(COSMETIC_AD_CSS).catch(() => {});
+    if (!webContents || webContents.isDestroyed()) return Promise.resolve(false);
+    let url = '';
+    try {
+      url = webContents.getURL();
+    } catch (_) {
+      return Promise.resolve(false);
+    }
+    const origin = extractOrigin(url);
+    if (!this.shouldInjectCosmetic(origin)) return Promise.resolve(false);
+
+    const state = this._ensureCosmeticState(webContents);
+    if (state.keys.size > 0 || state.injecting) {
+      return Promise.resolve(true);
+    }
+
+    const gen = state.generation;
+    state.injecting = true;
+
+    return webContents
+      .insertCSS(COSMETIC_AD_CSS)
+      .then((key) => {
+        state.injecting = false;
+        if (webContents.isDestroyed()) {
+          this.cosmeticState.delete(webContents);
+          return false;
+        }
+        let currentOrigin = '';
+        try {
+          currentOrigin = extractOrigin(webContents.getURL());
+        } catch (_) {}
+        if (state.generation !== gen || !this.shouldInjectCosmetic(currentOrigin)) {
+          if (key && typeof webContents.removeInsertedCSS === 'function') {
+            webContents.removeInsertedCSS(key).catch(() => {});
+          }
+          return false;
+        }
+        if (key) {
+          state.keys.add(key);
+        }
+        return true;
+      })
+      .catch(() => {
+        state.injecting = false;
+        return false;
+      });
+  }
+
+  async removeCosmeticFilters(webContents) {
+    if (!webContents || webContents.isDestroyed()) {
+      this.cosmeticState.delete(webContents);
+      return { removed: false, reloaded: false };
+    }
+    const state = this.cosmeticState.get(webContents);
+    if (!state) return { removed: false, reloaded: false };
+
+    state.generation += 1;
+    state.injecting = false;
+    const keys = Array.from(state.keys);
+    state.keys.clear();
+    if (!keys.length) return { removed: false, reloaded: false };
+
+    let removed = false;
+    let failed = false;
+    for (const key of keys) {
+      try {
+        if (typeof webContents.removeInsertedCSS === 'function') {
+          await webContents.removeInsertedCSS(key);
+          removed = true;
+        } else {
+          failed = true;
+        }
+      } catch (_) {
+        failed = true;
+      }
+    }
+
+    if (failed && !webContents.isDestroyed()) {
+      try {
+        webContents.reload();
+        return { removed, reloaded: true };
+      } catch (_) {}
+    }
+
+    return { removed, reloaded: false };
+  }
+
+  async removeCosmeticFiltersForOrigin(origin) {
+    const norm = extractOrigin(origin);
+    if (!norm) return;
+    const tasks = [];
+    for (const wc of Array.from(this.cosmeticState.keys())) {
+      if (!wc || wc.isDestroyed()) {
+        this.cosmeticState.delete(wc);
+        continue;
+      }
+      let wcOrigin = '';
+      try {
+        wcOrigin = extractOrigin(wc.getURL());
+      } catch (_) {}
+      if (wcOrigin === norm) {
+        tasks.push(this.removeCosmeticFilters(wc));
+      }
+    }
+    await Promise.all(tasks);
+  }
+
+  async removeCosmeticFiltersForAll() {
+    const tasks = [];
+    for (const wc of Array.from(this.cosmeticState.keys())) {
+      if (!wc || wc.isDestroyed()) {
+        this.cosmeticState.delete(wc);
+        continue;
+      }
+      tasks.push(this.removeCosmeticFilters(wc));
+    }
+    await Promise.all(tasks);
+  }
+
+  async syncCosmeticFilters(webContentsList, targetOrigin = '') {
+    const normTarget = targetOrigin ? extractOrigin(targetOrigin) : '';
+    const seen = new Set();
+    const candidates = [];
+
+    for (const wc of webContentsList || []) {
+      if (wc && !seen.has(wc)) {
+        seen.add(wc);
+        candidates.push(wc);
+      }
+    }
+    for (const wc of this.cosmeticState.keys()) {
+      if (wc && !seen.has(wc)) {
+        seen.add(wc);
+        candidates.push(wc);
+      }
+    }
+
+    const tasks = [];
+    for (const wc of candidates) {
+      if (wc.isDestroyed()) {
+        this.cosmeticState.delete(wc);
+        continue;
+      }
+      let wcOrigin = '';
+      try {
+        wcOrigin = extractOrigin(wc.getURL());
+      } catch (_) {}
+      if (!wcOrigin) continue;
+      if (normTarget && wcOrigin !== normTarget) continue;
+
+      if (this.shouldInjectCosmetic(wcOrigin)) {
+        tasks.push(this.injectCosmeticFilters(wc));
+      } else {
+        tasks.push(this.removeCosmeticFilters(wc));
+      }
+    }
+    await Promise.all(tasks);
   }
 
   getStats() {
     const settings = this.storage.getSettings();
+    const adsEnabled = Boolean(settings.adblockEnabled);
+    const trackersEnabled =
+      adsEnabled &&
+      (typeof settings.trackerBlockEnabled === 'boolean'
+        ? settings.trackerBlockEnabled
+        : true);
     return {
-      enabled: Boolean(settings.adblockEnabled),
+      enabled: adsEnabled,
+      trackerBlockEnabled: trackersEnabled,
       sessionBlocked: this.sessionBlocked,
       totalBlocked: settings.totalAdsBlocked || 0,
-      recentBlocked: this.recentBlocked
+      recentBlocked: this.recentBlocked,
+      perSite: this.getPerSiteCounts()
     };
   }
 }
 
-module.exports = { AdBlocker };
+module.exports = {
+  AdBlocker,
+  AD_DOMAINS,
+  TRACKER_DOMAINS,
+  AD_URL_PATTERNS,
+  TRACKER_URL_PATTERNS,
+  COSMETIC_AD_CSS,
+  extractOrigin
+};

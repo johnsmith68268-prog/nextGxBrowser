@@ -12,30 +12,138 @@ const {
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { pathToFileURL } = require('url');
+const { pathToFileURL, fileURLToPath } = require('url');
 const { StorageManager } = require('./storage');
 const { AdBlocker } = require('./adblocker');
 
-app.commandLine.appendSwitch('no-sandbox');
+const isRunningAsRoot =
+  typeof process.geteuid === 'function'
+    ? process.geteuid() === 0
+    : typeof process.getuid === 'function' && process.getuid() === 0;
+if (isRunningAsRoot) {
+  app.commandLine.appendSwitch('no-sandbox');
+}
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
 const TOP_CHROME_HEIGHT = 82;
+const BOOKMARKS_BAR_HEIGHT = 30;
 const SIDEBAR_ICON_WIDTH = 50;
-const LEFT_PANEL_HEADER_HEIGHT = 44;
-const NEW_TAB_FILE = path.join(__dirname, 'ui', 'newtab.html');
+const PRIVATE_WINDOW_TITLE = 'nextGx Browser — Private';
+const UI_DIR = path.resolve(__dirname, 'ui');
+const NEW_TAB_FILE = path.join(UI_DIR, 'newtab.html');
 const NEW_TAB_FILE_URL = pathToFileURL(NEW_TAB_FILE).toString();
-const WEBUI_FILE = path.join(__dirname, 'ui', 'chrome-webui.html');
+const WEBUI_FILE = path.join(UI_DIR, 'chrome-webui.html');
 const WEBUI_FILE_URL = pathToFileURL(WEBUI_FILE).toString();
-const POPOVER_FILE = path.join(__dirname, 'ui', 'popover.html');
-const LEFT_DOCK_HEADER_FILE = path.join(__dirname, 'ui', 'left-dock-header.html');
-const LEFT_DOCK_RESIZER_FILE = path.join(__dirname, 'ui', 'left-dock-resizer.html');
-const SCREENSHOT_FILE = path.join(__dirname, 'ui', 'screenshot.html');
+const ERROR_PAGE_FILE = path.join(UI_DIR, 'error.html');
+const ERROR_PAGE_FILE_URL = pathToFileURL(ERROR_PAGE_FILE).toString();
+const POPOVER_FILE = path.join(UI_DIR, 'popover.html');
+const SCREENSHOT_FILE = path.join(UI_DIR, 'screenshot.html');
+
+function normalizePathForCompare(p) {
+  return process.platform === 'win32' ? p.toLowerCase() : p;
+}
+
+function isPathInsideDir(baseDir, candidatePath) {
+  const rel = path.relative(baseDir, candidatePath);
+  return Boolean(rel) && rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel);
+}
+
+function resolveInternalUiFile(rawUrl) {
+  if (typeof rawUrl !== 'string' || !rawUrl) return null;
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== 'file:') return null;
+    if (parsed.hostname && parsed.hostname !== 'localhost') return null;
+    const resolved = path.resolve(fileURLToPath(parsed));
+    if (!isPathInsideDir(UI_DIR, resolved)) return null;
+    return resolved;
+  } catch (_) {
+    return null;
+  }
+}
+
+function isInternalUiSender(event) {
+  if (!event || !event.senderFrame || !event.sender) return false;
+  if (event.senderFrame !== event.sender.mainFrame) return false;
+  return Boolean(resolveInternalUiFile(event.senderFrame.url));
+}
+
+function resolveSafeDownloadPath(targetPath) {
+  if (typeof targetPath !== 'string' || !targetPath || targetPath.includes('\0')) return null;
+  if (!path.isAbsolute(targetPath)) return null;
+
+  const downloadsDir = path.resolve(app.getPath('downloads'));
+  const resolved = path.resolve(targetPath);
+  if (!isPathInsideDir(downloadsDir, resolved)) return null;
+
+  try {
+    const realDownloads = fs.realpathSync(downloadsDir);
+    try {
+      const realTarget = fs.realpathSync(resolved);
+      if (!isPathInsideDir(realDownloads, realTarget)) return null;
+      return realTarget;
+    } catch (err) {
+      if (err && err.code === 'ENOENT') {
+        try {
+          if (fs.lstatSync(resolved).isSymbolicLink()) return null;
+        } catch (_) {}
+        try {
+          const realParent = fs.realpathSync(path.dirname(resolved));
+          if (
+            normalizePathForCompare(realParent) !== normalizePathForCompare(realDownloads) &&
+            !isPathInsideDir(realDownloads, realParent)
+          ) {
+            return null;
+          }
+        } catch (_) {}
+        return resolved;
+      }
+      return null;
+    }
+  } catch (_) {
+    return resolved;
+  }
+}
+
+function normalizeAutofillHost(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  const input = raw.trim().toLowerCase();
+  if (!input) return '';
+  try {
+    const u = new URL(input.includes('://') ? input : `https://${input}`);
+    let host = u.hostname.toLowerCase().replace(/\.$/, '');
+    if (!host || host.startsWith('.') || host.includes('..')) return '';
+    if (/^www\.[^.]+\./.test(host)) {
+      host = host.slice(4);
+    }
+    return host;
+  } catch (_) {
+    return '';
+  }
+}
+
+function isIpAddress(host) {
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(':');
+}
+
+function isAutofillHostMatch(pageHost, savedSite) {
+  const current = normalizeAutofillHost(pageHost);
+  const saved = normalizeAutofillHost(savedSite);
+  if (!current || !saved) return false;
+  if (current === saved) return true;
+  if (isIpAddress(current) || isIpAddress(saved)) return false;
+  if (!saved.includes('.')) return false;
+  return current.endsWith(`.${saved}`);
+}
 
 let storage = null;
 let adBlocker = null;
 const activeDownloadItems = new Map();
 const windowContexts = new Map(); // BrowserWindow.id -> ctx
 const webContentsToWinId = new Map(); // webContents.id -> BrowserWindow.id
+let sessionSaveTimer = null;
+let cookiesUpdateTimer = null;
+let isAppQuitting = false;
 
 let prevCpuInfo = os.cpus();
 
@@ -91,12 +199,81 @@ function isWebUiUrl(urlStr) {
   return urlStr.startsWith(WEBUI_FILE_URL) || urlStr.includes('/src/ui/chrome-webui.html');
 }
 
+function isErrorPageUrl(urlStr) {
+  if (!urlStr || typeof urlStr !== 'string') return false;
+  return urlStr.startsWith(ERROR_PAGE_FILE_URL) || urlStr.includes('/src/ui/error.html');
+}
+
+function getFailedUrlFromErrorPage(urlStr) {
+  if (!isErrorPageUrl(urlStr)) return '';
+  try {
+    const u = new URL(urlStr);
+    return u.searchParams.get('url') || '';
+  } catch (_) {
+    return '';
+  }
+}
+
+function formatFailedTabTitle(failedUrl) {
+  if (!failedUrl || typeof failedUrl !== 'string') return 'Failed to load';
+  try {
+    const u = new URL(failedUrl);
+    if (u.host) return `${u.host} — Failed to load`;
+    if (u.protocol === 'file:') {
+      const base = path.basename(decodeURIComponent(u.pathname || ''));
+      if (base) return `${base} — Failed to load`;
+    }
+  } catch (_) {}
+  return 'Failed to load';
+}
+
+function buildErrorPageUrl({ failedUrl, errorCode, errorDescription }, ctx) {
+  const u = new URL(ERROR_PAGE_FILE_URL);
+  u.searchParams.set('url', failedUrl || '');
+  u.searchParams.set('code', String(errorCode ?? ''));
+  u.searchParams.set('desc', String(errorDescription || ''));
+  const theme = storage?.getSettings?.().theme || 'gx-violet';
+  u.searchParams.set('theme', theme);
+  if (ctx?.incognito) {
+    u.searchParams.set('incognito', '1');
+  }
+  return u.toString();
+}
+
+function getInternalUiQuery(incognito = false) {
+  const s = storage?.getSettings?.() || {};
+  const theme = s.theme || 'gx-violet';
+  const bookmarksBar = s.showBookmarksBar === false ? '0' : '1';
+  return incognito ? { theme, bookmarksBar, incognito: '1' } : { theme, bookmarksBar };
+}
+
+function appendInternalUrlParams(rawUrl, ctx) {
+  if (!isNewTabUrl(rawUrl) && !isWebUiUrl(rawUrl) && !isErrorPageUrl(rawUrl)) return rawUrl;
+  try {
+    const u = new URL(rawUrl);
+    if (u.protocol !== 'file:') return rawUrl;
+    const theme = storage?.getSettings?.().theme || 'gx-violet';
+    u.searchParams.set('theme', theme);
+    if (ctx?.incognito) {
+      u.searchParams.set('incognito', '1');
+    } else {
+      u.searchParams.delete('incognito');
+    }
+    return u.toString();
+  } catch (_) {
+    return rawUrl;
+  }
+}
+
 function formatDisplayUrl(rawUrl) {
   if (isNewTabUrl(rawUrl)) return 'nextgx://newtab';
   if (isWebUiUrl(rawUrl)) {
     const hash = (rawUrl.split('#')[1] || 'history').toLowerCase();
     if (hash === 'passwords') return 'nextgx://passwords';
     return `nextgx://${hash}`;
+  }
+  if (isErrorPageUrl(rawUrl)) {
+    return getFailedUrlFromErrorPage(rawUrl) || '';
   }
   return rawUrl || '';
 }
@@ -178,7 +355,12 @@ function serializeTabs(ctx) {
         audible: Boolean(t.audible),
         readerMode: Boolean(t.readerMode),
         zoomPercent: Math.round((t.zoomFactor || 1) * 100),
-        isBookmarked: storage.isBookmarked(displayUrl)
+        isBookmarked: storage.isBookmarked(displayUrl),
+        adblockSiteEnabled: adBlocker
+          ? origin
+            ? adBlocker.isSiteBlockingActive(origin)
+            : adBlocker.isEnabled()
+          : true
       };
     });
 
@@ -186,27 +368,171 @@ function serializeTabs(ctx) {
     windowIncognito: ctx.incognito,
     tabs: ordered,
     activeTabId: ctx.activeTabId,
-    activeTab: ordered.find((t) => t.id === ctx.activeTabId) || null,
-    leftWebAudioPlaying: ctx.leftWebAudioPlaying
+    activeTab: ordered.find((t) => t.id === ctx.activeTabId) || null
   };
 }
 
 function broadcastState(ctx) {
   if (!ctx || !ctx.win || ctx.win.isDestroyed()) return;
-  ctx.win.webContents.send('state:update', serializeTabs(ctx));
+  const serialized = serializeTabs(ctx);
+  ctx.win.webContents.send('state:update', serialized);
+  if (
+    ctx.popoverOpenKind === 'menu' &&
+    ctx.popoverView &&
+    ctx.popoverView.webContents &&
+    !ctx.popoverView.webContents.isDestroyed()
+  ) {
+    if (ctx.popoverPayload && ctx.popoverPayload.payload && serialized.activeTab) {
+      ctx.popoverPayload.payload.zoomPercent = serialized.activeTab.zoomPercent;
+    }
+    ctx.popoverView.webContents.send('state:update', serialized);
+  }
+}
+
+function sendToWebUiTabs(channel, payload) {
+  for (const ctx of windowContexts.values()) {
+    for (const tab of ctx.tabs.values()) {
+      if (!tab || !tab.view || !tab.view.webContents || tab.view.webContents.isDestroyed()) continue;
+      const wcUrl = tab.view.webContents.getURL();
+      if (isWebUiUrl(tab.url) || isWebUiUrl(wcUrl)) {
+        tab.view.webContents.send(channel, payload);
+      }
+    }
+  }
+}
+
+function notifyActiveWebUiTabShown(ctx) {
+  if (!ctx || !ctx.activeTabId) return;
+  const tab = ctx.tabs.get(ctx.activeTabId);
+  if (!tab || tab.sleeping || !tab.view || !tab.view.webContents || tab.view.webContents.isDestroyed()) return;
+  const wcUrl = tab.view.webContents.getURL();
+  if (isWebUiUrl(tab.url) || isWebUiUrl(wcUrl)) {
+    tab.view.webContents.send('webui:shown');
+  }
+}
+
+function broadcastAdblockUpdate(stats) {
+  const payload = stats || (adBlocker ? adBlocker.getStats() : null);
+  if (!payload) return;
+  for (const ctx of windowContexts.values()) {
+    if (ctx.win && !ctx.win.isDestroyed()) {
+      ctx.win.webContents.send('adblock:update', payload);
+    }
+    if (ctx.popoverView && ctx.popoverView.webContents && !ctx.popoverView.webContents.isDestroyed()) {
+      ctx.popoverView.webContents.send('adblock:update', payload);
+    }
+  }
+  sendToWebUiTabs('adblock:update', payload);
+}
+
+function broadcastHistoryUpdate() {
+  sendToWebUiTabs('history:update');
+}
+
+function broadcastDownloadsUpdate(downloads) {
+  const payload = downloads || (storage ? storage.getDownloads() : []);
+  for (const ctx of windowContexts.values()) {
+    if (ctx.win && !ctx.win.isDestroyed()) {
+      ctx.win.webContents.send('downloads:update', payload);
+    }
+    if (ctx.popoverView && ctx.popoverView.webContents && !ctx.popoverView.webContents.isDestroyed()) {
+      ctx.popoverView.webContents.send('downloads:update', payload);
+    }
+  }
+  sendToWebUiTabs('downloads:update', payload);
+}
+
+function cancelScheduledCookiesBroadcast() {
+  if (cookiesUpdateTimer) {
+    clearTimeout(cookiesUpdateTimer);
+    cookiesUpdateTimer = null;
+  }
+}
+
+function broadcastCookiesUpdate({ immediate = false } = {}) {
+  if (isAppQuitting) return;
+  if (immediate) {
+    cancelScheduledCookiesBroadcast();
+    sendToWebUiTabs('cookies:update');
+    return;
+  }
+  if (cookiesUpdateTimer) return;
+  cookiesUpdateTimer = setTimeout(() => {
+    cookiesUpdateTimer = null;
+    if (!isAppQuitting) {
+      sendToWebUiTabs('cookies:update');
+    }
+  }, 100);
+}
+
+function broadcastSettingsUpdate(settings) {
+  const payload = settings || (storage ? storage.getSettings() : null);
+  if (!payload) return;
+  for (const ctx of windowContexts.values()) {
+    if (ctx.win && !ctx.win.isDestroyed()) {
+      ctx.win.webContents.send('settings:update', payload);
+    }
+    if (ctx.popoverView && ctx.popoverView.webContents && !ctx.popoverView.webContents.isDestroyed()) {
+      ctx.popoverView.webContents.send('settings:update', payload);
+    }
+    if (ctx.screenshotView && ctx.screenshotView.webContents && !ctx.screenshotView.webContents.isDestroyed()) {
+      ctx.screenshotView.webContents.send('settings:update', payload);
+    }
+    for (const tab of ctx.tabs.values()) {
+      if (!tab || !tab.view || !tab.view.webContents || tab.view.webContents.isDestroyed()) continue;
+      const wcUrl = tab.view.webContents.getURL();
+      if (
+        isNewTabUrl(tab.url) ||
+        isWebUiUrl(tab.url) ||
+        isErrorPageUrl(tab.url) ||
+        isNewTabUrl(wcUrl) ||
+        isWebUiUrl(wcUrl) ||
+        isErrorPageUrl(wcUrl)
+      ) {
+        tab.view.webContents.send('settings:update', payload);
+      }
+    }
+  }
+}
+
+function broadcastBookmarksUpdate(bookmarks) {
+  const payload = bookmarks || (storage ? storage.getBookmarks() : []);
+  for (const ctx of windowContexts.values()) {
+    if (ctx.win && !ctx.win.isDestroyed()) {
+      ctx.win.webContents.send('bookmarks:update', payload);
+    }
+    if (ctx.popoverView && ctx.popoverView.webContents && !ctx.popoverView.webContents.isDestroyed()) {
+      ctx.popoverView.webContents.send('bookmarks:update', payload);
+    }
+    for (const tab of ctx.tabs.values()) {
+      if (!tab || !tab.view || !tab.view.webContents || tab.view.webContents.isDestroyed()) continue;
+      const wcUrl = tab.view.webContents.getURL();
+      if (isWebUiUrl(tab.url) || isWebUiUrl(wcUrl)) {
+        tab.view.webContents.send('bookmarks:update', payload);
+      }
+    }
+  }
+}
+
+function getAllTabWebContents() {
+  const list = [];
+  for (const ctx of windowContexts.values()) {
+    for (const tab of ctx.tabs.values()) {
+      if (tab && tab.view && tab.view.webContents && !tab.view.webContents.isDestroyed()) {
+        list.push(tab.view.webContents);
+      }
+    }
+  }
+  return list;
+}
+
+async function syncAdblockCosmeticFilters(targetOrigin = '') {
+  if (!adBlocker) return;
+  await adBlocker.syncCosmeticFilters(getAllTabWebContents(), targetOrigin);
 }
 
 function bringOverlaysToFront(ctx) {
   if (!ctx.win || ctx.win.isDestroyed()) return;
-  if (ctx.leftDockHeaderView && ctx.layoutState.leftWebVisible) {
-    ctx.win.contentView.addChildView(ctx.leftDockHeaderView);
-  }
-  if (ctx.leftWebView && ctx.layoutState.leftWebVisible) {
-    ctx.win.contentView.addChildView(ctx.leftWebView);
-  }
-  if (ctx.leftDockResizerView && ctx.layoutState.leftWebVisible) {
-    ctx.win.contentView.addChildView(ctx.leftDockResizerView);
-  }
   if (ctx.popoverView && ctx.popoverOpenKind) {
     ctx.win.contentView.addChildView(ctx.popoverView);
   }
@@ -220,11 +546,7 @@ function updateActiveViewBounds(ctx) {
   const [contentWidth, contentHeight] = ctx.win.getContentSize();
   const top = Math.max(TOP_CHROME_HEIGHT, ctx.layoutState.top || TOP_CHROME_HEIGHT);
 
-  const panelW = Math.max(280, Math.min(880, ctx.layoutState.leftWebWidth || 420));
-  const effectiveTabLeft =
-    ctx.layoutState.leftWebVisible && ctx.layoutState.leftWebPinned
-      ? SIDEBAR_ICON_WIDTH + panelW
-      : Math.max(SIDEBAR_ICON_WIDTH, ctx.layoutState.left || SIDEBAR_ICON_WIDTH);
+  const effectiveTabLeft = Math.max(SIDEBAR_ICON_WIDTH, ctx.layoutState.left || SIDEBAR_ICON_WIDTH);
 
   const rightOffset = Math.max(0, ctx.layoutState.right || 0);
   const bottomOffset = Math.max(0, ctx.layoutState.bottom || 0);
@@ -240,45 +562,6 @@ function updateActiveViewBounds(ctx) {
       });
     } else {
       tab.view.setBounds({ x: -5000, y: -5000, width: 1, height: 1 });
-    }
-  }
-
-  if (ctx.leftDockHeaderView) {
-    if (ctx.layoutState.leftWebVisible) {
-      ctx.leftDockHeaderView.setBounds({
-        x: SIDEBAR_ICON_WIDTH,
-        y: TOP_CHROME_HEIGHT,
-        width: panelW - 5,
-        height: LEFT_PANEL_HEADER_HEIGHT
-      });
-    } else {
-      ctx.leftDockHeaderView.setBounds({ x: -5000, y: -5000, width: 1, height: 1 });
-    }
-  }
-
-  if (ctx.leftWebView) {
-    if (ctx.layoutState.leftWebVisible) {
-      ctx.leftWebView.setBounds({
-        x: SIDEBAR_ICON_WIDTH,
-        y: TOP_CHROME_HEIGHT + LEFT_PANEL_HEADER_HEIGHT,
-        width: panelW - 5,
-        height: Math.max(120, contentHeight - TOP_CHROME_HEIGHT - LEFT_PANEL_HEADER_HEIGHT)
-      });
-    } else {
-      ctx.leftWebView.setBounds({ x: -5000, y: -5000, width: 1, height: 1 });
-    }
-  }
-
-  if (ctx.leftDockResizerView) {
-    if (ctx.layoutState.leftWebVisible) {
-      ctx.leftDockResizerView.setBounds({
-        x: SIDEBAR_ICON_WIDTH + panelW - 5,
-        y: TOP_CHROME_HEIGHT,
-        width: 6,
-        height: Math.max(120, contentHeight - TOP_CHROME_HEIGHT)
-      });
-    } else {
-      ctx.leftDockResizerView.setBounds({ x: -5000, y: -5000, width: 1, height: 1 });
     }
   }
 
@@ -298,16 +581,41 @@ function updateActiveViewBounds(ctx) {
   bringOverlaysToFront(ctx);
 }
 
+function applyZoomAction(ctx, action, { notifyToast = false } = {}) {
+  if (!ctx) return 100;
+  const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
+  if (!tab || !tab.view || !tab.view.webContents || tab.view.webContents.isDestroyed()) {
+    return Math.round((tab?.zoomFactor || 1.0) * 100);
+  }
+  let factor = tab.zoomFactor || 1.0;
+  if (action === 'in') factor = Math.min(3.0, +(factor + 0.1).toFixed(2));
+  else if (action === 'out') factor = Math.max(0.3, +(factor - 0.1).toFixed(2));
+  else if (action === 'reset') factor = 1.0;
+  tab.zoomFactor = factor;
+  tab.view.webContents.setZoomFactor(factor);
+  const zoomPercent = Math.round(factor * 100);
+  broadcastState(ctx);
+  if (notifyToast && ctx.win && !ctx.win.isDestroyed()) {
+    ctx.win.webContents.send('ui:toast', `Zoom: ${zoomPercent}%`);
+  }
+  return zoomPercent;
+}
+
 function attachKeyboardShortcuts(ctx, webContents) {
   webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
     const ctrl = input.control || input.meta;
     const shift = input.shift;
+    const alt = input.alt;
     const key = (input.key || '').toLowerCase();
+    const code = input.code || '';
 
     if (ctrl && !shift && key === 't') {
       event.preventDefault();
       createTab(ctx, { url: 'nextgx://newtab', active: true });
+    } else if (ctrl && shift && key === 't') {
+      event.preventDefault();
+      reopenLastClosedTab(ctx);
     } else if (ctrl && !shift && key === 'n') {
       event.preventDefault();
       createBrowserWindow({ incognito: false });
@@ -339,6 +647,15 @@ function attachKeyboardShortcuts(ctx, webContents) {
       event.preventDefault();
       const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
       if (tab?.view) tab.view.webContents.print();
+    } else if (ctrl && !alt && (key === '0' || (!shift && code === 'Digit0'))) {
+      event.preventDefault();
+      applyZoomAction(ctx, 'reset', { notifyToast: true });
+    } else if (ctrl && !alt && (key === '=' || key === '+' || code === 'Equal' || code === 'NumpadAdd')) {
+      event.preventDefault();
+      applyZoomAction(ctx, 'in', { notifyToast: true });
+    } else if (ctrl && !alt && (key === '-' || (!shift && code === 'Minus') || code === 'NumpadSubtract')) {
+      event.preventDefault();
+      applyZoomAction(ctx, 'out', { notifyToast: true });
     } else if (input.key === 'F11') {
       event.preventDefault();
       ctx.win?.setFullScreen(!ctx.win.isFullScreen());
@@ -346,6 +663,9 @@ function attachKeyboardShortcuts(ctx, webContents) {
       event.preventDefault();
       toggleActiveTabDevTools(ctx);
     } else if (input.key === 'Escape') {
+      if (ctx.popoverOpenKind) {
+        event.preventDefault();
+      }
       closePopover(ctx);
     }
   });
@@ -374,64 +694,6 @@ function setupPermissionsForSession(ses) {
   });
 }
 
-function ensureLeftDockViews(ctx) {
-  if (!ctx.leftDockHeaderView) {
-    ctx.leftDockHeaderView = new WebContentsView({
-      webPreferences: {
-        preload: path.join(__dirname, 'preload.js'),
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: false
-      }
-    });
-    webContentsToWinId.set(ctx.leftDockHeaderView.webContents.id, ctx.win.id);
-    ctx.leftDockHeaderView.webContents.loadFile(LEFT_DOCK_HEADER_FILE);
-    ctx.win.contentView.addChildView(ctx.leftDockHeaderView);
-  }
-
-  if (!ctx.leftWebView) {
-    ctx.leftWebView = new WebContentsView({
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: false,
-        plugins: true,
-        session: ctx.session
-      }
-    });
-    const wc = ctx.leftWebView.webContents;
-    webContentsToWinId.set(wc.id, ctx.win.id);
-    wc.setUserAgent(wc.getUserAgent().replace(/Electron\/[^\s]+\s?/g, ''));
-    adBlocker.attachToSession(wc.session);
-
-    wc.on('DOM-ready', () => adBlocker.injectCosmeticFilters(wc));
-    wc.on('audio-state-changed', (event) => {
-      ctx.leftWebAudioPlaying = Boolean(event.audible);
-      broadcastState(ctx);
-    });
-    wc.setWindowOpenHandler(({ url }) => {
-      if (url && /^https?:\/\//i.test(url)) createTab(ctx, { url, active: true });
-      return { action: 'deny' };
-    });
-
-    ctx.win.contentView.addChildView(ctx.leftWebView);
-  }
-
-  if (!ctx.leftDockResizerView) {
-    ctx.leftDockResizerView = new WebContentsView({
-      webPreferences: {
-        preload: path.join(__dirname, 'preload.js'),
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: false
-      }
-    });
-    webContentsToWinId.set(ctx.leftDockResizerView.webContents.id, ctx.win.id);
-    ctx.leftDockResizerView.webContents.loadFile(LEFT_DOCK_RESIZER_FILE);
-    ctx.win.contentView.addChildView(ctx.leftDockResizerView);
-  }
-}
-
 function ensurePopoverView(ctx) {
   if (ctx.popoverView) return ctx.popoverView;
   ctx.popoverView = new WebContentsView({
@@ -439,41 +701,146 @@ function ensurePopoverView(ctx) {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: true
     }
   });
   webContentsToWinId.set(ctx.popoverView.webContents.id, ctx.win.id);
-  ctx.popoverView.webContents.loadFile(POPOVER_FILE);
+  attachKeyboardShortcuts(ctx, ctx.popoverView.webContents);
+  ctx.popoverView.webContents.loadFile(POPOVER_FILE, {
+    query: getInternalUiQuery(ctx.incognito)
+  });
   ctx.win.contentView.addChildView(ctx.popoverView);
   ctx.popoverView.setBounds({ x: -5000, y: -5000, width: 1, height: 1 });
   return ctx.popoverView;
 }
 
+function restoreFocusToActiveTab(ctx) {
+  if (!ctx || !ctx.win || ctx.win.isDestroyed()) return;
+  const activeTab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
+  if (
+    activeTab &&
+    !activeTab.sleeping &&
+    activeTab.view &&
+    activeTab.view.webContents &&
+    !activeTab.view.webContents.isDestroyed()
+  ) {
+    activeTab.view.webContents.focus();
+    return;
+  }
+  ctx.win.focus();
+  if (ctx.win.webContents && !ctx.win.webContents.isDestroyed()) {
+    ctx.win.webContents.focus();
+  }
+}
+
+function restoreFocusAfterPopover(ctx) {
+  restoreFocusToActiveTab(ctx);
+}
+
 function closePopover(ctx) {
   if (!ctx) return;
+  const wasOpen = Boolean(ctx.popoverOpenKind);
+  const popoverFocused = Boolean(
+    ctx.popoverView &&
+    ctx.popoverView.webContents &&
+    !ctx.popoverView.webContents.isDestroyed() &&
+    ctx.popoverView.webContents.isFocused()
+  );
   ctx.popoverOpenKind = null;
+  ctx.popoverPayload = null;
   if (ctx.popoverView) {
     ctx.popoverView.setBounds({ x: -5000, y: -5000, width: 1, height: 1 });
   }
-  ctx.win?.webContents.send('popover:data', { closed: true });
+  if (ctx.win && !ctx.win.isDestroyed() && ctx.win.webContents && !ctx.win.webContents.isDestroyed()) {
+    ctx.win.webContents.send('popover:data', { closed: true });
+  }
+  if (wasOpen || popoverFocused) {
+    restoreFocusAfterPopover(ctx);
+  }
+}
+
+function resizePopover(ctx, { kind, height } = {}) {
+  if (!ctx || !ctx.win || ctx.win.isDestroyed()) return false;
+  if (!ctx.popoverView || !ctx.popoverOpenKind) return false;
+  if (kind && ctx.popoverOpenKind !== kind) return false;
+  if (typeof height !== 'number' || !Number.isFinite(height) || height <= 0) return false;
+
+  const [cw, ch] = ctx.win.getContentSize();
+  const bounds = ctx.popoverView.getBounds();
+  const maxAllowedH = Math.max(120, Math.min(540, ch - bounds.y - 12));
+  const safeH = Math.max(120, Math.min(Math.ceil(height), maxAllowedH));
+  const safeW = Math.min(bounds.width, cw - 16);
+  const safeX = Math.max(8, Math.min(bounds.x, cw - safeW - 8));
+  if (safeH !== bounds.height || safeW !== bounds.width || safeX !== bounds.x) {
+    ctx.popoverView.setBounds({
+      x: Math.round(safeX),
+      y: Math.round(bounds.y),
+      width: Math.round(safeW),
+      height: Math.round(safeH)
+    });
+  }
+  return true;
 }
 
 function openPopover(ctx, { kind, x, y, width, height, payload }) {
-  if (ctx.popoverOpenKind === kind) {
-    closePopover(ctx);
-    return false;
+  if (ctx.popoverOpenKind === kind && kind !== 'tab-context') {
+    const isDifferentFolder =
+      kind === 'bookmark-folder' &&
+      ctx.popoverPayload?.payload?.folder !== payload?.folder;
+    if (!isDifferentFolder) {
+      closePopover(ctx);
+      return false;
+    }
   }
   const view = ensurePopoverView(ctx);
   ctx.popoverOpenKind = kind;
+  ctx.popoverPayload = { kind, payload: payload || {} };
   const [cw, ch] = ctx.win.getContentSize();
-  const safeW = Math.min(width || 300, cw - 16);
-  const safeH = Math.min(height || 420, ch - TOP_CHROME_HEIGHT - 12);
+  const isTabContext = kind === 'tab-context';
+  const isBookmarkFolder = kind === 'bookmark-folder';
+  const requestedH =
+    kind === 'permissions'
+      ? Math.max(height || 0, 410)
+      : kind === 'shield'
+      ? Math.max(height || 0, 315)
+      : isTabContext
+      ? height || 222
+      : isBookmarkFolder
+      ? height || 260
+      : height || 420;
+  const safeW = Math.min(width || (isTabContext ? 224 : isBookmarkFolder ? 250 : 300), cw - 16);
+  const baseY = isTabContext
+    ? Math.max(4, y || 38)
+    : Math.max(TOP_CHROME_HEIGHT - 2, y || TOP_CHROME_HEIGHT);
+  const safeH = Math.min(
+    requestedH,
+    isTabContext
+      ? ch - 16
+      : Math.max(80, ch - baseY - 12)
+  );
   const safeX = Math.max(8, Math.min(x || 100, cw - safeW - 8));
-  const safeY = Math.max(TOP_CHROME_HEIGHT - 2, y || TOP_CHROME_HEIGHT);
+  const safeY = isTabContext
+    ? Math.max(4, Math.min(baseY, ch - safeH - 8))
+    : isBookmarkFolder
+    ? Math.max(TOP_CHROME_HEIGHT - 2, Math.min(baseY, ch - safeH - 8))
+    : baseY;
 
   ctx.win.contentView.addChildView(view);
   view.setBounds({ x: Math.round(safeX), y: Math.round(safeY), width: Math.round(safeW), height: Math.round(safeH) });
-  view.webContents.send('popover:data', { kind, payload: payload || {} });
+  if ((isTabContext || isBookmarkFolder) && view.webContents && !view.webContents.isDestroyed()) {
+    view.webContents.focus();
+  }
+  const sendData = () => {
+    const latest = ctx.popoverPayload;
+    if (latest && ctx.popoverOpenKind === latest.kind && view.webContents && !view.webContents.isDestroyed()) {
+      view.webContents.send('popover:data', latest);
+    }
+  };
+  if (view.webContents.isLoading()) {
+    view.webContents.once('did-finish-load', sendData);
+  } else {
+    sendData();
+  }
   return true;
 }
 
@@ -485,7 +852,7 @@ function buildWebContentsViewForTab(ctx, tab) {
       preload: path.join(__dirname, 'tab-preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
       session: ctx.session,
       plugins: true
     }
@@ -498,11 +865,6 @@ function buildWebContentsViewForTab(ctx, tab) {
 
   wc.on('focus', () => {
     if (ctx.popoverOpenKind) closePopover(ctx);
-    if (ctx.layoutState.leftWebVisible && !ctx.layoutState.leftWebPinned) {
-      ctx.layoutState.leftWebVisible = false;
-      updateActiveViewBounds(ctx);
-      ctx.win?.webContents.send('leftdock:update', { visible: false, kind: null });
-    }
   });
 
   wc.setWindowOpenHandler(({ url }) => {
@@ -529,43 +891,141 @@ function buildWebContentsViewForTab(ctx, tab) {
     broadcastState(ctx);
   });
 
+  const shouldSkipHistory = (url) =>
+    !url ||
+    isNewTabUrl(url) ||
+    isWebUiUrl(url) ||
+    isErrorPageUrl(url) ||
+    url.startsWith('chrome-error://');
+
   wc.on('page-title-updated', (_e, title) => {
-    tab.title = isNewTabUrl(tab.url) ? (ctx.incognito ? 'Private Start' : 'Start Page') : title;
-    if (!ctx.incognito && !isNewTabUrl(tab.url) && !isWebUiUrl(tab.url)) {
-      storage.addHistory({ title: tab.title, url: tab.url, favicon: tab.favicon });
+    if (isNewTabUrl(tab.url)) {
+      tab.title = ctx.incognito ? 'Private Start' : 'Start Page';
+    } else if (isErrorPageUrl(tab.url)) {
+      const failedUrl = getFailedUrlFromErrorPage(tab.url);
+      tab.title = title || formatFailedTabTitle(failedUrl);
+    } else {
+      tab.title = title;
+    }
+    if (!ctx.incognito && !shouldSkipHistory(tab.url)) {
+      storage.addHistory({ title: tab.title, url: tab.url, favicon: tab.favicon, isVisit: false });
+      broadcastHistoryUpdate();
     }
     broadcastState(ctx);
+    scheduleSessionSave(ctx);
   });
 
   wc.on('page-favicon-updated', (_e, favicons) => {
-    if (Array.isArray(favicons) && favicons.length > 0) {
+    if (Array.isArray(favicons) && favicons.length > 0 && !isErrorPageUrl(tab.url)) {
       tab.favicon = favicons[0];
-      if (!ctx.incognito && !isNewTabUrl(tab.url) && !isWebUiUrl(tab.url)) {
-        storage.addHistory({ title: tab.title, url: tab.url, favicon: tab.favicon });
+      if (!ctx.incognito && !shouldSkipHistory(tab.url)) {
+        storage.addHistory({ title: tab.title, url: tab.url, favicon: tab.favicon, isVisit: false });
+        broadcastHistoryUpdate();
+        const updatedBookmarks = storage.updateBookmarkFavicon(tab.url, tab.favicon);
+        if (updatedBookmarks) {
+          broadcastBookmarksUpdate(updatedBookmarks);
+        }
       }
       broadcastState(ctx);
     }
   });
 
   const handleUrlChange = (url) => {
+    if (url && url.startsWith('chrome-error://')) return;
     tab.url = url;
     if (isNewTabUrl(url)) {
       tab.title = ctx.incognito ? 'Private Start' : 'Start Page';
       tab.favicon = '';
+      tab.failedUrl = '';
+    } else if (isErrorPageUrl(url)) {
+      const failedUrl = getFailedUrlFromErrorPage(url);
+      tab.failedUrl = failedUrl;
+      tab.title = formatFailedTabTitle(failedUrl);
+      tab.favicon = '';
+      try {
+        if (wc.navigationHistory) {
+          while (wc.navigationHistory.getActiveIndex() > 0) {
+            const prevIdx = wc.navigationHistory.getActiveIndex() - 1;
+            const prevEntry = wc.navigationHistory.getEntryAtIndex(prevIdx);
+            if (
+              prevEntry &&
+              (prevEntry.url === failedUrl ||
+                (isErrorPageUrl(prevEntry.url) && getFailedUrlFromErrorPage(prevEntry.url) === failedUrl))
+            ) {
+              if (!wc.navigationHistory.removeEntryAtIndex(prevIdx)) break;
+            } else {
+              break;
+            }
+          }
+        }
+      } catch (_) {}
+    } else {
+      tab.failedUrl = '';
+      try {
+        if (wc.navigationHistory) {
+          const activeIdx = wc.navigationHistory.getActiveIndex();
+          if (activeIdx > 0) {
+            const prevEntry = wc.navigationHistory.getEntryAtIndex(activeIdx - 1);
+            if (
+              prevEntry &&
+              isErrorPageUrl(prevEntry.url) &&
+              getFailedUrlFromErrorPage(prevEntry.url) === url
+            ) {
+              wc.navigationHistory.removeEntryAtIndex(activeIdx - 1);
+            }
+          }
+        }
+      } catch (_) {}
     }
     tab.canGoBack = wc.navigationHistory ? wc.navigationHistory.canGoBack() : wc.canGoBack();
     tab.canGoForward = wc.navigationHistory ? wc.navigationHistory.canGoForward() : wc.canGoForward();
-    if (!ctx.incognito && !isNewTabUrl(url) && !isWebUiUrl(url)) {
+    if (!ctx.incognito && !shouldSkipHistory(url)) {
       storage.addHistory({ title: tab.title, url, favicon: tab.favicon });
+      broadcastHistoryUpdate();
     }
     broadcastState(ctx);
+    scheduleSessionSave(ctx);
   };
 
-  wc.on('did-navigate', (_e, url) => handleUrlChange(url));
+  wc.on('did-fail-load', (_e, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (!isMainFrame) return;
+    if (!errorCode || errorCode === -3 || errorDescription === 'ERR_ABORTED') return;
+
+    const failedUrl = validatedURL || tab.url || '';
+    if (
+      !failedUrl ||
+      failedUrl.startsWith('chrome-error://') ||
+      isErrorPageUrl(failedUrl) ||
+      isNewTabUrl(failedUrl) ||
+      isWebUiUrl(failedUrl) ||
+      Boolean(resolveInternalUiFile(failedUrl))
+    ) {
+      return;
+    }
+
+    const errorPageUrl = buildErrorPageUrl({ failedUrl, errorCode, errorDescription }, ctx);
+    const canLoadErrorPage = !wc.isDestroyed();
+    tab.isLoading = canLoadErrorPage;
+    tab.failedUrl = failedUrl;
+    tab.title = formatFailedTabTitle(failedUrl);
+    tab.favicon = '';
+    tab.url = errorPageUrl;
+    broadcastState(ctx);
+    scheduleSessionSave(ctx);
+
+    if (canLoadErrorPage) {
+      wc.loadURL(errorPageUrl).catch(() => {});
+    }
+  });
+
+  wc.on('did-navigate', (_e, url) => {
+    adBlocker.clearCosmeticKeys(wc);
+    handleUrlChange(url);
+  });
   wc.on('did-navigate-in-page', (_e, url, isMainFrame) => {
     if (isMainFrame) handleUrlChange(url);
   });
-  wc.on('DOM-ready', () => adBlocker.injectCosmeticFilters(wc));
+  wc.on('dom-ready', () => adBlocker.injectCosmeticFilters(wc));
   wc.on('audio-state-changed', (event) => {
     tab.audible = Boolean(event.audible);
     broadcastState(ctx);
@@ -575,17 +1035,295 @@ function buildWebContentsViewForTab(ctx, tab) {
   return view;
 }
 
-function createTab(ctx, { url = 'nextgx://newtab', pinned = false, active = true } = {}) {
-  const id = 'tab-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
-  let resolvedUrl = resolveNavigateInput(url);
-  if (ctx.incognito && isNewTabUrl(resolvedUrl) && !resolvedUrl.includes('incognito=1')) {
-    resolvedUrl += '?incognito=1';
+function syncTabsMapOrder(ctx) {
+  if (!ctx || !ctx.tabs || !Array.isArray(ctx.tabOrder)) return;
+  const orderedEntries = [];
+  const seen = new Set();
+  for (const id of ctx.tabOrder) {
+    const t = ctx.tabs.get(id);
+    if (t && !seen.has(id)) {
+      orderedEntries.push([id, t]);
+      seen.add(id);
+    }
   }
+  for (const [id, t] of ctx.tabs.entries()) {
+    if (!seen.has(id)) {
+      orderedEntries.push([id, t]);
+      seen.add(id);
+    }
+  }
+  ctx.tabs.clear();
+  for (const [id, t] of orderedEntries) {
+    ctx.tabs.set(id, t);
+  }
+}
+
+function getTabSourceUrl(tab) {
+  if (!tab) return 'nextgx://newtab';
+  if (isErrorPageUrl(tab.url)) {
+    return tab.failedUrl || getFailedUrlFromErrorPage(tab.url) || 'nextgx://newtab';
+  }
+  if (isNewTabUrl(tab.url) || isWebUiUrl(tab.url)) {
+    return formatDisplayUrl(tab.url);
+  }
+  const liveUrl =
+    tab.view && tab.view.webContents && !tab.view.webContents.isDestroyed()
+      ? tab.view.webContents.getURL()
+      : '';
+  if (liveUrl && !liveUrl.startsWith('chrome-error://') && !isErrorPageUrl(liveUrl)) {
+    if (isNewTabUrl(liveUrl) || isWebUiUrl(liveUrl)) {
+      return formatDisplayUrl(liveUrl);
+    }
+    return liveUrl;
+  }
+  return tab.url || 'nextgx://newtab';
+}
+
+function recordClosedTabIfEligible(ctx, tab) {
+  if (!ctx || !tab) return;
+  const displayUrl = formatDisplayUrl(tab.url);
+  if (
+    !ctx.incognito &&
+    !tab.incognito &&
+    tab.url &&
+    !isNewTabUrl(tab.url) &&
+    !isWebUiUrl(tab.url) &&
+    !isErrorPageUrl(tab.url) &&
+    !displayUrl.startsWith('nextgx://') &&
+    !displayUrl.startsWith('gx://') &&
+    !displayUrl.startsWith('chrome://') &&
+    !tab.url.startsWith('file://') &&
+    !tab.url.startsWith('about:')
+  ) {
+    storage.addClosedTab({
+      title: tab.title && tab.title !== 'Loading...' ? tab.title : tab.url,
+      url: tab.url,
+      favicon: tab.favicon || ''
+    });
+    broadcastHistoryUpdate();
+  }
+}
+
+const RESTORABLE_INTERNAL_PAGES = new Set([
+  'newtab',
+  'history',
+  'downloads',
+  'bookmarks',
+  'passwords',
+  'extensions',
+  'settings'
+]);
+
+function normalizeInternalPageUrl(rawUrl) {
+  if (typeof rawUrl !== 'string') return '';
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return '';
+  const m = trimmed.match(/^(?:nextgx|gx|chrome):\/\/([a-z0-9-]+)\/?$/i);
+  if (!m) return '';
+  let page = m[1].toLowerCase();
+  if (page === 'password-manager') page = 'passwords';
+  if (RESTORABLE_INTERNAL_PAGES.has(page)) {
+    return `nextgx://${page}`;
+  }
+  return '';
+}
+
+function getPersistableTabUrl(tab) {
+  if (!tab || tab.incognito) return '';
+  const rawUrl = typeof tab.url === 'string' ? tab.url.trim() : '';
+  if (!rawUrl || rawUrl === 'about:blank') return 'nextgx://newtab';
+
+  if (isNewTabUrl(rawUrl)) return 'nextgx://newtab';
+
+  if (isWebUiUrl(rawUrl)) {
+    return normalizeInternalPageUrl(formatDisplayUrl(rawUrl)) || 'nextgx://newtab';
+  }
+
+  if (isErrorPageUrl(rawUrl)) {
+    const failed = (tab.failedUrl || getFailedUrlFromErrorPage(rawUrl) || '').trim();
+    if (failed && /^https?:\/\//i.test(failed)) {
+      try {
+        const u = new URL(failed);
+        if ((u.protocol === 'http:' || u.protocol === 'https:') && u.hostname) {
+          return u.toString();
+        }
+      } catch (_) {}
+    }
+    return 'nextgx://newtab';
+  }
+
+  const internal = normalizeInternalPageUrl(rawUrl);
+  if (internal) return internal;
+
+  if (rawUrl.startsWith('chrome-error://') || resolveInternalUiFile(rawUrl)) {
+    return 'nextgx://newtab';
+  }
+
+  try {
+    const u = new URL(rawUrl);
+    if (u.protocol === 'http:' || u.protocol === 'https:') {
+      return u.hostname ? rawUrl : 'nextgx://newtab';
+    }
+    if (u.protocol === 'file:') {
+      return rawUrl;
+    }
+  } catch (_) {}
+
+  return 'nextgx://newtab';
+}
+
+function getPersistableTabTitle(tab, persistUrl) {
+  if (persistUrl === 'nextgx://newtab') return 'Start Page';
+  const rawTitle = typeof tab?.title === 'string' ? tab.title.trim() : '';
+  if (rawTitle && rawTitle !== 'Loading...') {
+    return rawTitle.slice(0, 300);
+  }
+  return persistUrl;
+}
+
+function sanitizeRestorableTabUrl(rawUrl) {
+  if (typeof rawUrl !== 'string') return '';
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return '';
+
+  const internal = normalizeInternalPageUrl(trimmed);
+  if (internal) return internal;
+
+  if (trimmed.startsWith('chrome-error://')) return '';
+
+  if (resolveInternalUiFile(trimmed)) {
+    if (isNewTabUrl(trimmed)) return 'nextgx://newtab';
+    if (isWebUiUrl(trimmed)) {
+      return normalizeInternalPageUrl(formatDisplayUrl(trimmed)) || 'nextgx://newtab';
+    }
+    if (isErrorPageUrl(trimmed)) {
+      const failed = getFailedUrlFromErrorPage(trimmed);
+      if (failed && /^https?:\/\//i.test(failed)) {
+        try {
+          const u = new URL(failed);
+          if ((u.protocol === 'http:' || u.protocol === 'https:') && u.hostname) {
+            return u.toString();
+          }
+        } catch (_) {}
+      }
+      return 'nextgx://newtab';
+    }
+    return 'nextgx://newtab';
+  }
+
+  try {
+    const u = new URL(trimmed);
+    if ((u.protocol === 'http:' || u.protocol === 'https:') && u.hostname) {
+      return trimmed;
+    }
+    if (u.protocol === 'file:') {
+      return trimmed;
+    }
+  } catch (_) {}
+
+  return '';
+}
+
+function serializeWindowForSession(ctx) {
+  if (!ctx || ctx.incognito) return null;
+  if (!ctx.sessionReady && ctx.pendingRestoreTabs) {
+    return ctx.pendingRestoreTabs;
+  }
+  if (!ctx.sessionReady) return null;
+
+  const tabs = [];
+  let activeTabIndex = 0;
+
+  for (const id of ctx.tabOrder) {
+    const tab = ctx.tabs.get(id);
+    if (!tab || tab.incognito) continue;
+    const url = getPersistableTabUrl(tab);
+    if (!url) continue;
+    if (id === ctx.activeTabId) {
+      activeTabIndex = tabs.length;
+    }
+    tabs.push({
+      url,
+      title: getPersistableTabTitle(tab, url),
+      pinned: Boolean(tab.pinned)
+    });
+  }
+
+  if (tabs.length === 0) return null;
+  return {
+    activeTabIndex: Math.max(0, Math.min(tabs.length - 1, activeTabIndex)),
+    tabs
+  };
+}
+
+function collectNormalWindowSessions({ excludeWinId = null } = {}) {
+  const windows = [];
+  for (const [id, ctx] of windowContexts.entries()) {
+    if (excludeWinId !== null && id === excludeWinId) continue;
+    if (!ctx || ctx.incognito) continue;
+    if (!ctx.win || ctx.win.isDestroyed()) continue;
+    const winData = serializeWindowForSession(ctx);
+    if (winData && Array.isArray(winData.tabs) && winData.tabs.length > 0) {
+      windows.push(winData);
+    }
+  }
+  return windows;
+}
+
+function cancelScheduledSessionSave() {
+  if (sessionSaveTimer) {
+    clearTimeout(sessionSaveTimer);
+    sessionSaveTimer = null;
+  }
+}
+
+function saveSessionNow({ excludeWinId = null, allowEmpty = false } = {}) {
+  if (!storage) return;
+  cancelScheduledSessionSave();
+  const windows = collectNormalWindowSessions({ excludeWinId });
+  if (windows.length === 0 && !allowEmpty) {
+    return;
+  }
+  storage.saveSession({ windows });
+}
+
+function scheduleSessionSave(ctx) {
+  if (!storage || isAppQuitting) return;
+  if (ctx && (ctx.incognito || !ctx.sessionReady || ctx.restoringSession)) return;
+  cancelScheduledSessionSave();
+  sessionSaveTimer = setTimeout(() => {
+    sessionSaveTimer = null;
+    if (!isAppQuitting) {
+      saveSessionNow();
+    }
+  }, 300);
+}
+
+function getConfiguredHomepageUrl() {
+  const raw = storage?.getSettings?.().homepageUrl;
+  const check = storage?.validateHomepageUrl ? storage.validateHomepageUrl(raw) : { ok: false, url: '' };
+  return check.ok && check.url ? check.url : 'nextgx://newtab';
+}
+
+function createTabInternal(
+  ctx,
+  { url = 'nextgx://newtab', pinned = false, active = true, insertIndex, title, deferActivate = false } = {}
+) {
+  const id = 'tab-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+  const resolvedUrl = appendInternalUrlParams(resolveNavigateInput(url), ctx);
+  const initialTitle = isNewTabUrl(resolvedUrl)
+    ? ctx.incognito
+      ? 'Private Start'
+      : 'Start Page'
+    : typeof title === 'string' && title.trim()
+    ? title.trim().slice(0, 300)
+    : 'Loading...';
 
   const tab = {
     id,
-    title: isNewTabUrl(resolvedUrl) ? (ctx.incognito ? 'Private Start' : 'Start Page') : 'Loading...',
+    title: initialTitle,
     url: resolvedUrl,
+    failedUrl: '',
     favicon: '',
     isLoading: true,
     canGoBack: false,
@@ -603,22 +1341,39 @@ function createTab(ctx, { url = 'nextgx://newtab', pinned = false, active = true
   tab.view = buildWebContentsViewForTab(ctx, tab);
   ctx.tabs.set(id, tab);
 
+  const lastPinnedIdx = ctx.tabOrder.findLastIndex((tid) => ctx.tabs.get(tid)?.pinned);
   if (tab.pinned) {
-    const lastPinnedIdx = ctx.tabOrder.findLastIndex((tid) => ctx.tabs.get(tid)?.pinned);
-    ctx.tabOrder.splice(lastPinnedIdx + 1, 0, id);
+    const targetIdx =
+      typeof insertIndex === 'number' && Number.isFinite(insertIndex)
+        ? Math.max(0, Math.min(lastPinnedIdx + 1, Math.round(insertIndex)))
+        : lastPinnedIdx + 1;
+    ctx.tabOrder.splice(targetIdx, 0, id);
+  } else if (typeof insertIndex === 'number' && Number.isFinite(insertIndex)) {
+    const minUnpinnedIdx = lastPinnedIdx + 1;
+    const targetIdx = Math.max(minUnpinnedIdx, Math.min(ctx.tabOrder.length, Math.round(insertIndex)));
+    ctx.tabOrder.splice(targetIdx, 0, id);
   } else {
     ctx.tabOrder.push(id);
   }
+  syncTabsMapOrder(ctx);
 
   tab.view.webContents.loadURL(resolvedUrl).catch(() => {});
 
-  if (active || !ctx.activeTabId) {
+  if (deferActivate) {
+    tab.view.setBounds({ x: -5000, y: -5000, width: 1, height: 1 });
+  } else if (active || !ctx.activeTabId) {
     switchTab(ctx, id);
   } else {
     updateActiveViewBounds(ctx);
     broadcastState(ctx);
+    scheduleSessionSave(ctx);
   }
 
+  return tab;
+}
+
+function createTab(ctx, { url = 'nextgx://newtab', pinned = false, active = true, insertIndex } = {}) {
+  createTabInternal(ctx, { url, pinned, active, insertIndex });
   return serializeTabs(ctx);
 }
 
@@ -627,7 +1382,9 @@ function wakeTab(ctx, tab) {
   tab.sleeping = false;
   tab.lastActiveAt = Date.now();
   tab.view = buildWebContentsViewForTab(ctx, tab);
-  tab.view.webContents.loadURL(tab.url || NEW_TAB_FILE_URL).catch(() => {});
+  const targetUrl = appendInternalUrlParams(tab.url || NEW_TAB_FILE_URL, ctx);
+  tab.url = targetUrl;
+  tab.view.webContents.loadURL(targetUrl).catch(() => {});
 }
 
 function switchTab(ctx, tabId) {
@@ -640,7 +1397,9 @@ function switchTab(ctx, tabId) {
   tab.lastActiveAt = Date.now();
   if (tab.sleeping) wakeTab(ctx, tab);
   updateActiveViewBounds(ctx);
+  notifyActiveWebUiTabShown(ctx);
   broadcastState(ctx);
+  scheduleSessionSave(ctx);
   return serializeTabs(ctx);
 }
 
@@ -677,6 +1436,16 @@ function closeTab(ctx, tabId) {
   const tab = ctx.tabs.get(tabId);
   if (!tab) return serializeTabs(ctx);
 
+  const wasActive = ctx.activeTabId === tabId;
+  const wasFocused = Boolean(
+    tab.view &&
+      tab.view.webContents &&
+      !tab.view.webContents.isDestroyed() &&
+      tab.view.webContents.isFocused()
+  );
+
+  recordClosedTabIfEligible(ctx, tab);
+
   const idx = ctx.tabOrder.indexOf(tabId);
   if (idx !== -1) ctx.tabOrder.splice(idx, 1);
 
@@ -695,10 +1464,14 @@ function closeTab(ctx, tabId) {
       ctx.win?.close();
       return serializeTabs(ctx);
     }
-    return createTab(ctx, { url: 'nextgx://newtab', active: true });
+    const nextState = createTab(ctx, { url: 'nextgx://newtab', active: true });
+    if (wasActive || wasFocused) {
+      restoreFocusToActiveTab(ctx);
+    }
+    return nextState;
   }
 
-  if (ctx.activeTabId === tabId) {
+  if (wasActive) {
     const nextIdx = Math.min(idx, ctx.tabOrder.length - 1);
     ctx.activeTabId = ctx.tabOrder[nextIdx];
     const nextTab = ctx.tabs.get(ctx.activeTabId);
@@ -706,8 +1479,133 @@ function closeTab(ctx, tabId) {
   }
 
   updateActiveViewBounds(ctx);
+  if (wasActive || wasFocused) {
+    restoreFocusToActiveTab(ctx);
+  }
+  if (wasActive) {
+    notifyActiveWebUiTabShown(ctx);
+  }
   broadcastState(ctx);
+  scheduleSessionSave(ctx);
   return serializeTabs(ctx);
+}
+
+function closeOtherTabs(ctx, keepTabId) {
+  const keepTab = ctx.tabs.get(keepTabId);
+  if (!keepTab) return serializeTabs(ctx);
+
+  const activeChanged = ctx.activeTabId !== keepTabId;
+  const toClose = ctx.tabOrder.filter((id) => id !== keepTabId);
+  for (const id of toClose) {
+    const tab = ctx.tabs.get(id);
+    if (!tab) continue;
+    recordClosedTabIfEligible(ctx, tab);
+    if (tab.view) {
+      try {
+        ctx.win.contentView.removeChildView(tab.view);
+        tab.view.webContents.close();
+      } catch (_) {}
+      tab.view = null;
+    }
+    ctx.tabs.delete(id);
+  }
+
+  ctx.tabOrder = [keepTabId];
+  syncTabsMapOrder(ctx);
+
+  if (activeChanged) {
+    ctx.activeTabId = keepTabId;
+    keepTab.lastActiveAt = Date.now();
+  }
+  if (keepTab.sleeping) {
+    wakeTab(ctx, keepTab);
+  }
+
+  updateActiveViewBounds(ctx);
+  if (activeChanged) {
+    restoreFocusToActiveTab(ctx);
+    notifyActiveWebUiTabShown(ctx);
+  }
+  broadcastState(ctx);
+  scheduleSessionSave(ctx);
+  return serializeTabs(ctx);
+}
+
+function duplicateTab(ctx, tabId) {
+  const orig = ctx.tabs.get(tabId);
+  if (!orig) return serializeTabs(ctx);
+  const origIdx = ctx.tabOrder.indexOf(tabId);
+  const dupUrl = getTabSourceUrl(orig);
+  return createTab(ctx, {
+    url: dupUrl,
+    pinned: false,
+    active: true,
+    insertIndex: origIdx >= 0 ? origIdx + 1 : undefined
+  });
+}
+
+function reorderTab(ctx, opts = {}) {
+  if (!ctx || !opts) return serializeTabs(ctx);
+  const tabId = opts.tabId || opts.fromId;
+  const targetTabId = opts.targetTabId || opts.toId || null;
+  const position = opts.position === 'after' ? 'after' : 'before';
+  const toIndex = opts.toIndex;
+
+  const tab = tabId ? ctx.tabs.get(tabId) : null;
+  if (!tab) return serializeTabs(ctx);
+
+  const pinnedIds = ctx.tabOrder.filter((id) => ctx.tabs.get(id)?.pinned);
+  const normalIds = ctx.tabOrder.filter((id) => !ctx.tabs.get(id)?.pinned);
+  const group = tab.pinned ? pinnedIds : normalIds;
+
+  const fromGroupIdx = group.indexOf(tabId);
+  if (fromGroupIdx === -1) return serializeTabs(ctx);
+
+  if (targetTabId && targetTabId !== tabId && ctx.tabs.has(targetTabId)) {
+    const targetTab = ctx.tabs.get(targetTabId);
+    group.splice(fromGroupIdx, 1);
+    if (Boolean(targetTab.pinned) === Boolean(tab.pinned)) {
+      const targetGroupIdx = group.indexOf(targetTabId);
+      if (targetGroupIdx !== -1) {
+        const insertIdx = position === 'after' ? targetGroupIdx + 1 : targetGroupIdx;
+        group.splice(insertIdx, 0, tabId);
+      } else {
+        group.push(tabId);
+      }
+    } else if (tab.pinned) {
+      // Pinned tab dropped onto unpinned area stays pinned at end of pinned section
+      group.push(tabId);
+    } else {
+      // Unpinned tab dropped onto pinned area stays unpinned right after pinned section
+      group.unshift(tabId);
+    }
+  } else if (typeof toIndex === 'number' && Number.isFinite(toIndex)) {
+    group.splice(fromGroupIdx, 1);
+    const groupTarget = tab.pinned
+      ? Math.max(0, Math.min(group.length, Math.round(toIndex)))
+      : Math.max(0, Math.min(group.length, Math.round(toIndex) - pinnedIds.length));
+    group.splice(groupTarget, 0, tabId);
+  } else {
+    return serializeTabs(ctx);
+  }
+
+  ctx.tabOrder = [...pinnedIds, ...normalIds];
+  syncTabsMapOrder(ctx);
+  broadcastState(ctx);
+  scheduleSessionSave(ctx);
+  return serializeTabs(ctx);
+}
+
+function reopenLastClosedTab(ctx) {
+  if (!ctx || !storage) return null;
+  const closed = storage.getClosedTabs();
+  const latest = Array.isArray(closed) ? closed.find((t) => t && t.url) : null;
+  if (!latest) return null;
+  if (latest.id) {
+    storage.removeClosedTab(latest.id);
+    broadcastHistoryUpdate();
+  }
+  return createTab(ctx, { url: latest.url, active: true });
 }
 
 function togglePinTab(ctx, tabId) {
@@ -717,27 +1615,65 @@ function togglePinTab(ctx, tabId) {
   const pinnedIds = ctx.tabOrder.filter((id) => ctx.tabs.get(id)?.pinned);
   const normalIds = ctx.tabOrder.filter((id) => !ctx.tabs.get(id)?.pinned);
   ctx.tabOrder = [...pinnedIds, ...normalIds];
+  syncTabsMapOrder(ctx);
   broadcastState(ctx);
+  scheduleSessionSave(ctx);
   return serializeTabs(ctx);
+}
+
+function findTabByWebContents(ctx, wc) {
+  if (!ctx || !wc) return null;
+  for (const tab of ctx.tabs.values()) {
+    if (tab && tab.view && tab.view.webContents && tab.view.webContents.id === wc.id) {
+      return tab;
+    }
+  }
+  return ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
 }
 
 function navigateActiveTab(ctx, input) {
   const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
   if (!tab) return;
   if (tab.sleeping) wakeTab(ctx, tab);
-  let resolvedUrl = resolveNavigateInput(input);
-  if (ctx.incognito && isNewTabUrl(resolvedUrl) && !resolvedUrl.includes('incognito=1')) {
-    resolvedUrl += '?incognito=1';
-  }
+  const resolvedUrl = appendInternalUrlParams(resolveNavigateInput(input), ctx);
+  tab.failedUrl = '';
   tab.url = resolvedUrl;
   tab.view.webContents.loadURL(resolvedUrl).catch(() => {});
   broadcastState(ctx);
+  scheduleSessionSave(ctx);
+}
+
+function reloadTab(ctx, tabId) {
+  const tab = tabId ? ctx.tabs.get(tabId) : null;
+  if (!tab) return;
+  if (tab.sleeping) {
+    wakeTab(ctx, tab);
+    updateActiveViewBounds(ctx);
+    broadcastState(ctx);
+    return;
+  }
+  if (!tab.view || tab.view.webContents.isDestroyed()) return;
+  const wc = tab.view.webContents;
+  const currentUrl = wc.getURL();
+  if (isErrorPageUrl(tab.url) || isErrorPageUrl(currentUrl)) {
+    const retryUrl =
+      getFailedUrlFromErrorPage(currentUrl) ||
+      tab.failedUrl ||
+      getFailedUrlFromErrorPage(tab.url);
+    if (retryUrl && !isErrorPageUrl(retryUrl) && !resolveInternalUiFile(retryUrl)) {
+      tab.url = retryUrl;
+      tab.isLoading = true;
+      broadcastState(ctx);
+      scheduleSessionSave(ctx);
+      wc.loadURL(retryUrl).catch(() => {});
+      return;
+    }
+  }
+  wc.reload();
 }
 
 function reloadActiveTab(ctx) {
-  const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
-  if (!tab || !tab.view) return;
-  tab.view.webContents.reload();
+  reloadTab(ctx, ctx.activeTabId);
 }
 
 function toggleActiveTabDevTools(ctx) {
@@ -762,7 +1698,8 @@ function detectFileCategory(filename) {
 function setupDownloadListener(ses) {
   ses.on('will-download', (_event, item) => {
     const id = 'dl-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
-    const fileName = item.getFilename();
+    const rawName = path.basename(item.getFilename() || 'download');
+    const fileName = !rawName || rawName === '.' || rawName === '..' ? 'download' : rawName;
     const downloadsDir = app.getPath('downloads');
     const savePath = path.join(downloadsDir, fileName);
     item.setSavePath(savePath);
@@ -788,9 +1725,7 @@ function setupDownloadListener(ses) {
     };
 
     storage.upsertDownload(record);
-    for (const ctx of windowContexts.values()) {
-      ctx.win?.webContents.send('downloads:update', storage.getDownloads());
-    }
+    broadcastDownloadsUpdate(storage.getDownloads());
 
     item.on('updated', (_e, state) => {
       const now = Date.now();
@@ -815,9 +1750,7 @@ function setupDownloadListener(ses) {
           : 0;
 
       storage.upsertDownload(record);
-      for (const ctx of windowContexts.values()) {
-        ctx.win?.webContents.send('downloads:update', storage.getDownloads());
-      }
+      broadcastDownloadsUpdate(storage.getDownloads());
     });
 
     item.once('done', (_e, state) => {
@@ -830,9 +1763,7 @@ function setupDownloadListener(ses) {
       record.state = state;
       record.completedAt = Date.now();
       storage.upsertDownload(record);
-      for (const ctx of windowContexts.values()) {
-        ctx.win?.webContents.send('downloads:update', storage.getDownloads());
-      }
+      broadcastDownloadsUpdate(storage.getDownloads());
     });
   });
 }
@@ -862,15 +1793,12 @@ async function saveScreenshotPng(ctx, pngBuffer, label = 'Full') {
     completedAt: Date.now()
   });
 
-  for (const c of windowContexts.values()) {
-    c.win?.webContents.send('downloads:update', storage.getDownloads());
-  }
+  broadcastDownloadsUpdate(storage.getDownloads());
   ctx.win?.webContents.send('ui:toast', `Screenshot saved & copied: ${filename}`);
   return { ok: true, savePath, filename };
 }
 
-function createBrowserWindow({ incognito = false } = {}) {
-  const s = storage.getSettings();
+function createBrowserWindow({ incognito = false, restoreTabs = null } = {}) {
   const winSession = incognito
     ? session.fromPartition('incognito-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6), { cache: false })
     : session.defaultSession;
@@ -893,9 +1821,14 @@ function createBrowserWindow({ incognito = false } = {}) {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: true
     }
   });
+
+  const initialTop =
+    storage && storage.getSettings().showBookmarksBar === false
+      ? TOP_CHROME_HEIGHT
+      : TOP_CHROME_HEIGHT + BOOKMARKS_BAR_HEIGHT;
 
   const ctx = {
     win,
@@ -904,23 +1837,18 @@ function createBrowserWindow({ incognito = false } = {}) {
     tabs: new Map(),
     tabOrder: [],
     activeTabId: null,
+    sessionReady: false,
+    restoringSession: false,
+    pendingRestoreTabs: !incognito && restoreTabs ? restoreTabs : null,
     layoutState: {
       left: SIDEBAR_ICON_WIDTH,
-      top: TOP_CHROME_HEIGHT,
+      top: initialTop,
       right: 0,
-      bottom: 0,
-      leftWebVisible: false,
-      leftWebPinned: Boolean(s.leftPanelPinned),
-      leftWebWidth: s.leftPanelWidth || 420
+      bottom: 0
     },
-    leftDockHeaderView: null,
-    leftWebView: null,
-    leftDockResizerView: null,
-    currentLeftWebUrl: '',
-    currentLeftWebKind: null,
-    leftWebAudioPlaying: false,
     popoverView: null,
     popoverOpenKind: null,
+    popoverPayload: null,
     screenshotView: null,
     pendingScreenshotDataUrl: ''
   };
@@ -931,18 +1859,104 @@ function createBrowserWindow({ incognito = false } = {}) {
   attachKeyboardShortcuts(ctx, win.webContents);
 
   win.loadFile(path.join(__dirname, 'ui', 'index.html'), {
-    query: incognito ? { incognito: '1' } : {}
+    query: getInternalUiQuery(incognito)
   });
 
-  win.on('resize', () => updateActiveViewBounds(ctx));
+  win.on('resize', () => {
+    if (ctx.popoverOpenKind === 'tab-context' || ctx.popoverOpenKind === 'bookmark-folder') closePopover(ctx);
+    updateActiveViewBounds(ctx);
+  });
+  win.on('blur', () => {
+    if (ctx.popoverOpenKind === 'tab-context' || ctx.popoverOpenKind === 'bookmark-folder') closePopover(ctx);
+  });
   win.on('maximize', () => updateActiveViewBounds(ctx));
   win.on('unmaximize', () => updateActiveViewBounds(ctx));
+  win.on('close', () => {
+    if (isAppQuitting || ctx.incognito || !storage) return;
+    const otherNormal = collectNormalWindowSessions({ excludeWinId: win.id });
+    if (otherNormal.length === 0) {
+      if (ctx.sessionReady) {
+        const current = serializeWindowForSession(ctx);
+        cancelScheduledSessionSave();
+        if (current && current.tabs.length > 0) {
+          storage.saveSession({ windows: [current] });
+        } else {
+          storage.saveSession({ windows: [] });
+        }
+      } else if (ctx.pendingRestoreTabs) {
+        cancelScheduledSessionSave();
+        storage.saveSession({ windows: [ctx.pendingRestoreTabs] });
+      }
+    } else {
+      cancelScheduledSessionSave();
+      storage.saveSession({ windows: otherNormal });
+    }
+  });
   win.on('closed', () => {
     windowContexts.delete(win.id);
   });
 
   win.webContents.once('did-finish-load', () => {
-    createTab(ctx, { url: 'nextgx://newtab', active: true });
+    if (win.isDestroyed()) return;
+    const restoreSpec =
+      !ctx.incognito &&
+      ctx.pendingRestoreTabs &&
+      Array.isArray(ctx.pendingRestoreTabs.tabs) &&
+      ctx.pendingRestoreTabs.tabs.length > 0
+        ? ctx.pendingRestoreTabs
+        : null;
+
+    if (restoreSpec) {
+      ctx.restoringSession = true;
+      const tabsToRestore = restoreSpec.tabs;
+      const rawActiveIdx = Number.isInteger(restoreSpec.activeTabIndex) ? restoreSpec.activeTabIndex : 0;
+      const targetActiveIdx = Math.max(0, Math.min(tabsToRestore.length - 1, rawActiveIdx));
+      let activeTabIdToSelect = null;
+
+      try {
+        for (let i = 0; i < tabsToRestore.length; i++) {
+          const item = tabsToRestore[i];
+          const safeUrl = sanitizeRestorableTabUrl(item?.url);
+          if (!safeUrl) continue;
+          const created = createTabInternal(ctx, {
+            url: safeUrl,
+            title: typeof item.title === 'string' ? item.title : undefined,
+            pinned: Boolean(item.pinned),
+            active: false,
+            deferActivate: true
+          });
+          if (i === targetActiveIdx && created) {
+            activeTabIdToSelect = created.id;
+          }
+        }
+      } catch (err) {
+        console.error('[Session] Error restoring tabs:', err);
+      }
+
+      if (ctx.tabOrder.length === 0) {
+        createTabInternal(ctx, { url: 'nextgx://newtab', active: true });
+      } else {
+        const finalActiveId =
+          activeTabIdToSelect && ctx.tabs.has(activeTabIdToSelect)
+            ? activeTabIdToSelect
+            : ctx.tabOrder[0];
+        switchTab(ctx, finalActiveId);
+      }
+
+      ctx.pendingRestoreTabs = null;
+      ctx.restoringSession = false;
+      ctx.sessionReady = true;
+      scheduleSessionSave(ctx);
+    } else {
+      createTabInternal(ctx, { url: 'nextgx://newtab', active: true });
+      ctx.pendingRestoreTabs = null;
+      ctx.restoringSession = false;
+      ctx.sessionReady = true;
+      if (!ctx.incognito) {
+        scheduleSessionSave(ctx);
+      }
+    }
+
     win.webContents.send('adblock:update', adBlocker.getStats());
     win.webContents.send('system:stats-update', collectSystemStats());
   });
@@ -951,7 +1965,69 @@ function createBrowserWindow({ incognito = false } = {}) {
 }
 
 function registerIpcHandlers() {
-  ipcMain.handle('tabs:create', (e, opts) => {
+  const handleInternal = (channel, handler) => {
+    ipcMain.handle(channel, (e, ...args) => {
+      if (!isInternalUiSender(e)) {
+        throw new Error(`Forbidden IPC channel: ${channel}`);
+      }
+      return handler(e, ...args);
+    });
+  };
+
+  ipcMain.on('internal:get-page-kind', (event) => {
+    if (!event || !event.senderFrame || !event.sender || event.senderFrame !== event.sender.mainFrame) {
+      event.returnValue = null;
+      return;
+    }
+    const uiFile = resolveInternalUiFile(event.senderFrame.url);
+    if (!uiFile) {
+      event.returnValue = null;
+      return;
+    }
+    const normalized = normalizePathForCompare(uiFile);
+    if (normalized === normalizePathForCompare(NEW_TAB_FILE)) {
+      event.returnValue = 'newtab';
+    } else if (normalized === normalizePathForCompare(WEBUI_FILE)) {
+      event.returnValue = 'webui';
+    } else if (normalized === normalizePathForCompare(ERROR_PAGE_FILE)) {
+      event.returnValue = 'error';
+    } else {
+      event.returnValue = null;
+    }
+  });
+
+  ipcMain.handle('autofill:get', (e) => {
+    const frameUrl = e?.senderFrame?.url;
+    if (!frameUrl) return [];
+    try {
+      const u = new URL(frameUrl);
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return [];
+      const pageHost = u.hostname;
+      if (!pageHost) return [];
+      return (storage.getPasswords() || []).filter((p) => p && p.site && isAutofillHostMatch(pageHost, p.site));
+    } catch (_) {
+      return [];
+    }
+  });
+
+  ipcMain.handle('autofill:save', (e, { username, password } = {}) => {
+    const frameUrl = e?.senderFrame?.url;
+    if (!frameUrl || typeof username !== 'string' || typeof password !== 'string') return false;
+    const cleanUser = username.trim();
+    if (!cleanUser || !password) return false;
+    try {
+      const u = new URL(frameUrl);
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+      const site = normalizeAutofillHost(u.hostname);
+      if (!site) return false;
+      storage.addPassword({ site, username: cleanUser, password });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  });
+
+  handleInternal('tabs:create', (e, opts) => {
     const ctx = getCtxFromSender(e.sender);
     if (opts?.incognito) {
       createBrowserWindow({ incognito: true });
@@ -959,48 +2035,76 @@ function registerIpcHandlers() {
     }
     return createTab(ctx, opts || {});
   });
-  ipcMain.handle('tabs:switch', (e, tabId) => switchTab(getCtxFromSender(e.sender), tabId));
-  ipcMain.handle('tabs:close', (e, tabId) => closeTab(getCtxFromSender(e.sender), tabId));
-  ipcMain.handle('tabs:pin', (e, tabId) => togglePinTab(getCtxFromSender(e.sender), tabId));
-  ipcMain.handle('tabs:sleep', (e, tabId) => sleepTab(getCtxFromSender(e.sender), tabId));
-  ipcMain.handle('tabs:sleep-background', (e) => sleepBackgroundTabs(getCtxFromSender(e.sender)));
-  ipcMain.handle('tabs:get-state', (e) => serializeTabs(getCtxFromSender(e.sender)));
-  ipcMain.handle('tabs:navigate', (e, input) => {
+  handleInternal('tabs:switch', (e, tabId) => switchTab(getCtxFromSender(e.sender), tabId));
+  handleInternal('tabs:close', (e, tabId) => closeTab(getCtxFromSender(e.sender), tabId));
+  handleInternal('tabs:close-others', (e, tabId) => closeOtherTabs(getCtxFromSender(e.sender), tabId));
+  handleInternal('tabs:duplicate', (e, tabId) => duplicateTab(getCtxFromSender(e.sender), tabId));
+  handleInternal('tabs:reorder', (e, arg1, arg2) => {
+    const ctx = getCtxFromSender(e.sender);
+    const opts = typeof arg1 === 'object' && arg1 !== null ? arg1 : { tabId: arg1, toIndex: arg2 };
+    return reorderTab(ctx, opts);
+  });
+  handleInternal('tabs:pin', (e, tabId) => togglePinTab(getCtxFromSender(e.sender), tabId));
+  handleInternal('tabs:sleep', (e, tabId) => sleepTab(getCtxFromSender(e.sender), tabId));
+  handleInternal('tabs:sleep-background', (e) => sleepBackgroundTabs(getCtxFromSender(e.sender)));
+  handleInternal('tabs:get-state', (e) => serializeTabs(getCtxFromSender(e.sender)));
+  handleInternal('tabs:navigate', (e, input) => {
     const ctx = getCtxFromSender(e.sender);
     navigateActiveTab(ctx, input);
     return serializeTabs(ctx);
   });
-  ipcMain.handle('tabs:back', (e) => {
+  handleInternal('tabs:back', (e) => {
     const ctx = getCtxFromSender(e.sender);
     const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
     if (tab?.view?.webContents.canGoBack()) tab.view.webContents.goBack();
     return serializeTabs(ctx);
   });
-  ipcMain.handle('tabs:forward', (e) => {
+  handleInternal('tabs:forward', (e) => {
     const ctx = getCtxFromSender(e.sender);
     const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
     if (tab?.view?.webContents.canGoForward()) tab.view.webContents.goForward();
     return serializeTabs(ctx);
   });
-  ipcMain.handle('tabs:reload', (e) => {
+  handleInternal('tabs:reload', (e, tabId) => {
     const ctx = getCtxFromSender(e.sender);
-    reloadActiveTab(ctx);
+    if (tabId) reloadTab(ctx, tabId);
+    else reloadActiveTab(ctx);
     return serializeTabs(ctx);
   });
-  ipcMain.handle('tabs:stop', (e) => {
+  handleInternal('tabs:retry-failed', (e, requestedUrl) => {
+    const ctx = getCtxFromSender(e.sender);
+    const tab = findTabByWebContents(ctx, e.sender);
+    if (!tab || !tab.view || tab.view.webContents.isDestroyed()) return serializeTabs(ctx);
+    const currentUrl = tab.view.webContents.getURL();
+    const candidate =
+      getFailedUrlFromErrorPage(currentUrl) ||
+      tab.failedUrl ||
+      getFailedUrlFromErrorPage(tab.url) ||
+      (typeof requestedUrl === 'string' ? requestedUrl.trim() : '');
+    if (!candidate || isErrorPageUrl(candidate) || resolveInternalUiFile(candidate)) {
+      return serializeTabs(ctx);
+    }
+    tab.url = candidate;
+    tab.isLoading = true;
+    broadcastState(ctx);
+    scheduleSessionSave(ctx);
+    tab.view.webContents.loadURL(candidate).catch(() => {});
+    return serializeTabs(ctx);
+  });
+  handleInternal('tabs:stop', (e) => {
     const ctx = getCtxFromSender(e.sender);
     const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
     if (tab?.view) tab.view.webContents.stop();
     return serializeTabs(ctx);
   });
-  ipcMain.handle('tabs:home', (e) => {
+  handleInternal('tabs:home', (e) => {
     const ctx = getCtxFromSender(e.sender);
-    navigateActiveTab(ctx, 'nextgx://newtab');
+    navigateActiveTab(ctx, getConfiguredHomepageUrl());
     return serializeTabs(ctx);
   });
-  ipcMain.handle('tabs:devtools', (e) => toggleActiveTabDevTools(getCtxFromSender(e.sender)));
+  handleInternal('tabs:devtools', (e) => toggleActiveTabDevTools(getCtxFromSender(e.sender)));
 
-  ipcMain.handle('tabs:zoom', (e, action) => {
+  handleInternal('tabs:zoom', (e, action) => {
     const ctx = getCtxFromSender(e.sender);
     const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
     if (!tab || !tab.view) return 100;
@@ -1014,13 +2118,13 @@ function registerIpcHandlers() {
     return Math.round(factor * 100);
   });
 
-  ipcMain.handle('tabs:print', (e) => {
+  handleInternal('tabs:print', (e) => {
     const ctx = getCtxFromSender(e.sender);
     const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
     if (tab?.view) tab.view.webContents.print();
   });
 
-  ipcMain.handle('tabs:screenshot', async (e) => {
+  handleInternal('tabs:screenshot', async (e) => {
     const ctx = getCtxFromSender(e.sender);
     closePopover(ctx);
     const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
@@ -1033,7 +2137,7 @@ function registerIpcHandlers() {
     }
   });
 
-  ipcMain.handle('tabs:screenshot-area-start', async (e) => {
+  handleInternal('tabs:screenshot-area-start', async (e) => {
     const ctx = getCtxFromSender(e.sender);
     closePopover(ctx);
     const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
@@ -1047,11 +2151,13 @@ function registerIpcHandlers() {
           preload: path.join(__dirname, 'preload.js'),
           contextIsolation: true,
           nodeIntegration: false,
-          sandbox: false
+          sandbox: true
         }
       });
       webContentsToWinId.set(ctx.screenshotView.webContents.id, ctx.win.id);
-      ctx.screenshotView.webContents.loadFile(SCREENSHOT_FILE);
+      ctx.screenshotView.webContents.loadFile(SCREENSHOT_FILE, {
+        query: getInternalUiQuery(ctx.incognito)
+      });
       ctx.win.contentView.addChildView(ctx.screenshotView);
     }
 
@@ -1063,7 +2169,7 @@ function registerIpcHandlers() {
     return { ok: true };
   });
 
-  ipcMain.handle('tabs:screenshot-area-finish', async (e, rect) => {
+  handleInternal('tabs:screenshot-area-finish', async (e, rect) => {
     const ctx = getCtxFromSender(e.sender);
     const dataUrl = ctx.pendingScreenshotDataUrl;
     ctx.pendingScreenshotDataUrl = '';
@@ -1081,14 +2187,14 @@ function registerIpcHandlers() {
     return await saveScreenshotPng(ctx, cropped.toPNG(), 'Area');
   });
 
-  ipcMain.handle('tabs:screenshot-area-cancel', (e) => {
+  handleInternal('tabs:screenshot-area-cancel', (e) => {
     const ctx = getCtxFromSender(e.sender);
     ctx.pendingScreenshotDataUrl = '';
     updateActiveViewBounds(ctx);
     return { ok: true };
   });
 
-  ipcMain.handle('tabs:reader-mode', async (e) => {
+  handleInternal('tabs:reader-mode', async (e) => {
     const ctx = getCtxFromSender(e.sender);
     const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
     if (!tab || !tab.view) return false;
@@ -1114,21 +2220,21 @@ function registerIpcHandlers() {
     return tab.readerMode;
   });
 
-  ipcMain.handle('tabs:find', (e, { text, forward = true } = {}) => {
+  handleInternal('tabs:find', (e, { text, forward = true } = {}) => {
     const ctx = getCtxFromSender(e.sender);
     const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
     if (!tab || !tab.view || !text) return;
     tab.view.webContents.findInPage(text, { forward, findNext: true });
   });
 
-  ipcMain.handle('tabs:stop-find', (e) => {
+  handleInternal('tabs:stop-find', (e) => {
     const ctx = getCtxFromSender(e.sender);
     const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
     if (tab?.view) tab.view.webContents.stopFindInPage('clearSelection');
   });
 
-  ipcMain.handle('window:new', () => createBrowserWindow({ incognito: false }));
-  ipcMain.handle('window:fullscreen', (e) => {
+  handleInternal('window:new', () => createBrowserWindow({ incognito: false }));
+  handleInternal('window:fullscreen', (e) => {
     const ctx = getCtxFromSender(e.sender);
     if (!ctx?.win) return false;
     const next = !ctx.win.isFullScreen();
@@ -1136,17 +2242,25 @@ function registerIpcHandlers() {
     return next;
   });
 
-  ipcMain.handle('cleaner:run', async (_e, { cache = true, cookies = false, history = false } = {}) => {
+  handleInternal('cleaner:run', async (_e, { cache = true, cookies = false, history = false } = {}) => {
     if (cache) await session.defaultSession.clearCache();
-    if (cookies) await session.defaultSession.clearStorageData({ storages: ['cookies', 'localstorage'] });
-    if (history) storage.clearHistory('all');
+    if (cookies) {
+      await session.defaultSession.clearStorageData({ storages: ['cookies', 'localstorage'] });
+      await session.defaultSession.cookies.flushStore().catch(() => {});
+      broadcastCookiesUpdate({ immediate: true });
+    }
+    if (history) {
+      storage.clearHistory('all');
+      broadcastHistoryUpdate();
+    }
     return { cleanedAt: Date.now() };
   });
 
-  ipcMain.handle('popover:open', (e, opts) => openPopover(getCtxFromSender(e.sender), opts || {}));
-  ipcMain.handle('popover:close', (e) => closePopover(getCtxFromSender(e.sender)));
+  handleInternal('popover:open', (e, opts) => openPopover(getCtxFromSender(e.sender), opts || {}));
+  handleInternal('popover:resize', (e, opts) => resizePopover(getCtxFromSender(e.sender), opts || {}));
+  handleInternal('popover:close', (e) => closePopover(getCtxFromSender(e.sender)));
 
-  ipcMain.handle('menu:action', (e, action) => {
+  handleInternal('menu:action', (e, action) => {
     const ctx = getCtxFromSender(e.sender);
     closePopover(ctx);
     if (action === 'new-tab') createTab(ctx, { url: 'nextgx://newtab', active: true });
@@ -1159,8 +2273,13 @@ function registerIpcHandlers() {
     else if (action === 'bookmark-current') {
       const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
       if (tab) {
-        storage.toggleBookmark({ title: tab.title, url: formatDisplayUrl(tab.url) });
-        broadcastState(ctx);
+        const result = storage.toggleBookmark({
+          title: tab.title,
+          url: formatDisplayUrl(tab.url),
+          favicon: tab.favicon || ''
+        });
+        broadcastBookmarksUpdate(result.bookmarks);
+        for (const c of windowContexts.values()) broadcastState(c);
       }
     } else if (action === 'extensions') createTab(ctx, { url: 'nextgx://extensions', active: true });
     else if (action === 'print') {
@@ -1172,114 +2291,210 @@ function registerIpcHandlers() {
     else if (action === 'exit') ctx.win?.close();
   });
 
-  ipcMain.handle('permissions:get', (_e, origin) => storage.getSitePermissions(origin));
-  ipcMain.handle('permissions:set', (_e, { origin, key, value }) => storage.setSitePermission(origin, key, value));
+  handleInternal('permissions:get', (_e, origin) => storage.getSitePermissions(origin));
+  handleInternal('permissions:set', (_e, { origin, key, value }) => storage.setSitePermission(origin, key, value));
 
-  ipcMain.handle('layout:set-offsets', (e, partial) => {
+  handleInternal('layout:set-offsets', (e, partial) => {
     const ctx = getCtxFromSender(e.sender);
     ctx.layoutState = { ...ctx.layoutState, ...(partial || {}) };
     updateActiveViewBounds(ctx);
     return ctx.layoutState;
   });
 
-  // Left Overlay Dock
-  ipcMain.handle('sidebar:set-web-panel', (e, { visible, kind, url, width } = {}) => {
-    const ctx = getCtxFromSender(e.sender);
-    if (typeof width === 'number') {
-      ctx.layoutState.leftWebWidth = Math.max(280, Math.min(880, width));
-    }
-    ctx.layoutState.leftWebVisible = Boolean(visible);
-    if (kind) ctx.currentLeftWebKind = kind;
-
-    if (ctx.layoutState.leftWebVisible) {
-      ensureLeftDockViews(ctx);
-      const targetUrl = url || ctx.currentLeftWebUrl;
-      if (targetUrl && targetUrl !== ctx.currentLeftWebUrl) {
-        ctx.currentLeftWebUrl = targetUrl;
-        ctx.leftWebView.webContents.loadURL(targetUrl).catch(() => {});
-      }
-      const dockInfo = {
-        visible: true,
-        kind: ctx.currentLeftWebKind,
-        url: ctx.currentLeftWebUrl,
-        pinned: ctx.layoutState.leftWebPinned
-      };
-      ctx.leftDockHeaderView?.webContents.send('leftdock:update', dockInfo);
-      ctx.win?.webContents.send('leftdock:update', dockInfo);
-    } else {
-      ctx.win?.webContents.send('leftdock:update', { visible: false, kind: null, url: ctx.currentLeftWebUrl });
-    }
-    updateActiveViewBounds(ctx);
-    return {
-      visible: ctx.layoutState.leftWebVisible,
-      kind: ctx.currentLeftWebKind,
-      url: ctx.currentLeftWebUrl,
-      pinned: ctx.layoutState.leftWebPinned,
-      width: ctx.layoutState.leftWebWidth
-    };
-  });
-
-  ipcMain.handle('sidebar:reload-web-panel', (e) => {
-    const ctx = getCtxFromSender(e.sender);
-    if (ctx?.leftWebView) ctx.leftWebView.webContents.reload();
-  });
-
-  ipcMain.handle('sidebar:toggle-pin', (e) => {
-    const ctx = getCtxFromSender(e.sender);
-    ctx.layoutState.leftWebPinned = !ctx.layoutState.leftWebPinned;
-    storage.updateSettings({ leftPanelPinned: ctx.layoutState.leftWebPinned });
-    const dockInfo = {
-      visible: ctx.layoutState.leftWebVisible,
-      kind: ctx.currentLeftWebKind,
-      url: ctx.currentLeftWebUrl,
-      pinned: ctx.layoutState.leftWebPinned
-    };
-    ctx.leftDockHeaderView?.webContents.send('leftdock:update', dockInfo);
-    ctx.win?.webContents.send('leftdock:update', dockInfo);
-    updateActiveViewBounds(ctx);
-    return ctx.layoutState.leftWebPinned;
-  });
-
-  ipcMain.handle('sidebar:resize', (e, width) => {
-    const ctx = getCtxFromSender(e.sender);
-    ctx.layoutState.leftWebWidth = Math.max(280, Math.min(880, Number(width || 420)));
-    storage.updateSettings({ leftPanelWidth: ctx.layoutState.leftWebWidth });
-    updateActiveViewBounds(ctx);
-    return ctx.layoutState.leftWebWidth;
-  });
-
   // Bookmarks, History, Downloads, Passwords, Notes, Extensions, Settings
-  ipcMain.handle('bookmarks:get', () => storage.getBookmarks());
-  ipcMain.handle('bookmarks:toggle', (e) => {
+  handleInternal('bookmarks:get', () => storage.getBookmarks());
+  handleInternal('bookmarks:toggle', (e) => {
     const ctx = getCtxFromSender(e.sender);
     const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
     if (!tab) return { added: false, bookmarks: storage.getBookmarks() };
-    const result = storage.toggleBookmark({ title: tab.title, url: formatDisplayUrl(tab.url) });
-    broadcastState(ctx);
+    const result = storage.toggleBookmark({
+      title: tab.title,
+      url: formatDisplayUrl(tab.url),
+      favicon: tab.favicon || ''
+    });
+    broadcastBookmarksUpdate(result.bookmarks);
+    for (const c of windowContexts.values()) broadcastState(c);
     return result;
   });
-  ipcMain.handle('bookmarks:remove', (e, id) => {
+  handleInternal('bookmarks:add', (_e, entry) => {
+    const result = storage.addBookmark(entry || {});
+    if (result.ok) {
+      broadcastBookmarksUpdate(result.bookmarks);
+      for (const ctx of windowContexts.values()) broadcastState(ctx);
+    }
+    return result;
+  });
+  handleInternal('bookmarks:update', (_e, entry) => {
+    const payload = entry && typeof entry === 'object' ? entry : {};
+    const result = storage.updateBookmark(payload.id, payload);
+    if (result.ok) {
+      broadcastBookmarksUpdate(result.bookmarks);
+      for (const ctx of windowContexts.values()) broadcastState(ctx);
+    }
+    return result;
+  });
+  handleInternal('bookmarks:rename-folder', (_e, payload) => {
+    const { oldName, newName } = payload && typeof payload === 'object' ? payload : {};
+    const result = storage.renameBookmarkFolder(oldName, newName);
+    if (result.ok) {
+      broadcastBookmarksUpdate(result.bookmarks);
+    }
+    return result;
+  });
+  handleInternal('bookmarks:remove', (_e, id) => {
     const list = storage.removeBookmark(id);
+    broadcastBookmarksUpdate(list);
     for (const ctx of windowContexts.values()) broadcastState(ctx);
     return list;
   });
 
-  ipcMain.handle('history:get', () => storage.getHistory());
-  ipcMain.handle('history:clear', (_e, range) => storage.clearHistory(range || 'all'));
-  ipcMain.handle('history:remove', (_e, id) => storage.removeHistoryItem(id));
+  handleInternal('history:get', () => storage.getHistory());
+  handleInternal('history:clear', (_e, range) => {
+    const res = storage.clearHistory(range || 'all');
+    broadcastHistoryUpdate();
+    return res;
+  });
+  handleInternal('history:remove', (_e, id) => {
+    const res = storage.removeHistoryItem(id);
+    broadcastHistoryUpdate();
+    return res;
+  });
+  handleInternal('history:closed-get', () => storage.getClosedTabs());
+  handleInternal('history:closed-clear', () => {
+    const res = storage.clearClosedTabs();
+    broadcastHistoryUpdate();
+    return res;
+  });
+  handleInternal('history:closed-remove', (_e, id) => {
+    const res = storage.removeClosedTab(id);
+    broadcastHistoryUpdate();
+    return res;
+  });
 
-  ipcMain.handle('downloads:get', () => storage.getDownloads());
-  ipcMain.handle('downloads:pause', (_e, id) => {
+  // Cookies Management (defaultSession)
+  // Note: Private-window cookies live in ephemeral partitions and vanish when the window closes.
+  const normalizeCookieDomain = (d) =>
+    String(d || '')
+      .trim()
+      .toLowerCase()
+      .replace(/^\.+/, '');
+
+  const buildCookieUrl = (cookie) => {
+    const host = normalizeCookieDomain(cookie?.domain);
+    if (!host) return '';
+    const protocol = cookie.secure ? 'https://' : 'http://';
+    const rawPath = typeof cookie.path === 'string' && cookie.path ? cookie.path : '/';
+    const cookiePath = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
+    return `${protocol}${host}${cookiePath}`;
+  };
+
+  const doesCookieMatchTarget = (cookie, target) => {
+    const cDom = normalizeCookieDomain(cookie?.domain);
+    if (!cDom) return false;
+    const raw =
+      typeof target === 'object' && target !== null
+        ? target.origin || target.url || target.domain || ''
+        : String(target || '');
+    const trimmed = String(raw || '').trim();
+    if (!trimmed) return true;
+
+    if (/^https?:\/\//i.test(trimmed)) {
+      try {
+        const u = new URL(trimmed);
+        const host = normalizeCookieDomain(u.hostname);
+        if (!host) return false;
+        return cDom === host || host.endsWith(`.${cDom}`);
+      } catch (_) {
+        return false;
+      }
+    }
+
+    const targetDom = normalizeCookieDomain(trimmed);
+    if (!targetDom) return false;
+    return cDom === targetDom;
+  };
+
+  handleInternal('cookies:get', async (_e, filter) => {
+    const all = await session.defaultSession.cookies.get({});
+    const filtered = filter ? (all || []).filter((c) => doesCookieMatchTarget(c, filter)) : all || [];
+    return filtered.map((c) => ({
+      domain: c.domain || '',
+      name: c.name || '',
+      path: c.path || '/',
+      expirationDate: c.expirationDate ?? null,
+      session: Boolean(c.session),
+      secure: Boolean(c.secure),
+      httpOnly: Boolean(c.httpOnly)
+    }));
+  });
+
+  handleInternal('cookies:remove', async (_e, arg1, arg2) => {
+    let url = '';
+    let name = '';
+    if (arg1 && typeof arg1 === 'object') {
+      url = typeof arg1.url === 'string' ? arg1.url.trim() : '';
+      name = typeof arg1.name === 'string' ? arg1.name : '';
+    } else {
+      url = typeof arg1 === 'string' ? arg1.trim() : '';
+      name = typeof arg2 === 'string' ? arg2 : '';
+    }
+    if (!url || !name || !/^https?:\/\//i.test(url)) return { ok: false };
+    await session.defaultSession.cookies.remove(url, name);
+    await session.defaultSession.cookies.flushStore().catch(() => {});
+    broadcastCookiesUpdate({ immediate: true });
+    return { ok: true };
+  });
+
+  handleInternal('cookies:clear-site', async (_e, originOrDomain) => {
+    const raw =
+      typeof originOrDomain === 'object' && originOrDomain !== null
+        ? originOrDomain.origin || originOrDomain.url || originOrDomain.domain || ''
+        : String(originOrDomain || '');
+    if (!String(raw || '').trim()) return { ok: false, removed: 0 };
+
+    const all = await session.defaultSession.cookies.get({});
+    const matched = (all || []).filter((c) => doesCookieMatchTarget(c, originOrDomain));
+    let removed = 0;
+    for (const c of matched) {
+      const url = buildCookieUrl(c);
+      if (url && c.name) {
+        await session.defaultSession.cookies.remove(url, c.name).catch(() => {});
+        removed += 1;
+      }
+    }
+    await session.defaultSession.cookies.flushStore().catch(() => {});
+    broadcastCookiesUpdate({ immediate: true });
+    return { ok: true, removed };
+  });
+
+  handleInternal('cookies:clear-all', async () => {
+    const all = await session.defaultSession.cookies.get({});
+    let removed = 0;
+    for (const c of all || []) {
+      const url = buildCookieUrl(c);
+      if (url && c.name) {
+        await session.defaultSession.cookies.remove(url, c.name).catch(() => {});
+        removed += 1;
+      }
+    }
+    await session.defaultSession.clearStorageData({ storages: ['cookies'] }).catch(() => {});
+    await session.defaultSession.cookies.flushStore().catch(() => {});
+    broadcastCookiesUpdate({ immediate: true });
+    return { ok: true, removed };
+  });
+
+  handleInternal('downloads:get', () => storage.getDownloads());
+  handleInternal('downloads:pause', (_e, id) => {
     const item = activeDownloadItems.get(id);
-    if (item && item.canResume() && !item.isPaused()) item.pause();
+    if (item && !item.isPaused()) item.pause();
     return storage.getDownloads();
   });
-  ipcMain.handle('downloads:resume', (_e, id) => {
+  handleInternal('downloads:resume', (_e, id) => {
     const item = activeDownloadItems.get(id);
     if (item && item.isPaused()) item.resume();
     return storage.getDownloads();
   });
-  ipcMain.handle('downloads:cancel', (_e, id) => {
+  handleInternal('downloads:cancel', (_e, id) => {
     const item = activeDownloadItems.get(id);
     if (item) {
       item.cancel();
@@ -1287,101 +2502,169 @@ function registerIpcHandlers() {
     }
     return storage.getDownloads();
   });
-  ipcMain.handle('downloads:remove', (_e, id) => {
+  handleInternal('downloads:remove', (_e, id) => {
     const list = storage.removeDownload(id);
-    for (const ctx of windowContexts.values()) ctx.win?.webContents.send('downloads:update', list);
+    broadcastDownloadsUpdate(list);
     return list;
   });
-  ipcMain.handle('downloads:clear', () => {
+  handleInternal('downloads:clear', () => {
     const list = storage.clearDownloads();
-    for (const ctx of windowContexts.values()) ctx.win?.webContents.send('downloads:update', list);
+    broadcastDownloadsUpdate(list);
     return list;
   });
-  ipcMain.handle('downloads:open', (_e, savePath) => { if (savePath) shell.openPath(savePath); });
-  ipcMain.handle('downloads:show-folder', (_e, savePath) => { if (savePath) shell.showItemInFolder(savePath); });
-
-  ipcMain.handle('passwords:get', () => storage.getPasswords());
-  ipcMain.handle('passwords:add', (_e, entry) => storage.addPassword(entry));
-  ipcMain.handle('passwords:remove', (_e, id) => storage.removePassword(id));
-  ipcMain.handle('notes:get', () => storage.getNotes());
-  ipcMain.handle('notes:save', (_e, text) => storage.saveNote(text));
-
-  ipcMain.handle('extensions:list', () => {
-    try {
-      const extApi = session.defaultSession.extensions || session.defaultSession;
-      const all = extApi.getAllExtensions ? extApi.getAllExtensions() : [];
-      return all.map((e) => ({ id: e.id, name: e.name, version: e.version }));
-    } catch (_) {
-      return [];
-    }
+  handleInternal('downloads:open', (_e, savePath) => {
+    const safePath = resolveSafeDownloadPath(savePath);
+    if (!safePath) return;
+    return shell.openPath(safePath);
+  });
+  handleInternal('downloads:show-folder', (_e, savePath) => {
+    const safePath = resolveSafeDownloadPath(savePath);
+    if (!safePath) return;
+    shell.showItemInFolder(safePath);
   });
 
-  ipcMain.handle('extensions:load-unpacked', async (e) => {
+  handleInternal('passwords:get', () => storage.getPasswords());
+  handleInternal('passwords:add', (_e, entry) => storage.addPassword(entry));
+  handleInternal('passwords:remove', (_e, id) => storage.removePassword(id));
+  handleInternal('notes:get', () => storage.getNotes());
+  handleInternal('notes:save', (_e, text) => storage.saveNote(text));
+
+  handleInternal('extensions:list', () => listManagedExtensions());
+
+  handleInternal('extensions:load-unpacked', async (e) => {
     const ctx = getCtxFromSender(e.sender);
-    const res = await dialog.showOpenDialog(ctx.win, {
+    const parentWin = ctx?.win && !ctx.win.isDestroyed() ? ctx.win : undefined;
+    const dialogOptions = {
       title: 'Select Unpacked Chrome Extension Folder (containing manifest.json)',
       properties: ['openDirectory']
-    });
-    if (res.canceled || !res.filePaths.length) return [];
+    };
+    let res;
     try {
-      const extApi = session.defaultSession.extensions || session.defaultSession;
-      await extApi.loadExtension(res.filePaths[0], { allowFileAccess: true });
+      res = parentWin
+        ? await dialog.showOpenDialog(parentWin, dialogOptions)
+        : await dialog.showOpenDialog(dialogOptions);
     } catch (err) {
-      console.error('Failed to load extension:', err.message);
+      console.error('[Extensions] Failed to open extension folder dialog:', err);
+      return {
+        ok: false,
+        canceled: false,
+        error: `Could not open folder picker: ${err?.message || String(err)}`,
+        extensions: listManagedExtensions()
+      };
     }
-    const extApi = session.defaultSession.extensions || session.defaultSession;
-    const all = extApi.getAllExtensions ? extApi.getAllExtensions() : [];
-    return all.map((e) => ({ id: e.id, name: e.name, version: e.version }));
+    if (!res || res.canceled || !Array.isArray(res.filePaths) || !res.filePaths.length) {
+      return {
+        ok: false,
+        canceled: true,
+        extensions: listManagedExtensions()
+      };
+    }
+    const result = await loadUnpackedExtensionFromPath(res.filePaths[0], { persist: true });
+    return {
+      ...result,
+      incognitoNotice: Boolean(ctx?.incognito)
+    };
   });
 
-  ipcMain.handle('extensions:remove', (_e, id) => {
-    try {
-      const extApi = session.defaultSession.extensions || session.defaultSession;
-      if (extApi.removeExtension) extApi.removeExtension(id);
-    } catch (_) {}
-    return true;
+  handleInternal('extensions:toggle', async (_e, arg1, arg2) => {
+    const id = typeof arg1 === 'object' && arg1 !== null ? arg1.id : arg1;
+    const enabled = typeof arg1 === 'object' && arg1 !== null ? arg1.enabled : arg2;
+    return setExtensionEnabled(id, Boolean(enabled));
   });
 
-  ipcMain.handle('adblock:stats', () => adBlocker.getStats());
-  ipcMain.handle('adblock:toggle', (_e, enabled) => {
+  handleInternal('extensions:reload', async (_e, id) => reloadManagedExtension(id));
+
+  handleInternal('extensions:remove', (_e, id) => removeManagedExtension(id));
+
+  const buildAdblockSiteInfo = (origin) => {
+    const site = storage.getAdblockSite(origin);
+    return {
+      origin: site.origin,
+      enabled: site.enabled,
+      hasOverride: site.hasOverride,
+      allowlisted: Boolean(site.hasOverride && site.enabled === false),
+      globalEnabled: adBlocker.isEnabled(),
+      trackerBlockEnabled: adBlocker.isTrackersEnabled(),
+      blockedCount: adBlocker.getSiteBlockedCount(site.origin)
+    };
+  };
+
+  handleInternal('adblock:stats', () => adBlocker.getStats());
+  handleInternal('adblock:toggle', async (_e, enabled) => {
     storage.updateSettings({ adblockEnabled: Boolean(enabled) });
-    return adBlocker.getStats();
-  });
-  ipcMain.handle('settings:get', () => storage.getSettings());
-  ipcMain.handle('settings:update', (_e, partial) => {
-    const s = storage.updateSettings(partial || {});
+    await syncAdblockCosmeticFilters();
+    const stats = adBlocker.getStats();
+    broadcastAdblockUpdate(stats);
     for (const ctx of windowContexts.values()) {
       broadcastState(ctx);
-      if (partial?.musicServiceUrl) {
-        ctx.win?.webContents.send('leftdock:update', {
-          visible: ctx.layoutState.leftWebVisible,
-          kind: ctx.currentLeftWebKind,
-          url: partial.musicServiceUrl
-        });
-      }
+    }
+    return stats;
+  });
+  handleInternal('adblock:toggle-trackers', (_e, enabled) => {
+    storage.updateSettings({ trackerBlockEnabled: Boolean(enabled) });
+    const stats = adBlocker.getStats();
+    broadcastAdblockUpdate(stats);
+    for (const ctx of windowContexts.values()) {
+      broadcastState(ctx);
+    }
+    return stats;
+  });
+  handleInternal('adblock:get-site', (_e, origin) => buildAdblockSiteInfo(origin));
+  handleInternal('adblock:set-site', async (_e, arg1, arg2) => {
+    const origin =
+      typeof arg1 === 'object' && arg1 !== null ? arg1.origin : arg1;
+    const enabled =
+      typeof arg1 === 'object' && arg1 !== null ? arg1.enabled : arg2;
+    const updated = storage.setAdblockSite(origin, Boolean(enabled));
+    if (updated.origin) {
+      await syncAdblockCosmeticFilters(updated.origin);
+    }
+    const stats = adBlocker.getStats();
+    broadcastAdblockUpdate(stats);
+    for (const ctx of windowContexts.values()) {
+      broadcastState(ctx);
+    }
+    return buildAdblockSiteInfo(updated.origin);
+  });
+  handleInternal('adblock:get-sites', () => storage.getAdblockSites());
+  handleInternal('settings:get', () => storage.getSettings());
+  handleInternal('settings:update', async (_e, partial) => {
+    const prev = storage.getSettings();
+    const s = storage.updateSettings(partial || {});
+    const adblockChanged = Boolean(prev.adblockEnabled) !== Boolean(s.adblockEnabled);
+    const trackerChanged = Boolean(prev.trackerBlockEnabled) !== Boolean(s.trackerBlockEnabled);
+    if (adblockChanged) {
+      await syncAdblockCosmeticFilters();
+    }
+    if (adblockChanged || trackerChanged) {
+      broadcastAdblockUpdate(adBlocker.getStats());
+    }
+    broadcastSettingsUpdate(s);
+    for (const ctx of windowContexts.values()) {
+      broadcastState(ctx);
     }
     return s;
   });
 
-  ipcMain.handle('newtab:get-data', () => ({
+  handleInternal('newtab:get-data', () => ({
     speedDial: storage.getSpeedDial(),
     settings: storage.getSettings(),
     adblock: adBlocker.getStats(),
     system: collectSystemStats(),
     notes: storage.getNotes()
   }));
-  ipcMain.handle('newtab:add-dial', (_e, item) => storage.addSpeedDial(item));
-  ipcMain.handle('newtab:remove-dial', (_e, id) => storage.removeSpeedDial(id));
-  ipcMain.handle('system:stats', () => collectSystemStats());
+  handleInternal('newtab:add-dial', (_e, item) => storage.addSpeedDial(item));
+  handleInternal('newtab:remove-dial', (_e, id) => storage.removeSpeedDial(id));
+  handleInternal('system:stats', () => collectSystemStats());
 
-  ipcMain.handle('window:minimize', (e) => getCtxFromSender(e.sender)?.win?.minimize());
-  ipcMain.handle('window:maximize', (e) => {
+  handleInternal('window:minimize', (e) => getCtxFromSender(e.sender)?.win?.minimize());
+  handleInternal('window:maximize', (e) => {
     const win = getCtxFromSender(e.sender)?.win;
     if (!win) return;
     if (win.isMaximized()) win.unmaximize();
     else win.maximize();
   });
-  ipcMain.handle('window:close', (e) => getCtxFromSender(e.sender)?.win?.close());
+  handleInternal('window:close', (e) => getCtxFromSender(e.sender)?.win?.close());
 }
 
 function collectSystemStats() {
@@ -1444,26 +2727,459 @@ function startBackgroundTimers() {
   }, 20000);
 }
 
-app.whenReady().then(() => {
-  storage = new StorageManager();
-  adBlocker = new AdBlocker(storage, (stats) => {
-    for (const ctx of windowContexts.values()) {
-      if (ctx.win && !ctx.win.isDestroyed()) {
-        ctx.win.webContents.send('adblock:update', stats);
+function getSessionExtensionsApi(ses = session.defaultSession) {
+  return ses.extensions || ses;
+}
+
+function parseExtensionWarningLines(message) {
+  if (!message || typeof message !== 'string') return [];
+  return message
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !/^Warnings loading extension at /i.test(line));
+}
+
+async function captureExtensionLoadWarnings(extPath, asyncFn) {
+  const captured = [];
+  const normTarget = normalizePathForCompare(path.resolve(extPath));
+  const onWarning = (warning) => {
+    if (!warning || warning.name !== 'ExtensionLoadWarning') return;
+    const msg = String(warning.message || '');
+    const normMsg = normalizePathForCompare(msg);
+    if (!normTarget || normMsg.includes(normTarget) || !msg.includes('Warnings loading extension at')) {
+      for (const line of parseExtensionWarningLines(msg)) {
+        if (!captured.includes(line)) captured.push(line);
       }
     }
+  };
+
+  process.on('warning', onWarning);
+  try {
+    const value = await asyncFn();
+    // Node queues process.emitWarning listeners on nextTick; yield once so warnings are captured.
+    await new Promise((resolve) => setImmediate(resolve));
+    return { value, warnings: captured };
+  } finally {
+    process.removeListener('warning', onWarning);
+  }
+}
+
+function validateUnpackedExtensionPath(rawPath) {
+  if (typeof rawPath !== 'string' || !rawPath.trim()) {
+    return { ok: false, error: 'No extension folder path was selected.' };
+  }
+  const resolved = path.resolve(rawPath.trim());
+
+  let stat;
+  try {
+    stat = fs.statSync(resolved);
+  } catch (err) {
+    return {
+      ok: false,
+      error: `Extension folder is not accessible: "${resolved}" (${err.code || err.message}).`
+    };
+  }
+  if (!stat.isDirectory()) {
+    return {
+      ok: false,
+      error: `Selected path is not a folder: "${resolved}". Select an unpacked extension directory containing manifest.json (packed .crx/.zip archives must be extracted first).`
+    };
+  }
+
+  const manifestPath = path.join(resolved, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) {
+    let nestedCandidates = [];
+    try {
+      const entries = fs.readdirSync(resolved, { withFileTypes: true });
+      nestedCandidates = entries
+        .filter((d) => d.isDirectory() && fs.existsSync(path.join(resolved, d.name, 'manifest.json')))
+        .map((d) => d.name);
+    } catch (_) {}
+
+    if (nestedCandidates.length === 1) {
+      return {
+        ok: false,
+        error: `No manifest.json found directly in "${resolved}". Found manifest.json inside subfolder "${nestedCandidates[0]}" — select that subfolder instead.`
+      };
+    }
+    return {
+      ok: false,
+      error: `Manifest file (manifest.json) is missing or unreadable in "${resolved}". Select the unpacked extension folder that directly contains manifest.json.`
+    };
+  }
+
+  let manifest;
+  try {
+    const raw = fs.readFileSync(manifestPath, 'utf-8').replace(/^\uFEFF/, '');
+    manifest = JSON.parse(raw);
+  } catch (err) {
+    return {
+      ok: false,
+      error: `manifest.json in "${resolved}" is not valid JSON: ${err.message}`
+    };
+  }
+
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
+    return {
+      ok: false,
+      error: `manifest.json in "${resolved}" must be a JSON object.`
+    };
+  }
+
+  if (manifest.manifest_version !== 2 && manifest.manifest_version !== 3) {
+    return {
+      ok: false,
+      error: `Unsupported manifest_version (${JSON.stringify(manifest.manifest_version)}). Chromium in Electron ${process.versions.electron} supports Manifest V2 and Manifest V3 extensions.`
+    };
+  }
+
+  return { ok: true, resolvedPath: resolved, manifest };
+}
+
+function listManagedExtensions() {
+  const loadedMap = new Map();
+  try {
+    const extApi = getSessionExtensionsApi(session.defaultSession);
+    const loaded = extApi.getAllExtensions ? extApi.getAllExtensions() : [];
+    for (const ext of loaded) {
+      if (ext && ext.id) loadedMap.set(ext.id, ext);
+    }
+  } catch (err) {
+    console.error('[Extensions] Failed listing loaded extensions:', err);
+  }
+
+  const result = [];
+  const seenIds = new Set();
+  const stored = storage ? storage.getExtensions() : [];
+
+  for (const rec of stored) {
+    if (!rec || !rec.id) continue;
+    const live = loadedMap.get(rec.id) || null;
+    const isLoaded = Boolean(live);
+    seenIds.add(rec.id);
+    result.push({
+      id: rec.id,
+      name: live?.name || rec.name || 'Unnamed Extension',
+      version: live?.version || rec.version || live?.manifest?.version || '',
+      description: live?.manifest?.description || rec.description || '',
+      path: live?.path || rec.path || '',
+      manifestVersion: Number(live?.manifest?.manifest_version ?? rec.manifestVersion) || null,
+      enabled: Boolean(rec.enabled && isLoaded),
+      loaded: isLoaded,
+      warnings: Array.isArray(rec.warnings) ? rec.warnings : [],
+      lastError: isLoaded ? '' : rec.lastError || ''
+    });
+  }
+
+  for (const [id, live] of loadedMap.entries()) {
+    if (seenIds.has(id)) continue;
+    result.push({
+      id: live.id,
+      name: live.name || 'Unnamed Extension',
+      version: live.version || live.manifest?.version || '',
+      description: live.manifest?.description || '',
+      path: live.path || '',
+      manifestVersion: Number(live.manifest?.manifest_version) || null,
+      enabled: true,
+      loaded: true,
+      warnings: [],
+      lastError: ''
+    });
+  }
+
+  return result;
+}
+
+async function loadUnpackedExtensionFromPath(folderPath, { persist = true } = {}) {
+  const validation = validateUnpackedExtensionPath(folderPath);
+  if (!validation.ok) {
+    console.error('[Extensions] Validation failed for', folderPath, '->', validation.error);
+    return {
+      ok: false,
+      canceled: false,
+      error: validation.error,
+      path: folderPath || '',
+      extensions: listManagedExtensions()
+    };
+  }
+
+  const { resolvedPath } = validation;
+  const extApi = getSessionExtensionsApi(session.defaultSession);
+  if (!extApi || typeof extApi.loadExtension !== 'function') {
+    const errMsg = 'Electron session.extensions.loadExtension API is unavailable in this runtime.';
+    console.error('[Extensions]', errMsg);
+    return {
+      ok: false,
+      canceled: false,
+      error: errMsg,
+      path: resolvedPath,
+      extensions: listManagedExtensions()
+    };
+  }
+
+  try {
+    const { value: ext, warnings } = await captureExtensionLoadWarnings(resolvedPath, () =>
+      extApi.loadExtension(resolvedPath, { allowFileAccess: false })
+    );
+
+    const allWarnings = [...warnings];
+    if (ext?.manifest?.theme) {
+      allWarnings.push(
+        "Chrome theme extensions load in Chromium but do not restyle nextGx Browser's custom UI; use nextGx Settings to change themes."
+      );
+    }
+
+    const record = {
+      id: ext.id,
+      path: ext.path || resolvedPath,
+      name: ext.name || path.basename(resolvedPath),
+      version: ext.version || ext.manifest?.version || '',
+      description: ext.manifest?.description || '',
+      manifestVersion: Number(ext.manifest?.manifest_version) || null,
+      enabled: true,
+      warnings: allWarnings,
+      lastError: ''
+    };
+
+    if (persist && storage) {
+      storage.upsertExtension(record);
+    }
+
+    return {
+      ok: true,
+      canceled: false,
+      extension: record,
+      warnings: allWarnings,
+      extensions: listManagedExtensions()
+    };
+  } catch (err) {
+    const rawMsg = err?.message || String(err);
+    console.error('[Extensions] Failed to load unpacked extension at', resolvedPath, err);
+    return {
+      ok: false,
+      canceled: false,
+      error: rawMsg,
+      path: resolvedPath,
+      extensions: listManagedExtensions()
+    };
+  }
+}
+
+async function setExtensionEnabled(id, enabled) {
+  if (!id || typeof id !== 'string') {
+    return {
+      ok: false,
+      error: 'Missing extension ID.',
+      extensions: listManagedExtensions()
+    };
+  }
+
+  const extApi = getSessionExtensionsApi(session.defaultSession);
+  const storedList = storage ? storage.getExtensions() : [];
+  const storedRec = storedList.find((item) => item && item.id === id) || null;
+  const liveExt = extApi?.getExtension ? extApi.getExtension(id) : null;
+
+  if (!storedRec && !liveExt) {
+    return {
+      ok: false,
+      error: `Extension "${id}" was not found.`,
+      extensions: listManagedExtensions()
+    };
+  }
+
+  if (!enabled) {
+    try {
+      if (liveExt && extApi?.removeExtension) {
+        extApi.removeExtension(id);
+      }
+      if (storage) {
+        storage.upsertExtension({
+          id,
+          path: storedRec?.path || liveExt?.path || '',
+          name: storedRec?.name || liveExt?.name || 'Unnamed Extension',
+          version: storedRec?.version || liveExt?.version || '',
+          description: storedRec?.description || liveExt?.manifest?.description || '',
+          manifestVersion:
+            storedRec?.manifestVersion ?? (Number(liveExt?.manifest?.manifest_version) || null),
+          enabled: false,
+          warnings: Array.isArray(storedRec?.warnings) ? storedRec.warnings : [],
+          lastError: ''
+        });
+      }
+      return {
+        ok: true,
+        id,
+        enabled: false,
+        extensions: listManagedExtensions()
+      };
+    } catch (err) {
+      console.error('[Extensions] Failed to disable extension', id, err);
+      return {
+        ok: false,
+        id,
+        enabled: Boolean(extApi?.getExtension?.(id)),
+        error: `Failed to disable extension: ${err?.message || String(err)}`,
+        extensions: listManagedExtensions()
+      };
+    }
+  }
+
+  // Enable: load from stored source path
+  const sourcePath = storedRec?.path || liveExt?.path || '';
+  if (!sourcePath) {
+    const errMsg = 'Cannot re-enable extension because its source folder path is unknown. Remove it and load it again.';
+    console.error('[Extensions]', errMsg, id);
+    return {
+      ok: false,
+      id,
+      enabled: false,
+      error: errMsg,
+      extensions: listManagedExtensions()
+    };
+  }
+
+  const loadRes = await loadUnpackedExtensionFromPath(sourcePath, { persist: true });
+  if (!loadRes.ok) {
+    if (storage && storedRec) {
+      storage.updateExtension(id, { enabled: false, lastError: loadRes.error || 'Failed to enable extension.' });
+    }
+    return {
+      ok: false,
+      id,
+      enabled: false,
+      error: loadRes.error || 'Failed to enable extension.',
+      extensions: listManagedExtensions()
+    };
+  }
+
+  return {
+    ok: true,
+    id: loadRes.extension?.id || id,
+    enabled: true,
+    extension: loadRes.extension,
+    warnings: loadRes.warnings || [],
+    extensions: loadRes.extensions
+  };
+}
+
+async function reloadManagedExtension(id) {
+  if (!id || typeof id !== 'string') {
+    return {
+      ok: false,
+      error: 'Missing extension ID.',
+      extensions: listManagedExtensions()
+    };
+  }
+  const extApi = getSessionExtensionsApi(session.defaultSession);
+  const storedRec = storage ? storage.getExtensions().find((item) => item && item.id === id) : null;
+  const liveExt = extApi?.getExtension ? extApi.getExtension(id) : null;
+  const sourcePath = storedRec?.path || liveExt?.path || '';
+
+  if (!sourcePath) {
+    return {
+      ok: false,
+      error: 'Cannot reload extension: source folder path is unknown.',
+      extensions: listManagedExtensions()
+    };
+  }
+
+  if (liveExt && extApi?.removeExtension) {
+    try {
+      extApi.removeExtension(id);
+    } catch (err) {
+      console.error('[Extensions] Error unloading extension prior to reload:', id, err);
+    }
+  }
+
+  const loadRes = await loadUnpackedExtensionFromPath(sourcePath, { persist: true });
+  if (!loadRes.ok && storage && storedRec) {
+    storage.updateExtension(id, { enabled: false, lastError: loadRes.error || 'Reload failed.' });
+  }
+  return {
+    ...loadRes,
+    extensions: listManagedExtensions()
+  };
+}
+
+function removeManagedExtension(id) {
+  if (!id || typeof id !== 'string') {
+    return { ok: false, error: 'Missing extension ID.', extensions: listManagedExtensions() };
+  }
+  try {
+    const extApi = getSessionExtensionsApi(session.defaultSession);
+    if (extApi?.getExtension?.(id) && extApi.removeExtension) {
+      extApi.removeExtension(id);
+    }
+  } catch (err) {
+    console.error('[Extensions] Error unloading extension during remove:', id, err);
+  }
+  if (storage) {
+    storage.removeExtension(id);
+  }
+  return {
+    ok: true,
+    id,
+    extensions: listManagedExtensions()
+  };
+}
+
+async function restorePersistedExtensions() {
+  if (!storage) return;
+  const stored = storage.getExtensions();
+  for (const rec of stored) {
+    if (!rec || !rec.enabled || !rec.path) continue;
+    const res = await loadUnpackedExtensionFromPath(rec.path, { persist: true });
+    if (!res.ok) {
+      console.error('[Extensions] Failed to restore extension on startup:', rec.name, rec.path, res.error);
+      storage.updateExtension(rec.id, {
+        enabled: false,
+        lastError: res.error || 'Failed to restore extension on startup.'
+      });
+    }
+  }
+}
+
+function openStartupWindows() {
+  const settings = storage.getSettings();
+  if (settings.restoreSession !== false) {
+    const saved = storage.getSession();
+    const savedWindows = Array.isArray(saved?.windows)
+      ? saved.windows.filter((w) => w && Array.isArray(w.tabs) && w.tabs.length > 0)
+      : [];
+    if (savedWindows.length > 0) {
+      for (const winSession of savedWindows) {
+        createBrowserWindow({ incognito: false, restoreTabs: winSession });
+      }
+      return;
+    }
+  }
+  createBrowserWindow({ incognito: false });
+}
+
+app.whenReady().then(async () => {
+  storage = new StorageManager();
+  adBlocker = new AdBlocker(storage, (stats) => {
+    broadcastAdblockUpdate(stats);
   });
 
   adBlocker.attachToSession(session.defaultSession);
   setupPermissionsForSession(session.defaultSession);
   setupDownloadListener(session.defaultSession);
+  session.defaultSession.cookies.on('changed', () => {
+    broadcastCookiesUpdate();
+  });
+  await restorePersistedExtensions();
   registerIpcHandlers();
 
-  createBrowserWindow({ incognito: false });
+  openStartupWindows();
   startBackgroundTimers();
 });
 
 app.on('before-quit', () => {
+  isAppQuitting = true;
+  cancelScheduledSessionSave();
+  cancelScheduledCookiesBroadcast();
+  saveSessionNow({ allowEmpty: false });
   if (storage) storage.flushSettings();
 });
 

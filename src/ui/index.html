@@ -4,11 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>nextGx Browser</title>
+  <link rel="stylesheet" href="theme.css" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <!-- TOP CHROME (82px total: 40px Title/Tab Bar + 42px Unified Navigation Bar) -->
-  <header class="nx-top-chrome">
+  <!-- TOP CHROME (82px base + 30px slim Bookmarks Bar when enabled) -->
+  <header class="nx-top-chrome has-bookmarks-bar" id="topChrome">
     <!-- Row 1: Titlebar + Brand + Workspace Switcher + Pill Tabs -->
     <div class="nx-titlebar">
       <div class="nx-brand" id="btnBrandHome" title="nextGx Browser — Start Page">
@@ -28,7 +29,15 @@
         <button class="ws-pill" data-ws="Gaming">Gaming</button>
       </div>
 
-      <div class="nx-tabs-container" id="tabsContainer"></div>
+      <div class="nx-tabs-strip" id="tabsStrip">
+        <button class="nx-tab-scroll-btn hidden" id="btnTabsScrollLeft" title="Scroll tabs left" aria-label="Scroll tabs left">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <div class="nx-tabs-container" id="tabsContainer"></div>
+        <button class="nx-tab-scroll-btn hidden" id="btnTabsScrollRight" title="Scroll tabs right" aria-label="Scroll tabs right">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+      </div>
 
       <button class="nx-newtab-btn" id="btnNewTab" title="New Tab (Ctrl+T)">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2">
@@ -132,14 +141,23 @@
         </button>
       </div>
     </div>
+
+    <!-- Row 3: Slim Bookmarks Bar (30px, toggleable in Settings, default ON) -->
+    <nav class="nx-bookmarks-bar" id="bookmarksBar" aria-label="Bookmarks Bar">
+      <div class="nx-bookmarks-items" id="bookmarksBarItems"></div>
+      <button type="button" class="bm-manager-btn" id="btnBookmarksManager" title="Bookmarks Manager">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+      </button>
+    </nav>
   </header>
 
   <!-- FIND IN PAGE BAR (Ctrl+F) -->
   <div class="nx-find-bar hidden" id="findBar">
     <input type="text" id="findInput" placeholder="Find on page..." />
-    <button class="mini-icon-btn" id="btnFindPrev" title="Previous">▲</button>
-    <button class="mini-icon-btn" id="btnFindNext" title="Next">▼</button>
-    <button class="mini-icon-btn" id="btnFindClose" title="Done">Done</button>
+    <span class="nx-find-count" id="findMatchCount" aria-live="polite"></span>
+    <button class="mini-icon-btn" id="btnFindPrev" title="Previous (Shift+Enter)">▲</button>
+    <button class="mini-icon-btn" id="btnFindNext" title="Next (Enter)">▼</button>
+    <button class="mini-icon-btn" id="btnFindClose" title="Done (Esc)">Done</button>
   </div>
 
   <!-- MAIN BODY -->
@@ -147,31 +165,26 @@
     <!-- LEFT FLOATING GLASS MEDIA & TOOLS DOCK (50px) -->
     <aside class="nx-sidebar">
       <div class="sidebar-group">
-        <!-- Music Player Dock -->
-        <button class="sidebar-btn" data-web-panel="music" data-sidebar-item="musicPlayer" title="Music Player — YouTube Music, Spotify, Apple Music, SoundCloud">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-          <span class="sb-audio-dot hidden" id="sidebarMusicDot"></span>
-        </button>
+        <!-- Visible by default: YouTube, YouTube Music, Spotify, Twitch, ChatGPT -->
+        <button class="sidebar-btn" data-service-url="https://www.youtube.com" data-sidebar-item="youtube" title="YouTube"></button>
+        <button class="sidebar-btn" data-service-url="https://music.youtube.com" data-sidebar-item="youtubeMusic" title="YouTube Music"></button>
+        <button class="sidebar-btn" data-service-url="https://open.spotify.com" data-sidebar-item="spotify" title="Spotify"></button>
 
-        <!-- AI Assistant Dock -->
-        <button class="sidebar-btn" data-web-panel="ai" data-sidebar-item="chatgpt" title="AI Workspace — ChatGPT, Claude, Gemini">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8L12 2z"/></svg>
-        </button>
+        <!-- Hidden by default music services (toggleable in Customize Dock) -->
+        <button class="sidebar-btn hidden" data-service-url="https://music.apple.com" data-sidebar-item="appleMusic" title="Apple Music"></button>
+        <button class="sidebar-btn hidden" data-service-url="https://soundcloud.com" data-sidebar-item="soundcloud" title="SoundCloud"></button>
+        <button class="sidebar-btn hidden" data-service-url="https://www.deezer.com" data-sidebar-item="deezer" title="Deezer"></button>
+        <button class="sidebar-btn hidden" data-service-url="https://listen.tidal.com" data-sidebar-item="tidal" title="Tidal"></button>
 
-        <!-- Twitch Dock -->
-        <button class="sidebar-btn" data-web-panel="twitch" data-sidebar-item="twitch" title="Twitch Stream Dock">
-          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M21 2H3v16h5v4l4-4h5l4-4V2zm-10 9V7m5 4V7"/></svg>
-        </button>
+        <button class="sidebar-btn" data-service-url="https://www.twitch.tv" data-sidebar-item="twitch" title="Twitch"></button>
+        <button class="sidebar-btn" data-service-url="https://chatgpt.com" data-sidebar-item="chatgpt" title="ChatGPT"></button>
 
-        <!-- Optional WhatsApp -->
-        <button class="sidebar-btn hidden" data-web-panel="whatsapp" data-sidebar-item="whatsapp" title="WhatsApp">
-          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
-        </button>
-
-        <!-- Optional Discord -->
-        <button class="sidebar-btn hidden" data-web-panel="discord" data-sidebar-item="discord" title="Discord">
-          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><path d="M7.5 7.5c3.5-1 5.5-1 9 0M7 16.5c3.5 1 6.5 1 10 0"/><path d="M15.5 17 17 20l4-2c.5-4.5 0-8.5-1.5-11.5-1.5-1-3-1.5-4.5-1.5l-1 2M8.5 17 7 20l-4-2C2.5 13.5 3 9.5 4.5 6.5 6 5.5 7.5 5 9 5l1 2"/></svg>
-        </button>
+        <!-- Hidden by default AI & messaging services (toggleable in Customize Dock) -->
+        <button class="sidebar-btn hidden" data-service-url="https://claude.ai" data-sidebar-item="claude" title="Claude"></button>
+        <button class="sidebar-btn hidden" data-service-url="https://gemini.google.com" data-sidebar-item="gemini" title="Gemini"></button>
+        <button class="sidebar-btn hidden" data-service-url="https://www.perplexity.ai" data-sidebar-item="perplexity" title="Perplexity"></button>
+        <button class="sidebar-btn hidden" data-service-url="https://web.whatsapp.com" data-sidebar-item="whatsapp" title="WhatsApp"></button>
+        <button class="sidebar-btn hidden" data-service-url="https://discord.com/app" data-sidebar-item="discord" title="Discord"></button>
 
         <div class="sidebar-divider"></div>
 
@@ -194,27 +207,10 @@
       </div>
     </aside>
 
-    <!-- LEFT RESIZABLE MEDIA & AI WEB PANEL -->
-    <section class="nx-left-web-shell hidden" id="leftWebShell">
-      <div class="left-web-header">
-        <!-- Custom Segmented Pill Bar for Services (No ugly raw <select>!) -->
-        <div class="nx-service-pills" id="leftWebServicePills"></div>
-
-        <div class="left-web-actions">
-          <button class="panel-hdr-btn" id="btnReloadLeftWeb" title="Reload">↻</button>
-          <button class="panel-hdr-btn" id="btnPinLeftWeb" title="Pin Dock Open">📌</button>
-          <button class="panel-hdr-btn" id="btnCloseLeftWeb" title="Close">✕</button>
-        </div>
-      </div>
-
-      <div class="left-web-body-spacer"></div>
-      <div class="left-web-resizer" id="leftWebResizer" title="Drag to resize width"></div>
-    </section>
-
     <!-- LEFT SYSTEM DRAWER (Memory Optimizer, Privacy Cleaner, Customize Dock) -->
     <section class="nx-left-tool-drawer hidden" id="leftToolDrawer">
       <div class="drawer-header">
-        <h2 id="leftToolTitle">System Optimizer</h2>
+        <h2 class="nx-heading" id="leftToolTitle">System Optimizer</h2>
         <button class="panel-hdr-btn" id="btnCloseLeftTool">✕</button>
       </div>
 
@@ -310,19 +306,55 @@
           <div class="card-title">Customize Dock Items</div>
 
           <div class="setting-item">
-            <span>Music Player (YouTube Music / Spotify)</span>
-            <label class="nx-switch"><input type="checkbox" data-sb-toggle="musicPlayer" checked /><span class="nx-slider"></span></label>
+            <span>YouTube</span>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="youtube" checked /><span class="nx-slider"></span></label>
           </div>
           <div class="setting-item">
-            <span>AI Workspace (ChatGPT / Claude / Gemini)</span>
-            <label class="nx-switch"><input type="checkbox" data-sb-toggle="chatgpt" checked /><span class="nx-slider"></span></label>
+            <span>YouTube Music</span>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="youtubeMusic" checked /><span class="nx-slider"></span></label>
           </div>
           <div class="setting-item">
-            <span>Twitch Stream Dock</span>
+            <span>Spotify</span>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="spotify" checked /><span class="nx-slider"></span></label>
+          </div>
+          <div class="setting-item">
+            <span>Apple Music</span>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="appleMusic" /><span class="nx-slider"></span></label>
+          </div>
+          <div class="setting-item">
+            <span>SoundCloud</span>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="soundcloud" /><span class="nx-slider"></span></label>
+          </div>
+          <div class="setting-item">
+            <span>Deezer</span>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="deezer" /><span class="nx-slider"></span></label>
+          </div>
+          <div class="setting-item">
+            <span>Tidal</span>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="tidal" /><span class="nx-slider"></span></label>
+          </div>
+          <div class="setting-item">
+            <span>Twitch</span>
             <label class="nx-switch"><input type="checkbox" data-sb-toggle="twitch" checked /><span class="nx-slider"></span></label>
           </div>
           <div class="setting-item">
-            <span>WhatsApp Messenger</span>
+            <span>ChatGPT</span>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="chatgpt" checked /><span class="nx-slider"></span></label>
+          </div>
+          <div class="setting-item">
+            <span>Claude</span>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="claude" /><span class="nx-slider"></span></label>
+          </div>
+          <div class="setting-item">
+            <span>Gemini</span>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="gemini" /><span class="nx-slider"></span></label>
+          </div>
+          <div class="setting-item">
+            <span>Perplexity</span>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="perplexity" /><span class="nx-slider"></span></label>
+          </div>
+          <div class="setting-item">
+            <span>WhatsApp</span>
             <label class="nx-switch"><input type="checkbox" data-sb-toggle="whatsapp" /><span class="nx-slider"></span></label>
           </div>
           <div class="setting-item">
@@ -355,7 +387,7 @@
           <span>New Window</span><kbd>Ctrl+N</kbd>
         </button>
         <button class="cmenu-item" data-cmenu="new-incognito">
-          <span>New Private Tab</span><kbd>Ctrl+Shift+N</kbd>
+          <span>New Private Window</span><kbd>Ctrl+Shift+N</kbd>
         </button>
 
         <div class="menu-sep"></div>
@@ -369,8 +401,11 @@
         <button class="cmenu-item" data-cmenu="downloads">
           <span>Downloads</span><kbd>Ctrl+J</kbd>
         </button>
+        <button class="cmenu-item" data-cmenu="bookmark-current">
+          <span>Bookmark this page</span><kbd>Ctrl+D</kbd>
+        </button>
         <button class="cmenu-item" data-cmenu="bookmarks">
-          <span>Bookmarks</span><kbd>Ctrl+D</kbd>
+          <span>Bookmarks Manager</span><span>↗</span>
         </button>
         <button class="cmenu-item" data-cmenu="extensions">
           <span>Extensions</span><span>↗</span>
@@ -381,9 +416,10 @@
         <div class="cmenu-zoom-row">
           <span>Page Zoom</span>
           <div class="zoom-controls">
-            <button class="zoom-btn" id="btnZoomOut">−</button>
+            <button class="zoom-btn" id="btnZoomOut" title="Zoom Out (Ctrl+-)">−</button>
             <span id="zoomValueText">100%</span>
-            <button class="zoom-btn" id="btnZoomIn">+</button>
+            <button class="zoom-btn" id="btnZoomIn" title="Zoom In (Ctrl+=)">+</button>
+            <button class="zoom-btn zoom-btn-reset" id="btnZoomReset" title="Reset Zoom (Ctrl+0)">Reset</button>
             <button class="zoom-btn" id="btnFullscreen" title="Fullscreen (F11)">⛶</button>
           </div>
         </div>
@@ -418,7 +454,7 @@
     <!-- RIGHT-SIDE BENTO CONTROL CENTER & PRO DOWNLOAD MANAGER DRAWER -->
     <aside class="nx-right-drawer hidden" id="rightDrawer">
       <div class="drawer-header">
-        <h2 id="rightDrawerTitle">Control Center</h2>
+        <h2 class="nx-heading" id="rightDrawerTitle">Control Center</h2>
         <button class="panel-hdr-btn" id="btnCloseRightDrawer">✕</button>
       </div>
 
@@ -445,6 +481,17 @@
             </div>
             <label class="nx-switch">
               <input type="checkbox" id="chkAdblockEnabled" checked />
+              <span class="nx-slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-item">
+            <div>
+              <div class="setting-title">Show Bookmarks Bar</div>
+              <div class="card-sub">Slim bookmarks strip beneath the toolbar</div>
+            </div>
+            <label class="nx-switch">
+              <input type="checkbox" id="chkBookmarksBar" checked />
               <span class="nx-slider"></span>
             </label>
           </div>
@@ -487,16 +534,16 @@
           <div class="card-title">nextGx Theme Presets</div>
           <div class="theme-grid">
             <button class="theme-chip" data-theme-choice="gx-violet">
-              <span class="dot" style="background:#9d4edd"></span> nextGx Violet
+              <span class="dot"></span> nextGx Violet
             </button>
             <button class="theme-chip" data-theme-choice="crimson">
-              <span class="dot" style="background:#fa1e4e"></span> Crimson Red
+              <span class="dot"></span> Crimson Red
             </button>
             <button class="theme-chip" data-theme-choice="cyan">
-              <span class="dot" style="background:#00e5ff"></span> Cyber Cyan
+              <span class="dot"></span> Cyber Cyan
             </button>
             <button class="theme-chip" data-theme-choice="emerald">
-              <span class="dot" style="background:#10b981"></span> Matrix Emerald
+              <span class="dot"></span> Matrix Emerald
             </button>
           </div>
         </div>

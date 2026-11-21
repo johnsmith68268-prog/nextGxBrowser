@@ -3,18 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <title>Popover</title>
+  <link rel="stylesheet" href="theme.css" />
   <style>
-    :root {
-      --bg: #1b182a;
-      --bg-card: #242038;
-      --bg-input: #13101d;
-      --accent: #9d4edd;
-      --accent-bright: #c77dff;
-      --text: #f3f1f8;
-      --muted: #9690ab;
-      --border: rgba(255, 255, 255, 0.1);
-    }
-
     * {
       box-sizing: border-box;
       margin: 0;
@@ -27,9 +17,10 @@
       height: 100vh;
       background: var(--bg);
       color: var(--text);
-      font-family: 'Inter', 'Segoe UI', Ubuntu, sans-serif;
+      font-family: var(--nx-font-sans);
       border: 1px solid var(--accent);
-      border-radius: 10px;
+      box-shadow: inset 0 0 12px var(--nx-accent-soft);
+      border-radius: var(--nx-radius-lg);
       overflow-y: auto;
       padding: 8px;
       display: flex;
@@ -52,8 +43,9 @@
       position: absolute;
       cursor: pointer;
       inset: 0;
-      background: rgba(255,255,255,0.14);
-      border-radius: 999px;
+      background: var(--nx-glass-strong);
+      border: 1px solid var(--border);
+      border-radius: var(--nx-radius-pill);
       transition: 0.2s;
     }
     .nx-slider::before {
@@ -61,14 +53,16 @@
       content: "";
       height: 13px;
       width: 13px;
-      left: 3px;
-      bottom: 3px;
-      background: #fff;
+      left: 2px;
+      bottom: 2px;
+      background: var(--nx-white);
       border-radius: 50%;
       transition: 0.2s;
     }
     .nx-switch input:checked + .nx-slider {
       background: var(--accent);
+      border-color: var(--accent-bright);
+      box-shadow: var(--nx-glow-sm);
     }
     .nx-switch input:checked + .nx-slider::before {
       transform: translateX(15px);
@@ -79,7 +73,7 @@
       height: 31px;
       padding: 0 10px;
       border: none;
-      border-radius: 6px;
+      border-radius: var(--nx-radius-sm);
       background: transparent;
       color: var(--text);
       font-size: 12.5px;
@@ -90,10 +84,26 @@
       cursor: pointer;
       width: 100%;
       text-align: left;
+      transition: background 0.14s, box-shadow 0.14s, color 0.14s;
     }
 
     .menu-item:hover {
       background: var(--bg-card);
+      color: var(--accent-bright);
+      box-shadow: inset 2px 0 0 var(--accent);
+    }
+
+    .menu-item:focus-visible {
+      outline: none;
+      background: var(--bg-card);
+      color: var(--accent-bright);
+      box-shadow: inset 2px 0 0 var(--accent);
+    }
+
+    .menu-item:disabled {
+      opacity: 0.4;
+      cursor: default;
+      pointer-events: none;
     }
 
     .menu-left {
@@ -132,20 +142,41 @@
     .zbtn {
       width: 24px;
       height: 22px;
-      border-radius: 5px;
+      border-radius: var(--nx-radius-xs);
+      clip-path: var(--nx-chamfer-sm);
       border: 1px solid var(--border);
       background: var(--bg-input);
       color: var(--text);
       cursor: pointer;
+      transition: 0.14s;
     }
 
-    .zbtn:hover { border-color: var(--accent); }
+    .zbtn:hover {
+      border-color: var(--accent);
+      color: var(--accent-bright);
+      box-shadow: var(--nx-glow-sm);
+    }
+
+    .zoom-pct {
+      min-width: 36px;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .zbtn-reset {
+      width: auto;
+      padding: 0 7px;
+      font-size: 10.5px;
+      font-weight: 600;
+    }
 
     /* Site Security & Permissions */
     .sec-header {
       padding: 8px 10px;
       background: var(--bg-card);
-      border-radius: 8px;
+      border: 1px solid var(--border);
+      border-left: 2px solid var(--accent);
+      border-radius: var(--nx-radius-md);
       display: flex;
       align-items: center;
       gap: 10px;
@@ -154,10 +185,17 @@
     .sec-status { font-size: 13px; font-weight: 700; }
     .sec-origin { font-size: 11px; color: var(--muted); word-break: break-all; }
 
+    .pop-section-label {
+      font-size: 11px;
+      color: var(--accent-bright);
+      padding: 0 4px;
+    }
+
     .perm-row {
       padding: 7px 10px;
-      border-radius: 6px;
+      border-radius: var(--nx-radius-sm);
       background: var(--bg-input);
+      border: 1px solid var(--border);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -168,15 +206,19 @@
       background: var(--bg-card);
       color: var(--text);
       border: 1px solid var(--border);
-      border-radius: 5px;
+      border-radius: var(--nx-radius-xs);
       padding: 3px 6px;
       font-size: 11px;
       outline: none;
     }
 
+    .perm-select:focus {
+      border-color: var(--accent);
+    }
+
     .dl-mini-card {
       padding: 8px 10px;
-      border-radius: 7px;
+      border-radius: var(--nx-radius-sm);
       background: var(--bg-card);
       border: 1px solid var(--border);
       display: flex;
@@ -202,14 +244,142 @@
 
     .mini-btn {
       padding: 4px 8px;
-      border-radius: 5px;
+      border-radius: var(--nx-radius-xs);
+      clip-path: var(--nx-chamfer-sm);
       border: 1px solid var(--border);
       background: var(--bg-input);
       color: var(--text);
       font-size: 11px;
+      font-weight: 600;
       cursor: pointer;
+      transition: 0.14s;
     }
-    .mini-btn:hover { border-color: var(--accent); }
+    .mini-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent-bright);
+      box-shadow: var(--nx-glow-sm);
+    }
+    .mini-btn:disabled { opacity: 0.45; cursor: default; }
+    .mini-btn:disabled:hover { border-color: var(--border); color: var(--text); box-shadow: none; }
+
+    .nx-switch input:disabled + .nx-slider {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .shield-stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .shield-stat-box {
+      padding: 8px 10px;
+      border-radius: var(--nx-radius-sm);
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .shield-stat-box.accent {
+      border-color: var(--accent);
+      background: linear-gradient(145deg, var(--nx-accent-soft), var(--bg-card));
+      box-shadow: var(--nx-glow-sm);
+    }
+
+    .shield-stat-label {
+      font-size: 10.5px;
+      color: var(--muted);
+    }
+
+    .shield-stat-val {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .shield-row-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding-right: 8px;
+    }
+
+    .shield-row-sub {
+      font-size: 10.5px;
+      color: var(--muted);
+    }
+
+    .shield-actions {
+      display: flex;
+      gap: 6px;
+      margin-top: 2px;
+    }
+
+    .shield-actions .mini-btn {
+      flex: 1;
+      text-align: center;
+      padding: 6px 8px;
+    }
+
+    /* Bookmark Folder Dropdown Popover */
+    .bm-folder-hdr {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 2px 6px 4px;
+    }
+
+    .bm-folder-hdr-title {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--accent-bright);
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .bm-folder-list {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .bm-folder-item {
+      justify-content: flex-start;
+    }
+
+    .bm-folder-item .bm-pop-icon {
+      width: 14px;
+      height: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .bm-folder-item .bm-pop-favicon {
+      width: 14px;
+      height: 14px;
+      border-radius: 2px;
+      object-fit: contain;
+      display: block;
+    }
+
+    .bm-folder-item .bm-pop-label {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
   </style>
 </head>
 <body>
@@ -232,7 +402,7 @@
     <button class="menu-item" data-act="new-incognito">
       <span class="menu-left">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h20M5 12l2-5h10l2 5"/><circle cx="8" cy="16" r="2.5"/><circle cx="16" cy="16" r="2.5"/></svg>
-        New Private Tab
+        New Private Window
       </span>
       <kbd>Ctrl+Shift+N</kbd>
     </button>
@@ -253,12 +423,19 @@
       </span>
       <kbd>Ctrl+J</kbd>
     </button>
-    <button class="menu-item" data-act="bookmarks">
+    <button class="menu-item" data-act="bookmark-current">
       <span class="menu-left">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-        Bookmarks Manager
+        Bookmark this page
       </span>
       <kbd>Ctrl+D</kbd>
+    </button>
+    <button class="menu-item" data-act="bookmarks">
+      <span class="menu-left">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+        Bookmarks Manager
+      </span>
+      <span></span>
     </button>
     <button class="menu-item" data-act="passwords">
       <span class="menu-left">
@@ -280,10 +457,11 @@
     <div class="zoom-row">
       <span>Zoom</span>
       <div class="zoom-controls">
-        <button class="zbtn" id="btnZoomOut">−</button>
-        <span id="zoomPct">100%</span>
-        <button class="zbtn" id="btnZoomIn">+</button>
-        <button class="zbtn" id="btnFs" title="Fullscreen">
+        <button class="zbtn" id="btnZoomOut" title="Zoom Out (Ctrl+-)">−</button>
+        <span id="zoomPct" class="zoom-pct">100%</span>
+        <button class="zbtn" id="btnZoomIn" title="Zoom In (Ctrl+=)">+</button>
+        <button class="zbtn zbtn-reset" id="btnZoomReset" title="Reset Zoom (Ctrl+0)">Reset</button>
+        <button class="zbtn" id="btnFs" title="Fullscreen (F11)">
           <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
         </button>
       </div>
@@ -339,14 +517,14 @@
   <!-- 2. LOCK / SITE SECURITY & PERMISSIONS POPOVER -->
   <div id="view-permissions" class="hidden" style="display:flex;flex-direction:column;gap:8px;">
     <div class="sec-header">
-      <svg id="secIcon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#10b981" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      <svg id="secIcon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--success);flex-shrink:0;"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
       <div>
         <div class="sec-status" id="secStatusText">Connection is secure</div>
         <div class="sec-origin" id="secOriginText">https://example.com</div>
       </div>
     </div>
 
-    <div style="font-size:11.5px;color:var(--muted);padding:0 4px;">Site Permissions</div>
+    <div class="pop-section-label nx-heading">Site Permissions</div>
 
     <div class="perm-row">
       <span>Camera</span>
@@ -380,6 +558,13 @@
         <option value="block">Block</option>
       </select>
     </div>
+
+    <div class="sep"></div>
+    <div class="pop-section-label nx-heading">Cookies & Site Data</div>
+    <div class="perm-row">
+      <span id="popCookieCountText">0 cookies</span>
+      <button class="mini-btn" id="btnClearSiteCookies">Clear cookies for this site</button>
+    </div>
   </div>
 
   <!-- 3. SCREENSHOT MODE POPOVER -->
@@ -401,19 +586,322 @@
   <!-- 4. QUICK DOWNLOADS POPOVER -->
   <div id="view-downloads" class="hidden" style="display:flex;flex-direction:column;gap:8px;">
     <div style="display:flex;justify-content:space-between;align-items:center;padding:2px 4px;">
-      <strong style="font-size:13px;">Recent Downloads</strong>
+      <strong class="nx-heading" style="font-size:12px;color:var(--accent-bright);">Recent Downloads</strong>
       <button class="mini-btn" id="btnOpenDlPage">Full Manager</button>
     </div>
     <div id="popDlList" style="display:flex;flex-direction:column;gap:6px;"></div>
   </div>
 
+  <!-- 5. PRIVACY SHIELD PER-SITE POPOVER -->
+  <div id="view-shield" class="hidden" style="display:flex;flex-direction:column;gap:8px;">
+    <div class="sec-header">
+      <svg id="shieldPopIcon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--success);flex-shrink:0;">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+      </svg>
+      <div style="min-width:0;">
+        <div class="sec-status" id="shieldStatusText">Shield active on this site</div>
+        <div class="sec-origin" id="shieldOriginText">https://example.com</div>
+      </div>
+    </div>
+
+    <div class="shield-stats-grid">
+      <div class="shield-stat-box accent">
+        <span class="shield-stat-label">Blocked on this site</span>
+        <strong class="shield-stat-val" id="shieldSiteCount">0</strong>
+      </div>
+      <div class="shield-stat-box">
+        <span class="shield-stat-label">Blocked this session</span>
+        <strong class="shield-stat-val" id="shieldSessionCount">0</strong>
+      </div>
+    </div>
+
+    <div class="perm-row">
+      <div class="shield-row-text">
+        <span>Block ads on this site</span>
+        <span class="shield-row-sub" id="shieldSiteSub">Applies immediately to this origin</span>
+      </div>
+      <label class="nx-switch">
+        <input type="checkbox" id="chkShieldSiteEnabled" checked />
+        <span class="nx-slider"></span>
+      </label>
+    </div>
+
+    <div class="sep"></div>
+
+    <div class="perm-row">
+      <div class="shield-row-text">
+        <span>Global ad blocker</span>
+        <span class="shield-row-sub" id="shieldGlobalSub">Trackers: On</span>
+      </div>
+      <label class="nx-switch">
+        <input type="checkbox" id="chkShieldGlobalEnabled" checked />
+        <span class="nx-slider"></span>
+      </label>
+    </div>
+
+    <div class="shield-actions">
+      <button class="mini-btn" id="btnShieldReload">Reload site</button>
+      <button class="mini-btn" id="btnShieldSettings">Shield settings</button>
+    </div>
+  </div>
+
+  <!-- 6. TAB CONTEXT MENU POPOVER -->
+  <div id="view-tab-context" class="hidden" role="menu" aria-label="Tab actions">
+    <button class="menu-item" data-tab-act="duplicate" role="menuitem">
+      <span class="menu-left">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Duplicate Tab
+      </span>
+    </button>
+    <button class="menu-item" data-tab-act="reload" role="menuitem">
+      <span class="menu-left">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>
+        Reload
+      </span>
+    </button>
+    <button class="menu-item" data-tab-act="pin" id="btnTabCtxPin" role="menuitem">
+      <span class="menu-left">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>
+        <span id="tabCtxPinLabel">Pin Tab</span>
+      </span>
+    </button>
+    <button class="menu-item" data-tab-act="hibernate" id="btnTabCtxHibernate" role="menuitem">
+      <span class="menu-left">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        Hibernate Tab
+      </span>
+    </button>
+
+    <div class="sep"></div>
+
+    <button class="menu-item" data-tab-act="close" role="menuitem">
+      <span class="menu-left">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        Close Tab
+      </span>
+    </button>
+    <button class="menu-item" data-tab-act="close-others" id="btnTabCtxCloseOthers" role="menuitem">
+      <span class="menu-left">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="14" rx="2"/><path d="M7.5 8.5l5 5M12.5 8.5l-5 5"/><path d="M21 8v11a2 2 0 0 1-2 2H8"/></svg>
+        Close Other Tabs
+      </span>
+    </button>
+  </div>
+
+  <!-- 7. BOOKMARK FOLDER MENU POPOVER -->
+  <div id="view-bookmark-folder" class="hidden" role="menu" aria-label="Bookmark folder">
+    <div class="bm-folder-hdr">
+      <span class="bm-folder-hdr-title nx-heading">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        <span id="bmFolderPopTitle">Folder</span>
+      </span>
+    </div>
+    <div class="sep"></div>
+    <div id="bmFolderPopList" class="bm-folder-list"></div>
+  </div>
+
   <script>
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme || 'gx-violet');
+    }
+
+    (function initThemeSync() {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('incognito') === '1') {
+        document.documentElement.setAttribute('data-incognito', 'true');
+      }
+      const initialTheme = params.get('theme');
+      if (initialTheme) applyTheme(initialTheme);
+      window.gxAPI?.getSettings?.().then((s) => applyTheme(s?.theme)).catch(() => {});
+      window.gxAPI?.onSettingsUpdate?.((s) => {
+        if (s && s.theme) applyTheme(s.theme);
+      });
+    })();
+
     let currentOrigin = '';
+    let currentShieldOrigin = '';
+    let currentShieldUrl = '';
+    let lastShieldSiteInfo = null;
+    let currentTabCtx = null;
+    let currentBmFolderName = '';
+
+    function escapeHtml(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
 
     function showOnly(viewId) {
-      ['view-menu', 'view-permissions', 'view-screenshot', 'view-downloads'].forEach((id) => {
+      ['view-menu', 'view-permissions', 'view-screenshot', 'view-downloads', 'view-shield', 'view-tab-context', 'view-bookmark-folder'].forEach((id) => {
         document.getElementById(id).classList.toggle('hidden', id !== viewId);
       });
+    }
+
+    function fitPopoverToView(kind, viewId) {
+      if (!window.gxAPI?.resizePopover) return;
+      requestAnimationFrame(() => {
+        const viewEl = document.getElementById(viewId);
+        if (!viewEl || viewEl.classList.contains('hidden')) return;
+        const bodyStyle = window.getComputedStyle(document.body);
+        const padY =
+          (parseFloat(bodyStyle.paddingTop) || 0) +
+          (parseFloat(bodyStyle.paddingBottom) || 0) +
+          (parseFloat(bodyStyle.borderTopWidth) || 0) +
+          (parseFloat(bodyStyle.borderBottomWidth) || 0);
+        const viewHeight = Math.max(viewEl.scrollHeight, viewEl.getBoundingClientRect().height);
+        const contentH = Math.ceil(viewHeight + padY + 4);
+        if (contentH > 0) {
+          window.gxAPI.resizePopover({ kind, height: contentH });
+        }
+      });
+    }
+
+    function getBookmarkFaviconUrl(bm) {
+      if (bm && typeof bm.favicon === 'string') {
+        const fav = bm.favicon.trim();
+        if (/^(https?:\/\/|data:image\/)/i.test(fav)) return fav;
+      }
+      if (bm && typeof bm.url === 'string') {
+        try {
+          const u = new URL(bm.url);
+          if (u.protocol === 'http:' || u.protocol === 'https:') {
+            return `${u.origin}/favicon.ico`;
+          }
+        } catch (_) {}
+      }
+      return '';
+    }
+
+    function renderBookmarkFolderItems(folderName, items) {
+      currentBmFolderName = folderName || '';
+      const titleEl = document.getElementById('bmFolderPopTitle');
+      const listEl = document.getElementById('bmFolderPopList');
+      if (titleEl) titleEl.textContent = currentBmFolderName || 'Folder';
+      if (!listEl) return;
+      listEl.innerHTML = '';
+
+      const list = Array.isArray(items) ? items : [];
+      if (!list.length) {
+        listEl.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:8px 6px;">Folder is empty.</div>';
+        return;
+      }
+
+      for (const bm of list) {
+        const btn = document.createElement('button');
+        btn.className = 'menu-item bm-folder-item';
+        btn.type = 'button';
+        btn.setAttribute('role', 'menuitem');
+        btn.title = `${bm.title || bm.url}\n${bm.url || ''}`;
+
+        const iconWrap = document.createElement('span');
+        iconWrap.className = 'bm-pop-icon';
+        iconWrap.innerHTML = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--muted);"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8"/></svg>`;
+        const fallbackSvg = iconWrap.firstElementChild;
+
+        const favUrl = getBookmarkFaviconUrl(bm);
+        if (favUrl) {
+          const img = document.createElement('img');
+          img.className = 'bm-pop-favicon hidden';
+          img.alt = '';
+          img.addEventListener('load', () => {
+            if (img.naturalWidth > 0) {
+              img.classList.remove('hidden');
+              if (fallbackSvg) fallbackSvg.classList.add('hidden');
+            }
+          });
+          img.addEventListener('error', () => img.remove());
+          img.src = favUrl;
+          iconWrap.appendChild(img);
+        }
+
+        const label = document.createElement('span');
+        label.className = 'bm-pop-label';
+        label.textContent = bm.title || bm.url || 'Bookmark';
+
+        btn.appendChild(iconWrap);
+        btn.appendChild(label);
+
+        btn.addEventListener('click', () => {
+          window.gxAPI.closePopover();
+          if (bm.url) window.gxAPI.navigate(bm.url);
+        });
+        btn.addEventListener('auxclick', (e) => {
+          if (e.button === 1 && bm.url) {
+            window.gxAPI.closePopover();
+            window.gxAPI.createTab({ url: bm.url, active: false });
+          }
+        });
+
+        listEl.appendChild(btn);
+      }
+    }
+
+    function renderShieldPopover(siteInfo, stats) {
+      if (siteInfo) lastShieldSiteInfo = siteInfo;
+      const info = siteInfo || lastShieldSiteInfo || {};
+      const hasSite = Boolean(currentShieldOrigin);
+      const globalAdsOn =
+        typeof stats?.enabled === 'boolean' ? stats.enabled : Boolean(info.globalEnabled);
+      const trackersOn =
+        globalAdsOn &&
+        (typeof stats?.trackerBlockEnabled === 'boolean'
+          ? stats.trackerBlockEnabled
+          : Boolean(info.trackerBlockEnabled));
+      const allowlisted = Boolean(hasSite && info.allowlisted);
+
+      const siteCount = hasSite
+        ? Number(stats?.perSite?.[currentShieldOrigin] ?? info.blockedCount ?? 0)
+        : 0;
+      const sessionCount = Number(stats?.sessionBlocked ?? 0);
+
+      document.getElementById('shieldOriginText').textContent =
+        currentShieldOrigin || currentShieldUrl || 'Internal Page';
+      document.getElementById('shieldSiteCount').textContent = String(siteCount);
+      document.getElementById('shieldSessionCount').textContent = String(sessionCount);
+
+      const statusEl = document.getElementById('shieldStatusText');
+      const iconEl = document.getElementById('shieldPopIcon');
+      const siteChk = document.getElementById('chkShieldSiteEnabled');
+      const siteSub = document.getElementById('shieldSiteSub');
+      const globalChk = document.getElementById('chkShieldGlobalEnabled');
+      const globalSub = document.getElementById('shieldGlobalSub');
+      const reloadBtn = document.getElementById('btnShieldReload');
+
+      if (!hasSite) {
+        statusEl.textContent = 'nextGx Privacy Shield';
+        iconEl.style.color = globalAdsOn ? 'var(--accent-bright)' : 'var(--muted)';
+        siteChk.disabled = true;
+        siteChk.checked = false;
+        siteSub.textContent = 'Not applicable to internal pages';
+        reloadBtn.disabled = true;
+      } else if (!globalAdsOn) {
+        statusEl.textContent = 'Shield paused globally';
+        iconEl.style.color = 'var(--warning)';
+        siteChk.disabled = true;
+        siteChk.checked = false;
+        siteSub.textContent = 'Turn on global blocking below first';
+        reloadBtn.disabled = false;
+      } else if (allowlisted) {
+        statusEl.textContent = 'Paused on this site';
+        iconEl.style.color = 'var(--warning)';
+        siteChk.disabled = false;
+        siteChk.checked = false;
+        siteSub.textContent = 'Ads & trackers allowed on this origin';
+        reloadBtn.disabled = false;
+      } else {
+        statusEl.textContent = 'Shield active on this site';
+        iconEl.style.color = 'var(--success)';
+        siteChk.disabled = false;
+        siteChk.checked = true;
+        siteSub.textContent = 'Applies immediately to this origin';
+        reloadBtn.disabled = false;
+      }
+
+      globalChk.checked = globalAdsOn;
+      globalSub.textContent = `Trackers: ${trackersOn ? 'On' : 'Off'}`;
     }
 
     window.gxAPI.onPopoverData(async (data) => {
@@ -434,7 +922,8 @@
           : isSecure
           ? 'Connection is secure'
           : 'nextGx Internal Page';
-        document.getElementById('secIcon').setAttribute('stroke', isHttp ? '#f59e0b' : '#10b981');
+        document.getElementById('secIcon').style.color = isHttp ? 'var(--warning)' : 'var(--success)';
+        fitPopoverToView('permissions', 'view-permissions');
 
         if (currentOrigin) {
           const perms = await window.gxAPI.getSitePermissions(currentOrigin);
@@ -447,13 +936,92 @@
             sel.disabled = true;
           });
         }
+        await refreshSiteCookies(currentOrigin);
+        fitPopoverToView('permissions', 'view-permissions');
       } else if (kind === 'screenshot') {
         showOnly('view-screenshot');
       } else if (kind === 'downloads') {
         showOnly('view-downloads');
         const list = await window.gxAPI.getDownloads();
         renderMiniDownloads(list);
+      } else if (kind === 'shield') {
+        showOnly('view-shield');
+        currentShieldOrigin = payload?.origin || '';
+        currentShieldUrl = payload?.url || '';
+        const [siteInfo, stats] = await Promise.all([
+          window.gxAPI.getAdblockSite(currentShieldOrigin),
+          window.gxAPI.getAdblockStats()
+        ]);
+        renderShieldPopover(siteInfo, stats);
+      } else if (kind === 'tab-context') {
+        showOnly('view-tab-context');
+        currentTabCtx = payload || null;
+        const pinLabel = document.getElementById('tabCtxPinLabel');
+        const hibernateBtn = document.getElementById('btnTabCtxHibernate');
+        const closeOthersBtn = document.getElementById('btnTabCtxCloseOthers');
+        if (pinLabel) {
+          pinLabel.textContent = currentTabCtx?.pinned ? 'Unpin Tab' : 'Pin Tab';
+        }
+        if (hibernateBtn) {
+          const cannotHibernate = Boolean(currentTabCtx?.isActive || currentTabCtx?.sleeping);
+          hibernateBtn.disabled = cannotHibernate;
+          hibernateBtn.title = currentTabCtx?.sleeping
+            ? 'Tab is already hibernated'
+            : currentTabCtx?.isActive
+            ? 'Active tab cannot be hibernated'
+            : 'Suspend tab to save memory';
+        }
+        if (closeOthersBtn) {
+          closeOthersBtn.disabled = Number(currentTabCtx?.totalTabs || 1) <= 1;
+        }
+      } else if (kind === 'bookmark-folder') {
+        showOnly('view-bookmark-folder');
+        renderBookmarkFolderItems(payload?.folder || '', payload?.items || []);
       }
+    });
+
+    document.querySelectorAll('[data-tab-act]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (btn.disabled || !currentTabCtx || !currentTabCtx.id) return;
+        const tabId = currentTabCtx.id;
+        const act = btn.dataset.tabAct;
+        window.gxAPI.closePopover();
+        if (act === 'duplicate') {
+          window.gxAPI.duplicateTab(tabId);
+        } else if (act === 'reload') {
+          window.gxAPI.reload(tabId);
+        } else if (act === 'pin') {
+          window.gxAPI.pinTab(tabId);
+        } else if (act === 'hibernate') {
+          window.gxAPI.sleepTab(tabId);
+        } else if (act === 'close') {
+          window.gxAPI.closeTab(tabId);
+        } else if (act === 'close-others') {
+          window.gxAPI.closeOtherTabs(tabId);
+        }
+      });
+    });
+
+    document.addEventListener('keydown', (e) => {
+      const tabCtxView = document.getElementById('view-tab-context');
+      const bmFolderView = document.getElementById('view-bookmark-folder');
+      const activeMenu =
+        tabCtxView && !tabCtxView.classList.contains('hidden')
+          ? tabCtxView
+          : bmFolderView && !bmFolderView.classList.contains('hidden')
+          ? bmFolderView
+          : null;
+      if (!activeMenu) return;
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      const items = Array.from(activeMenu.querySelectorAll('.menu-item:not(:disabled)'));
+      if (!items.length) return;
+      e.preventDefault();
+      const idx = items.indexOf(document.activeElement);
+      const nextIdx =
+        e.key === 'ArrowDown'
+          ? (idx + 1) % items.length
+          : (idx <= 0 ? items.length - 1 : idx - 1);
+      items[nextIdx].focus();
     });
 
     document.querySelectorAll('[data-act]').forEach((btn) => {
@@ -475,9 +1043,20 @@
       const pct = await window.gxAPI.setZoom('out');
       document.getElementById('zoomPct').textContent = `${pct}%`;
     });
+    document.getElementById('btnZoomReset').addEventListener('click', async () => {
+      const pct = await window.gxAPI.setZoom('reset');
+      document.getElementById('zoomPct').textContent = `${pct}%`;
+    });
     document.getElementById('btnFs').addEventListener('click', () => {
       window.gxAPI.closePopover();
       window.gxAPI.toggleFullscreen();
+    });
+
+    window.gxAPI.onStateUpdate?.((state) => {
+      if (state?.activeTab && typeof state.activeTab.zoomPercent === 'number') {
+        const zoomEl = document.getElementById('zoomPct');
+        if (zoomEl) zoomEl.textContent = `${state.activeTab.zoomPercent}%`;
+      }
     });
 
     document.querySelectorAll('[data-perm]').forEach((sel) => {
@@ -486,6 +1065,32 @@
           await window.gxAPI.setSitePermission(currentOrigin, sel.dataset.perm, sel.value);
         }
       });
+    });
+
+    async function refreshSiteCookies(origin) {
+      const countEl = document.getElementById('popCookieCountText');
+      const clearBtn = document.getElementById('btnClearSiteCookies');
+      if (!countEl || !clearBtn) return;
+      if (!origin || !/^https?:\/\//i.test(origin) || !window.gxAPI.getCookies) {
+        countEl.textContent = '0 cookies';
+        clearBtn.disabled = true;
+        return;
+      }
+      try {
+        const list = await window.gxAPI.getCookies({ origin });
+        const count = Array.isArray(list) ? list.length : 0;
+        countEl.textContent = `${count} ${count === 1 ? 'cookie' : 'cookies'}`;
+        clearBtn.disabled = count === 0;
+      } catch (_) {
+        countEl.textContent = '0 cookies';
+        clearBtn.disabled = true;
+      }
+    }
+
+    document.getElementById('btnClearSiteCookies').addEventListener('click', async () => {
+      if (!currentOrigin || !window.gxAPI.clearSiteCookies) return;
+      await window.gxAPI.clearSiteCookies(currentOrigin);
+      await refreshSiteCookies(currentOrigin);
     });
 
     document.getElementById('btnShotArea').addEventListener('click', () => window.gxAPI.startAreaScreenshot());
@@ -509,10 +1114,10 @@
         card.className = 'dl-mini-card';
         card.innerHTML = `
           <div class="dl-mini-top">
-            <span class="dl-name">${d.filename}</span>
+            <span class="dl-name">${escapeHtml(d.filename)}</span>
             <button class="mini-btn open-btn">Open</button>
           </div>
-          <div style="font-size:10.5px;color:var(--muted);">${d.state} (${pct}%)</div>
+          <div style="font-size:10.5px;color:var(--muted);">${escapeHtml(d.state)} (${pct}%)</div>
         `;
         card.querySelector('.open-btn').addEventListener('click', () => {
           window.gxAPI.openDownloadItem(d.savePath);
@@ -524,6 +1129,49 @@
     window.gxAPI.onDownloadsUpdate((list) => {
       if (!document.getElementById('view-downloads').classList.contains('hidden')) {
         renderMiniDownloads(list);
+      }
+    });
+
+    document.getElementById('chkShieldSiteEnabled').addEventListener('change', async (e) => {
+      if (!currentShieldOrigin) return;
+      const siteInfo = await window.gxAPI.setAdblockSite(currentShieldOrigin, e.target.checked);
+      const stats = await window.gxAPI.getAdblockStats();
+      renderShieldPopover(siteInfo, stats);
+    });
+
+    document.getElementById('chkShieldGlobalEnabled').addEventListener('change', async (e) => {
+      const stats = await window.gxAPI.toggleAdblock(e.target.checked);
+      const siteInfo = await window.gxAPI.getAdblockSite(currentShieldOrigin);
+      renderShieldPopover(siteInfo, stats);
+    });
+
+    document.getElementById('btnShieldReload').addEventListener('click', () => {
+      if (!currentShieldOrigin) return;
+      window.gxAPI.closePopover();
+      window.gxAPI.reload();
+    });
+
+    document.getElementById('btnShieldSettings').addEventListener('click', () => {
+      window.gxAPI.triggerMenuAction('settings');
+    });
+
+    window.gxAPI.onAdblockUpdate((stats) => {
+      if (!document.getElementById('view-shield').classList.contains('hidden')) {
+        renderShieldPopover(lastShieldSiteInfo, stats);
+      }
+    });
+
+    window.gxAPI.onBookmarksUpdate?.((list) => {
+      const bmView = document.getElementById('view-bookmark-folder');
+      if (bmView && !bmView.classList.contains('hidden') && currentBmFolderName) {
+        const items = (list || []).filter(
+          (b) => b && typeof b.folder === 'string' && b.folder.trim() === currentBmFolderName
+        );
+        if (!items.length) {
+          window.gxAPI.closePopover();
+        } else {
+          renderBookmarkFolderItems(currentBmFolderName, items);
+        }
       }
     });
   </script>

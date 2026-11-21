@@ -1,0 +1,142 @@
+/* nextGx Browser — Unified Color System & Gaming (GX-Style) Design Tokens */
+
+:root,
+html[data-theme="gx-violet"] {
+  --nx-accent: #9d4edd;
+  --nx-accent-bright: #c77dff;
+  --nx-accent-soft: rgba(157, 78, 221, 0.22);
+  --nx-grid-line: rgba(157, 78, 221, 0.05);
+  --nx-on-accent: #ffffff;
+  --bg-deep: #12101b;
+  --bg-chrome: #181524;
+  --bg-surface: #221e33;
+  --bg-elevated: #2d2844;
+}
+
+html[data-theme="crimson"] {
+  --nx-accent: #fa1e4e;
+  --nx-accent-bright: #ff4d73;
+  --nx-accent-soft: rgba(250, 30, 78, 0.22);
+  --nx-grid-line: rgba(250, 30, 78, 0.05);
+  --nx-on-accent: #ffffff;
+  --bg-deep: #0f0b12;
+  --bg-chrome: #17111c;
+  --bg-surface: #24192b;
+  --bg-elevated: #31223b;
+}
+
+html[data-theme="cyan"] {
+  --nx-accent: #00e5ff;
+  --nx-accent-bright: #66f0ff;
+  --nx-accent-soft: rgba(0, 229, 255, 0.18);
+  --nx-grid-line: rgba(0, 229, 255, 0.045);
+  --nx-on-accent: #07131a;
+  --bg-deep: #0b1017;
+  --bg-chrome: #101824;
+  --bg-surface: #182334;
+  --bg-elevated: #213047;
+}
+
+html[data-theme="emerald"] {
+  --nx-accent: #10b981;
+  --nx-accent-bright: #34d399;
+  --nx-accent-soft: rgba(16, 185, 129, 0.18);
+  --nx-grid-line: rgba(16, 185, 129, 0.045);
+  --nx-on-accent: #ffffff;
+  --bg-deep: #0a1210;
+  --bg-chrome: #101c19;
+  --bg-surface: #172924;
+  --bg-elevated: #203831;
+}
+
+html[data-incognito="true"],
+html[data-incognito="true"][data-theme] {
+  --nx-accent: #7c3aed;
+  --nx-accent-bright: #a78bfa;
+  --nx-accent-soft: rgba(124, 58, 237, 0.22);
+  --nx-grid-line: rgba(124, 58, 237, 0.05);
+  --nx-on-accent: #ffffff;
+  --bg-deep: #07070b;
+  --bg-chrome: #0f0f17;
+  --bg-surface: #181824;
+  --bg-elevated: #222233;
+}
+
+:root {
+  /* Shared Text & Surface Glass Tokens */
+  --text-main: #f1eff7;
+  --text-muted: #9690ab;
+  --nx-white: #ffffff;
+  --border-glass: rgba(255, 255, 255, 0.08);
+  --specular-top: inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  --nx-glass-subtle: rgba(255, 255, 255, 0.04);
+  --nx-glass-hover: rgba(255, 255, 255, 0.08);
+  --nx-glass-strong: rgba(255, 255, 255, 0.14);
+  --nx-shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.3);
+  --nx-shadow-md: 0 6px 16px rgba(0, 0, 0, 0.34);
+  --nx-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.36);
+  --nx-scrim: rgba(0, 0, 0, 0.5);
+  --nx-backdrop: rgba(0, 0, 0, 0.7);
+  --nx-overlay-dim: rgba(0, 0, 0, 0.35);
+  --nx-overlay-black: #000000;
+
+  /* Theme Preset Swatch Preview Tokens */
+  --nx-swatch-violet: #9d4edd;
+  --nx-swatch-crimson: #fa1e4e;
+  --nx-swatch-cyan: #00e5ff;
+  --nx-swatch-emerald: #10b981;
+
+  /* Semantic Status Colors (Non-thematic) */
+  --danger: #e11d48;
+  --success: #10b981;
+  --warning: #f59e0b;
+
+  /* Gaming (GX-Style) Glow Scale */
+  --nx-glow-sm: 0 0 8px var(--nx-accent-soft);
+  --nx-glow-md: 0 0 14px var(--nx-accent-soft), 0 0 4px var(--nx-accent-soft);
+  --nx-glow-lg: 0 0 24px var(--nx-accent-soft), 0 0 8px var(--nx-accent-soft);
+
+  /* Gaming (GX-Style) Chamfer Clip-Paths */
+  --nx-chamfer-sm: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));
+  --nx-chamfer: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+  --nx-chamfer-tab: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 0 100%);
+  --nx-chamfer-tile: polygon(0 0, 100% 0, 100% calc(100% - 11px), calc(100% - 11px) 100%, 0 100%);
+
+  /* Gaming (GX-Style) Radius Scale */
+  --nx-radius-xs: 4px;
+  --nx-radius-sm: 6px;
+  --nx-radius-md: 8px;
+  --nx-radius-lg: 12px;
+  --nx-radius-pill: 999px;
+
+  /* Gaming (GX-Style) Display Typography (System Fonts Only) */
+  --nx-font-sans: 'Inter', 'Segoe UI', Ubuntu, Cantarell, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --nx-font-display: 'Rajdhani', 'Orbitron', 'Segoe UI', 'Inter', Ubuntu, Cantarell, system-ui, sans-serif;
+  --nx-heading-transform: uppercase;
+  --nx-heading-tracking: 0.08em;
+  --nx-heading-weight: 700;
+
+  /* Sub-page Local Token Aliases */
+  --accent: var(--nx-accent);
+  --accent-bright: var(--nx-accent-bright);
+  --accent-soft: var(--nx-accent-soft);
+  --bg-page: var(--bg-deep);
+  --bg-base: var(--bg-deep);
+  --bg-sidebar: var(--bg-chrome);
+  --bg: var(--bg-chrome);
+  --bg-card: var(--bg-surface);
+  --bg-input: var(--bg-deep);
+  --text-primary: var(--text-main);
+  --text-secondary: var(--text-muted);
+  --text: var(--text-main);
+  --muted: var(--text-muted);
+  --border: var(--border-glass);
+  --specular: var(--specular-top);
+}
+
+.nx-heading {
+  font-family: var(--nx-font-display);
+  text-transform: var(--nx-heading-transform);
+  letter-spacing: var(--nx-heading-tracking);
+  font-weight: var(--nx-heading-weight);
+}

@@ -5,8 +5,8 @@
   "description": "nextGx Browser — Modern Apple-Crafted Chromium Desktop Browser with Built-in Privacy Shield, Media Dock, Pro Download Manager, and 8 GB Memory Saver",
   "main": "src/main.js",
   "scripts": {
-    "start": "env -u ELECTRON_RUN_AS_NODE electron . --no-sandbox",
-    "dev": "env -u ELECTRON_RUN_AS_NODE electron . --no-sandbox --enable-logging",
+    "start": "node scripts/launch.js",
+    "dev": "node scripts/launch.js --enable-logging",
     "build:linux": "electron-builder --linux AppImage deb",
     "build:win": "electron-builder --win nsis appx"
   },

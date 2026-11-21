@@ -4,18 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Speed Dial — nextGx Browser</title>
+  <link rel="stylesheet" href="theme.css" />
   <style>
-    :root {
-      --bg-base: #13111c;
-      --bg-input: #201c2f;
-      --bg-card: #1b1828;
-      --text-main: #f3f1f8;
-      --text-muted: #938da9;
-      --accent: #9d4edd;
-      --accent-bright: #c77dff;
-      --border: rgba(255, 255, 255, 0.08);
-    }
-
     * {
       box-sizing: border-box;
       margin: 0;
@@ -27,12 +17,12 @@
       min-height: 100vh;
       background-color: var(--bg-base);
       background-image:
-        linear-gradient(rgba(157, 78, 221, 0.045) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(157, 78, 221, 0.045) 1px, transparent 1px),
-        radial-gradient(circle at 50% 0%, rgba(157, 78, 221, 0.16), transparent 60%);
+        linear-gradient(var(--nx-grid-line) 1px, transparent 1px),
+        linear-gradient(90deg, var(--nx-grid-line) 1px, transparent 1px),
+        radial-gradient(circle at 50% 0%, var(--nx-accent-soft), transparent 60%);
       background-size: 44px 44px, 44px 44px, 100% 100%;
       color: var(--text-main);
-      font-family: 'Inter', 'Segoe UI', Ubuntu, Cantarell, system-ui, sans-serif;
+      font-family: var(--nx-font-sans);
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -40,9 +30,10 @@
     }
 
     .brand-hero {
-      font-size: 24px;
-      font-weight: 600;
-      letter-spacing: -0.4px;
+      font-family: var(--nx-font-display);
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
       margin-bottom: 18px;
     }
 
@@ -56,33 +47,38 @@
       width: 100%;
       max-width: 560px;
       height: 44px;
-      background: var(--bg-input);
+      background: var(--bg-surface);
       border: 1px solid var(--border);
-      border-radius: 8px;
+      border-radius: var(--nx-radius-md);
+      clip-path: var(--nx-chamfer);
       display: flex;
       align-items: center;
       padding: 0 12px;
       gap: 12px;
       margin-bottom: 36px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-      transition: border-color 0.18s;
+      box-shadow: var(--specular-top), var(--nx-shadow-lg);
+      transition: border-color 0.18s, box-shadow 0.18s;
     }
 
     .nx-search-bar:focus-within {
       border-color: var(--accent);
+      box-shadow: var(--nx-glow-md), inset 0 0 10px var(--nx-accent-soft);
     }
 
     .google-badge {
       width: 24px;
       height: 24px;
-      background: #fff;
-      border-radius: 4px;
+      background: var(--nx-accent-soft);
+      border: 1px solid var(--accent);
+      border-radius: var(--nx-radius-xs);
+      clip-path: var(--nx-chamfer-sm);
       display: flex;
       align-items: center;
       justify-content: center;
+      font-family: var(--nx-font-display);
       font-weight: 800;
-      font-size: 14px;
-      color: #4285f4;
+      font-size: 13px;
+      color: var(--accent-bright);
       flex-shrink: 0;
     }
 
@@ -108,11 +104,8 @@
 
     .section-heading {
       font-size: 12.5px;
-      font-weight: 600;
-      color: var(--text-muted);
+      color: var(--accent-bright);
       margin-bottom: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.7px;
     }
 
     .dial-grid {
@@ -123,7 +116,7 @@
 
     .dial-tile {
       height: 82px;
-      border-radius: 8px;
+      border-radius: var(--nx-radius-md);
       position: relative;
       display: flex;
       flex-direction: column;
@@ -132,21 +125,22 @@
       padding: 12px;
       cursor: pointer;
       overflow: hidden;
-      clip-path: polygon(0 0, 100% 0, 100% calc(100% - 11px), calc(100% - 11px) 100%, 0 100%);
-      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.34);
-      transition: transform 0.15s ease, filter 0.15s ease;
+      clip-path: var(--nx-chamfer-tile);
+      box-shadow: var(--nx-shadow-md);
+      transition: transform 0.15s ease, filter 0.15s ease, box-shadow 0.15s ease;
     }
 
     .dial-tile:hover {
       transform: translateY(-2px);
       filter: brightness(1.08);
+      box-shadow: var(--nx-glow-md), inset 0 0 0 1px var(--accent-bright);
     }
 
     .tile-title {
       font-size: 14px;
       font-weight: 800;
-      color: #fff;
-      text-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+      color: var(--nx-white);
+      text-shadow: var(--nx-shadow-sm);
       text-align: center;
     }
 
@@ -156,10 +150,10 @@
       right: 6px;
       width: 18px;
       height: 18px;
-      border-radius: 4px;
+      border-radius: var(--nx-radius-xs);
       border: none;
-      background: rgba(0, 0, 0, 0.5);
-      color: #fff;
+      background: var(--nx-scrim);
+      color: var(--nx-white);
       font-size: 10px;
       opacity: 0;
       cursor: pointer;
@@ -170,15 +164,17 @@
     }
 
     .dial-tile.add-tile {
-      background: rgba(255, 255, 255, 0.03);
+      background: var(--nx-glass-subtle);
       border: 1px solid var(--border);
       font-size: 22px;
       color: var(--text-muted);
     }
 
     .dial-tile.add-tile:hover {
-      background: rgba(255, 255, 255, 0.07);
-      color: #fff;
+      background: var(--nx-accent-soft);
+      border-color: var(--accent);
+      color: var(--accent-bright);
+      box-shadow: var(--nx-glow-sm);
     }
 
     /* Stats & Quick Notes Row */
@@ -194,7 +190,8 @@
       background: var(--bg-card);
       border: 1px solid var(--border);
       border-left: 3px solid var(--accent);
-      border-radius: 8px;
+      box-shadow: var(--specular-top), var(--nx-shadow-md);
+      border-radius: var(--nx-radius-md);
       padding: 16px;
       display: flex;
       flex-direction: column;
@@ -216,22 +213,28 @@
     .notes-area {
       width: 100%;
       height: 74px;
-      background: #100e17;
+      background: var(--bg-input);
       border: 1px solid var(--border);
-      border-radius: 6px;
+      border-radius: var(--nx-radius-sm);
       padding: 8px 10px;
       color: var(--text-main);
       font-family: inherit;
       font-size: 12px;
       resize: none;
       outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    .notes-area:focus {
+      border-color: var(--accent);
+      box-shadow: var(--nx-glow-sm);
     }
 
     /* Modal */
     .modal-backdrop {
       position: fixed;
       inset: 0;
-      background: rgba(0, 0, 0, 0.7);
+      background: var(--nx-backdrop);
       display: none;
       align-items: center;
       justify-content: center;
@@ -244,23 +247,34 @@
 
     .modal-box {
       width: 340px;
-      background: #1d1a2b;
+      background: var(--bg-surface);
       border: 1px solid var(--accent);
-      border-radius: 10px;
+      box-shadow: var(--nx-glow-lg), var(--nx-shadow-lg);
+      border-radius: var(--nx-radius-lg);
       padding: 18px;
       display: flex;
       flex-direction: column;
       gap: 10px;
     }
 
+    .modal-box h3 {
+      font-size: 14px;
+      color: var(--accent-bright);
+    }
+
     .modal-box input {
-      background: #12101b;
+      background: var(--bg-input);
       border: 1px solid var(--border);
-      color: #fff;
+      color: var(--text-main);
       padding: 8px 10px;
-      border-radius: 6px;
+      border-radius: var(--nx-radius-sm);
       font-size: 12.5px;
       outline: none;
+    }
+
+    .modal-box input:focus {
+      border-color: var(--accent);
+      box-shadow: var(--nx-glow-sm);
     }
 
     .modal-actions {
@@ -271,26 +285,45 @@
 
     .btn {
       padding: 6px 12px;
-      border-radius: 6px;
+      border-radius: var(--nx-radius-sm);
+      clip-path: var(--nx-chamfer-sm);
       border: 1px solid var(--border);
-      background: #28243b;
-      color: #fff;
+      background: var(--bg-elevated);
+      color: var(--text-main);
       font-size: 12px;
+      font-weight: 600;
       cursor: pointer;
+      transition: 0.15s;
+    }
+
+    .btn:hover {
+      border-color: var(--accent-bright);
+      color: var(--accent-bright);
+      box-shadow: var(--nx-glow-sm);
     }
 
     .btn.primary {
       background: var(--accent);
-      border-color: var(--accent);
-      font-weight: 600;
+      border-color: var(--accent-bright);
+      color: var(--nx-on-accent);
+      box-shadow: var(--nx-glow-sm);
+      font-weight: 700;
+    }
+
+    .btn.primary:hover {
+      background: var(--accent-bright);
+      color: var(--nx-on-accent);
+      box-shadow: var(--nx-glow-md);
     }
 
     /* Private / Incognito Mode Layout */
     body.private-mode {
-      background-color: #07070b;
+      background-color: var(--bg-deep);
       background-image:
-        radial-gradient(circle at 50% 0%, rgba(124, 58, 237, 0.22), transparent 55%),
-        linear-gradient(180deg, #07070b 0%, #0d0d15 100%);
+        linear-gradient(var(--nx-grid-line) 1px, transparent 1px),
+        linear-gradient(90deg, var(--nx-grid-line) 1px, transparent 1px),
+        radial-gradient(circle at 50% 0%, var(--nx-accent-soft), transparent 55%),
+        linear-gradient(180deg, var(--bg-deep) 0%, var(--bg-chrome) 100%);
     }
 
     .private-hero {
@@ -315,25 +348,24 @@
       width: 72px;
       height: 72px;
       border-radius: 50%;
-      background: rgba(124, 58, 237, 0.16);
-      border: 1.5px solid #8b5cf6;
+      background: var(--nx-accent-soft);
+      border: 1.5px solid var(--accent);
       display: flex;
       align-items: center;
       justify-content: center;
-      color: #c4b5fd;
-      box-shadow: 0 0 28px rgba(124, 58, 237, 0.25);
+      color: var(--accent-bright);
+      box-shadow: var(--nx-glow-lg);
     }
 
     .private-title {
       font-size: 26px;
-      font-weight: 700;
-      color: #f5f3ff;
+      color: var(--text-main);
       text-align: center;
     }
 
     .private-desc {
       font-size: 13.5px;
-      color: #a1a1aa;
+      color: var(--text-muted);
       text-align: center;
       max-width: 580px;
       line-height: 1.55;
@@ -348,16 +380,16 @@
     }
 
     .private-box {
-      background: #11111a;
-      border: 1px solid rgba(167, 139, 250, 0.22);
-      border-radius: 10px;
+      background: var(--bg-chrome);
+      border: 1px solid var(--nx-accent-soft);
+      box-shadow: var(--specular-top);
+      border-radius: var(--nx-radius-lg);
       padding: 18px;
     }
 
     .private-box h4 {
-      font-size: 13px;
-      font-weight: 700;
-      color: #c4b5fd;
+      font-size: 12.5px;
+      color: var(--accent-bright);
       margin-bottom: 10px;
     }
 
@@ -367,12 +399,12 @@
       flex-direction: column;
       gap: 7px;
       font-size: 12.5px;
-      color: #a1a1aa;
+      color: var(--text-muted);
     }
 
     .private-box ul li::before {
       content: "• ";
-      color: #8b5cf6;
+      color: var(--accent);
       font-weight: bold;
     }
   </style>
@@ -389,7 +421,7 @@
         <path d="M10.5 16.5h3" />
       </svg>
     </div>
-    <div class="private-title">You are in Private Mode</div>
+    <div class="private-title nx-heading">You are in Private Mode</div>
     <div class="private-desc">
       Pages you view in this Private window won't appear in your browsing history, cookie store, or search history after you close all Private windows.
     </div>
@@ -403,7 +435,7 @@
   <div class="private-hero" style="margin-top:0;">
     <div class="private-cols">
       <div class="private-box">
-        <h4>nextGx Browser won't save:</h4>
+        <h4 class="nx-heading">nextGx Browser won't save:</h4>
         <ul>
           <li>Your browsing history</li>
           <li>Cookies and site data</li>
@@ -411,7 +443,7 @@
         </ul>
       </div>
       <div class="private-box">
-        <h4>Your activity might still be visible to:</h4>
+        <h4 class="nx-heading">Your activity might still be visible to:</h4>
         <ul>
           <li>Websites you visit</li>
           <li>Your employer or school network</li>
@@ -423,26 +455,26 @@
   </div>
 
   <section class="dial-section normal-only">
-    <div class="section-heading">Speed Dial</div>
+    <div class="section-heading nx-heading">Speed Dial</div>
     <div class="dial-grid" id="dialGrid"></div>
   </section>
 
   <section class="bottom-row normal-only">
     <div class="gx-panel">
-      <div class="section-heading" style="margin:0;">Shield & 8 GB RAM Status</div>
+      <div class="section-heading nx-heading" style="margin:0;">Shield & 8 GB RAM Status</div>
       <div class="stat-num" id="sdBlockedCount">0 Ads & Trackers Blocked</div>
       <div class="stat-sub" id="sdRamReport">Browser Memory: -- MB • Optimized for 8 GB RAM</div>
     </div>
 
     <div class="gx-panel">
-      <div class="section-heading" style="margin:0;">Quick Scratchpad</div>
+      <div class="section-heading nx-heading" style="margin:0;">Quick Scratchpad</div>
       <textarea class="notes-area" id="quickNotesInput" placeholder="Write quick notes or links..."></textarea>
     </div>
   </section>
 
   <div class="modal-backdrop" id="addModal">
     <form class="modal-box" id="addDialForm">
-      <h3>Add Speed Dial</h3>
+      <h3 class="nx-heading">Add Speed Dial</h3>
       <input type="text" id="dialTitleInput" placeholder="Title (e.g. Twitch)" required />
       <input type="text" id="dialUrlInput" placeholder="Address (e.g. twitch.tv)" required />
       <div class="modal-actions">
@@ -456,6 +488,15 @@
     const dialGrid = document.getElementById('dialGrid');
     const addModal = document.getElementById('addModal');
     const quickNotesInput = document.getElementById('quickNotesInput');
+
+    function escapeHtml(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
 
     const GRADIENTS = [
       'linear-gradient(135deg, #e52d27, #b31217)',
@@ -476,7 +517,7 @@
         card.style.background = item.bg || GRADIENTS[idx % GRADIENTS.length];
         card.innerHTML = `
           <button class="tile-del" title="Remove">✕</button>
-          <span class="tile-title">${item.title}</span>
+          <span class="tile-title">${escapeHtml(item.title)}</span>
         `;
         card.addEventListener('click', async (e) => {
           if (e.target.closest('.tile-del')) {
@@ -530,16 +571,38 @@
       }, 400);
     });
 
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme || 'gx-violet');
+    }
+
     async function init() {
       const params = new URLSearchParams(window.location.search);
+      const initialTheme = params.get('theme');
+      if (initialTheme) {
+        applyTheme(initialTheme);
+      }
+
+      if (window.gxNewTabAPI?.onSettingsUpdate) {
+        window.gxNewTabAPI.onSettingsUpdate((s) => {
+          if (s && s.theme) applyTheme(s.theme);
+        });
+      }
+
       if (params.get('incognito') === '1') {
+        document.documentElement.setAttribute('data-incognito', 'true');
         document.body.classList.add('private-mode');
         document.title = 'Private Browsing — nextGx';
         document.getElementById('searchInput').placeholder = 'Search privately...';
+        if (window.gxNewTabAPI?.getSettings) {
+          window.gxNewTabAPI.getSettings().then((s) => applyTheme(s?.theme)).catch(() => {});
+        }
         return;
       }
       if (!window.gxNewTabAPI) return;
       const data = await window.gxNewTabAPI.getInitialData();
+      if (data.settings?.theme) {
+        applyTheme(data.settings.theme);
+      }
       renderDials(data.speedDial);
       if (data.adblock) {
         document.getElementById('sdBlockedCount').textContent =
