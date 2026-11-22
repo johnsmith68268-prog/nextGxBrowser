@@ -1207,7 +1207,8 @@ class StorageManager {
       microphone: 'ask',
       geolocation: 'ask',
       notifications: 'ask',
-      media: 'allow'
+      'screen-share': 'ask',
+      'clipboard-read': 'ask'
     };
     return { ...defaults, ...(map[origin] || {}) };
   }
@@ -1215,7 +1216,7 @@ class StorageManager {
   _readOwnAllSitePermissions() {
     const raw = this.get('sitePermissions');
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
-    const trackedKeys = ['camera', 'microphone', 'geolocation', 'notifications'];
+    const trackedKeys = ['camera', 'microphone', 'geolocation', 'notifications', 'screen-share', 'clipboard-read'];
     const validVals = new Set(['ask', 'allow', 'block']);
     const list = [];
     for (const [origin, entry] of Object.entries(raw)) {
@@ -1248,9 +1249,9 @@ class StorageManager {
     const target = this._targetFor(profileId);
     if (target !== this) return target.setSitePermission(origin, permKey, value);
     if (!origin || typeof origin !== 'string') return this._readOwnSitePermissions('');
-    const trackedKeys = ['camera', 'microphone', 'geolocation', 'notifications'];
+    const trackedKeys = ['camera', 'microphone', 'geolocation', 'notifications', 'screen-share', 'clipboard-read'];
     const validVals = new Set(['ask', 'allow', 'block']);
-    if (!trackedKeys.includes(permKey) && permKey !== 'media') {
+    if (!trackedKeys.includes(permKey)) {
       return this._readOwnSitePermissions(origin);
     }
     const cleanVal = typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -1264,7 +1265,7 @@ class StorageManager {
       [permKey]: cleanVal
     };
     const allTrackedDefault = trackedKeys.every((k) => (nextEntry[k] || 'ask') === 'ask');
-    if (allTrackedDefault && permKey !== 'media') {
+    if (allTrackedDefault) {
       delete map[origin];
       this._write('sitePermissions', map);
       return this._readOwnSitePermissions(origin);
@@ -1289,7 +1290,7 @@ class StorageManager {
     if (!matchedKey) {
       return { ok: true, origin: cleanOrigin, removed: false, sitePermissions: this._readOwnAllSitePermissions() };
     }
-    const trackedKeys = ['camera', 'microphone', 'geolocation', 'notifications'];
+    const trackedKeys = ['camera', 'microphone', 'geolocation', 'notifications', 'screen-share', 'clipboard-read'];
     if (typeof permKey === 'string' && trackedKeys.includes(permKey)) {
       const updated = { ...this._readOwnSitePermissions(matchedKey), [permKey]: 'ask' };
       const allDefault = trackedKeys.every((k) => (updated[k] || 'ask') === 'ask');
