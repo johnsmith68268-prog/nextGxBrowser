@@ -5,6 +5,13 @@ const { state } = require('./core');
 const { broadcastDownloadsUpdate } = require('./broadcast');
 const { writeClipboardPng } = require('./clipboard-utils');
 
+// n-6: bounds for full-page captures so a very long page cannot produce an
+// unbounded PNG in memory. Pages beyond the caps are downscaled (whole page
+// still captured, just smaller) instead of refused.
+const MAX_FULL_PAGE_HEIGHT_PX = 16384;
+const MAX_FULL_PAGE_PIXELS = 32 * 1024 * 1024; // ~32 MP
+const MAX_CAPTURE_BASE64_LENGTH = 128 * 1024 * 1024; // ~96 MB of PNG data
+
 function recordSavedFileInDownloads(ctx, { filename, savePath, bytes, category = 'media', url = 'nextgx://screenshot' }) {
   if (ctx?.incognito) return;
   const pid = ctx?.profileId || state.storage?.getActiveProfileId?.() || 'default';
@@ -43,12 +50,37 @@ async function captureFullPagePng(ctx, fallbackBuffer = null) {
       wc.debugger.attach('1.3');
       attachedHere = true;
     }
+    // n-6: measure the page first and downscale captures that would exceed
+    // the height/area caps, so a very long page cannot blow up memory.
+    let clip;
+    try {
+      const metrics = await wc.debugger.sendCommand('Page.getLayoutMetrics');
+      const size = metrics?.cssContentSize || metrics?.contentSize;
+      const width = Math.ceil(Number(size?.width) || 0);
+      const height = Math.ceil(Number(size?.height) || 0);
+      if (width > 0 && height > 0) {
+        const scale = Math.min(1, MAX_FULL_PAGE_HEIGHT_PX / height, Math.sqrt(MAX_FULL_PAGE_PIXELS / (width * height)));
+        if (scale < 1) {
+          clip = { x: 0, y: 0, width, height, scale };
+          console.warn(
+            `[Screenshot] Full-page capture downscaled to ${Math.round(scale * 100)}% (page is ${width}x${height}px)`
+          );
+        }
+      }
+    } catch (_) {
+      // Layout metrics unavailable; capture without a clip as before.
+    }
     const res = await wc.debugger.sendCommand('Page.captureScreenshot', {
       format: 'png',
       captureBeyondViewport: true,
-      fromSurface: true
+      fromSurface: true,
+      ...(clip ? { clip } : {})
     });
     if (res && typeof res.data === 'string' && res.data.length > 0) {
+      if (res.data.length > MAX_CAPTURE_BASE64_LENGTH) {
+        console.warn('[Screenshot] Full-page capture exceeded size cap, falling back to visible viewport');
+        return fallbackBuffer;
+      }
       return Buffer.from(res.data, 'base64');
     }
   } catch (err) {
@@ -99,7 +131,16 @@ async function saveScreenshotWithDialog(ctx, pngBuffer, label = 'Snap') {
     return { ok: false, canceled: true };
   }
 
-  fs.writeFileSync(res.filePath, pngBuffer);
+  // s-7: a failed write used to throw out of this async function as an
+  // unhandled rejection with no message to the user. Report it visibly.
+  try {
+    fs.writeFileSync(res.filePath, pngBuffer);
+  } catch (err) {
+    const message = err?.message || 'Unknown error';
+    dialog.showErrorBox('Screenshot save failed', `Could not save the screenshot to ${res.filePath}:\n${message}`);
+    ctx.win?.webContents.send('ui:toast', `Screenshot save failed: ${message}`);
+    return { ok: false, error: message };
+  }
   await writeClipboardPng(pngBuffer);
 
   const filename = path.basename(res.filePath);
