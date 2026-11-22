@@ -33,8 +33,12 @@ const {
   updateActiveViewBounds
 } = require('./layout');
 const { attachKeyboardShortcuts } = require('./shortcuts');
+const { attachWebContentsContextMenu } = require('./context-menu');
 const { restoreFocusToActiveTab, closePopover } = require('./popovers');
 const { createTab } = require('./tabs');
+
+const SIDEBAR_AUDIO_HOLD_MS = 3000;
+const SIDEBAR_OPEN_GRACE_MS = 120;
 
 const SIDEBAR_SERVICES = {
   youtube: { key: 'youtube', title: 'YouTube', url: 'https://www.youtube.com' },
@@ -60,13 +64,22 @@ function clampSidebarWidth(rawWidth) {
   return Math.max(SIDEBAR_PANEL_MIN_WIDTH, Math.min(SIDEBAR_PANEL_MAX_WIDTH, Math.round(num)));
 }
 
+function clearSidebarAudioHoldTimer(meta) {
+  if (meta && meta._audioHoldTimer) {
+    clearTimeout(meta._audioHoldTimer);
+    meta._audioHoldTimer = null;
+  }
+}
+
 function createSidebarPanelState() {
   const s = state.storage ? state.storage.getSettings() : {};
   return {
     views: new Map(), // serviceKey -> WebContentsView
-    meta: new Map(), // serviceKey -> { key, title, defaultUrl, url, failedUrl, isLoading, audible }
+    meta: new Map(), // serviceKey -> { key, title, defaultUrl, url, failedUrl, isLoading, audible, rawAudible, lastActiveAt, suspended, _audioHoldTimer }
+    savedUrls: new Map(), // serviceKey -> last URL preserved across idle suspend
     activeKey: null,
     open: false,
+    openedAt: 0,
     pinned: Boolean(s.sidebarPanelPinned),
     width: clampSidebarWidth(s.sidebarPanelWidth)
   };
@@ -79,6 +92,9 @@ function ensureSidebarPanelState(ctx) {
   }
   if (!(ctx.sidebarPanel.meta instanceof Map)) {
     ctx.sidebarPanel.meta = new Map();
+  }
+  if (!(ctx.sidebarPanel.savedUrls instanceof Map)) {
+    ctx.sidebarPanel.savedUrls = new Map();
   }
   ctx.sidebarPanel.width = clampSidebarWidth(ctx.sidebarPanel.width);
   ctx.sidebarPanel.pinned = Boolean(ctx.sidebarPanel.pinned);
@@ -260,6 +276,7 @@ function ensureSidebarPanelFrameView(ctx) {
 
   const wc = view.webContents;
   registerWebContents(wc, ctx.win.id);
+  require('./utils').attachInternalNavigationGuard(wc);
   attachKeyboardShortcuts(ctx, wc);
 
   wc.on('focus', () => {
@@ -276,6 +293,11 @@ function ensureSidebarPanelFrameView(ctx) {
   });
 
   ctx.win.contentView.addChildView(view);
+  if (typeof view.setVisible === 'function') {
+    try {
+      view.setVisible(false);
+    } catch (_) {}
+  }
   view.setBounds({ x: -5000, y: -5000, width: 1, height: 1 });
   ctx.sidebarPanelFrameView = view;
   return view;
@@ -291,19 +313,23 @@ function buildWebContentsViewForSidebarService(ctx, service) {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      session: ctx.session,
-      plugins: true
+      session: ctx.session
     }
   });
 
+  const initialUrl = !service.internal ? panel.savedUrls.get(service.key) || service.url : service.url;
   const meta = {
     key: service.key,
     title: service.title,
     defaultUrl: service.url,
-    url: service.url,
+    url: initialUrl,
     failedUrl: '',
     isLoading: true,
-    audible: false
+    audible: false,
+    rawAudible: false,
+    lastActiveAt: Date.now(),
+    suspended: false,
+    _audioHoldTimer: null
   };
 
   panel.views.set(service.key, view);
@@ -313,8 +339,12 @@ function buildWebContentsViewForSidebarService(ctx, service) {
   registerWebContents(wc, ctx.win.id);
   wc.setUserAgent(wc.getUserAgent().replace(/Electron\/[^\s]+\s?/g, ''));
   attachKeyboardShortcuts(ctx, wc);
+  if (!service.internal) {
+    attachWebContentsContextMenu(ctx, wc, { isSidebar: true });
+  }
 
   wc.on('focus', () => {
+    meta.lastActiveAt = Date.now();
     if (ctx.popoverOpenKind) closePopover(ctx);
   });
 
@@ -396,11 +426,36 @@ function buildWebContentsViewForSidebarService(ctx, service) {
   wc.on('dom-ready', () => state.adBlocker.injectCosmeticFilters(wc));
 
   wc.on('audio-state-changed', (event) => {
-    meta.audible = Boolean(event.audible);
+    const isAudibleNow = Boolean(event.audible);
+    meta.rawAudible = isAudibleNow;
+    meta.lastActiveAt = Date.now();
     if (!service.internal) {
-      playerMod().onSidebarAudioChanged(ctx, service.key, wc.id, meta.audible);
+      playerMod().onSidebarAudioChanged(ctx, service.key, wc.id, isAudibleNow);
     }
-    broadcastSidebarState(ctx);
+    if (isAudibleNow) {
+      clearSidebarAudioHoldTimer(meta);
+      if (!meta.audible) {
+        meta.audible = true;
+        broadcastSidebarState(ctx);
+      }
+    } else if (meta.audible && !meta._audioHoldTimer) {
+      meta._audioHoldTimer = setTimeout(() => {
+        meta._audioHoldTimer = null;
+        if (!ctx.win || ctx.win.isDestroyed()) return;
+        const currentView = panel.views.get(service.key);
+        const stillAudible = Boolean(
+          currentView &&
+            currentView.webContents &&
+            !currentView.webContents.isDestroyed() &&
+            typeof currentView.webContents.isCurrentlyAudible === 'function' &&
+            currentView.webContents.isCurrentlyAudible()
+        );
+        if (!stillAudible && !meta.rawAudible && meta.audible) {
+          meta.audible = false;
+          broadcastSidebarState(ctx);
+        }
+      }, SIDEBAR_AUDIO_HOLD_MS);
+    }
   });
 
   if (service.internal) {
@@ -413,18 +468,27 @@ function buildWebContentsViewForSidebarService(ctx, service) {
         playerMod().sendPlayerStateToWebContents(ctx, wc);
       }
     });
+    wc.once('destroyed', () => {
+      clearSidebarAudioHoldTimer(meta);
+    });
   } else {
     wc.once('destroyed', () => {
+      clearSidebarAudioHoldTimer(meta);
       playerMod().onWebContentsDestroyed(wc.id);
     });
   }
 
   ctx.win.contentView.addChildView(view);
+  if (typeof view.setVisible === 'function') {
+    try {
+      view.setVisible(false);
+    } catch (_) {}
+  }
   view.setBounds({ x: -5000, y: -5000, width: 1, height: 1 });
   if (service.internal && service.key === 'player') {
     wc.loadFile(PLAYER_PANEL_FILE, { query: getInternalUiQuery(ctx.incognito) }).catch(() => {});
   } else {
-    wc.loadURL(service.url).catch(() => {});
+    wc.loadURL(initialUrl).catch(() => {});
   }
   return view;
 }
@@ -470,6 +534,12 @@ function openSidebarPanel(ctx, keyOrOpts) {
   const view = getOrCreateSidebarView(ctx, service);
   panel.activeKey = service.key;
   panel.open = true;
+  panel.openedAt = Date.now();
+  const activeMeta = panel.meta.get(service.key);
+  if (activeMeta) {
+    activeMeta.lastActiveAt = Date.now();
+    activeMeta.suspended = false;
+  }
 
   syncSidebarLayoutLeft(ctx);
   updateActiveViewBounds(ctx);
@@ -485,6 +555,10 @@ function closeSidebarPanel(ctx, { restoreFocus = true } = {}) {
   const panel = ensureSidebarPanelState(ctx);
   if (!panel.open) return serializeSidebarState(ctx);
 
+  const prevMeta = panel.activeKey ? panel.meta.get(panel.activeKey) : null;
+  if (prevMeta) {
+    prevMeta.lastActiveAt = Date.now();
+  }
   panel.open = false;
   syncSidebarLayoutLeft(ctx);
   updateActiveViewBounds(ctx);
@@ -493,6 +567,103 @@ function closeSidebarPanel(ctx, { restoreFocus = true } = {}) {
   }
   broadcastSidebarState(ctx);
   return serializeSidebarState(ctx);
+}
+
+function closeSidebarIfUnpinned(ctx, { restoreFocus = false, ignoreGrace = false } = {}) {
+  if (!ctx || !ctx.win || ctx.win.isDestroyed()) return false;
+  const panel = ensureSidebarPanelState(ctx);
+  if (!panel || !panel.open || panel.pinned) return false;
+  if (!ignoreGrace && Date.now() - (panel.openedAt || 0) < SIDEBAR_OPEN_GRACE_MS) {
+    return false;
+  }
+  closeSidebarPanel(ctx, { restoreFocus });
+  return true;
+}
+
+function suspendSidebarServiceView(ctx, serviceKey) {
+  if (!ctx || !ctx.win || ctx.win.isDestroyed()) return false;
+  const panel = ensureSidebarPanelState(ctx);
+  const service = SIDEBAR_SERVICES[serviceKey];
+  if (!panel || !service || service.internal) return false;
+  const view = panel.views.get(serviceKey);
+  if (!view) return false;
+
+  const meta = panel.meta.get(serviceKey) || null;
+  const resumeUrl = getSidebarServiceCurrentUrl(ctx, serviceKey) || service.url;
+  if (resumeUrl && !isErrorPageUrl(resumeUrl) && !resolveInternalUiFile(resumeUrl)) {
+    panel.savedUrls.set(serviceKey, resumeUrl);
+  }
+
+  clearSidebarAudioHoldTimer(meta);
+  const wc = view.webContents;
+  if (wc) {
+    webContentsToWinId.delete(wc.id);
+    playerMod().onWebContentsDestroyed(wc.id);
+  }
+  try {
+    ctx.win.contentView.removeChildView(view);
+  } catch (_) {}
+  try {
+    if (wc && !wc.isDestroyed()) {
+      wc.close();
+    }
+  } catch (_) {}
+
+  panel.views.delete(serviceKey);
+  if (meta) {
+    meta.url = resumeUrl;
+    meta.isLoading = false;
+    meta.audible = false;
+    meta.rawAudible = false;
+    meta.suspended = true;
+  }
+  broadcastSidebarState(ctx);
+  return true;
+}
+
+function suspendIdleSidebarViews(timeoutMs) {
+  const safeTimeout = Number.isFinite(Number(timeoutMs)) && Number(timeoutMs) > 0 ? Number(timeoutMs) : 10 * 60 * 1000;
+  const now = Date.now();
+  let suspendedCount = 0;
+
+  for (const ctx of windowContexts.values()) {
+    if (!ctx || !ctx.win || ctx.win.isDestroyed() || !ctx.sidebarPanel) continue;
+    const panel = ensureSidebarPanelState(ctx);
+    for (const [serviceKey, view] of Array.from(panel.views.entries())) {
+      const service = SIDEBAR_SERVICES[serviceKey];
+      if (!service || service.internal) continue;
+      const meta = panel.meta.get(serviceKey);
+      if (!meta) continue;
+
+      // Never suspend a currently visible sidebar service panel
+      if (panel.open && panel.activeKey === serviceKey) {
+        meta.lastActiveAt = now;
+        continue;
+      }
+
+      const wc = view && view.webContents && !view.webContents.isDestroyed() ? view.webContents : null;
+      const isCurrentlyAudible = Boolean(
+        meta.rawAudible ||
+          meta.audible ||
+          (wc && typeof wc.isCurrentlyAudible === 'function' && wc.isCurrentlyAudible()) ||
+          (wc && playerMod().isWebContentsPlayingMedia(wc.id))
+      );
+
+      // Never suspend while media/audio is actively playing; reset idle timer
+      if (isCurrentlyAudible) {
+        meta.lastActiveAt = now;
+        continue;
+      }
+
+      const lastActiveAt = Number(meta.lastActiveAt) || 0;
+      if (lastActiveAt > 0 && now - lastActiveAt >= safeTimeout) {
+        if (suspendSidebarServiceView(ctx, serviceKey)) {
+          suspendedCount += 1;
+        }
+      }
+    }
+  }
+  return suspendedCount;
 }
 
 function toggleSidebarPanel(ctx, keyOrOpts) {
@@ -652,7 +823,13 @@ function cleanupSidebarPanelViews(ctx) {
   }
   ctx.sidebarPanel.views.clear();
   if (ctx.sidebarPanel.meta instanceof Map) {
+    for (const meta of ctx.sidebarPanel.meta.values()) {
+      clearSidebarAudioHoldTimer(meta);
+    }
     ctx.sidebarPanel.meta.clear();
+  }
+  if (ctx.sidebarPanel.savedUrls instanceof Map) {
+    ctx.sidebarPanel.savedUrls.clear();
   }
 }
 
@@ -671,6 +848,9 @@ module.exports = {
   syncSidebarLayoutLeft,
   openSidebarPanel,
   closeSidebarPanel,
+  closeSidebarIfUnpinned,
+  suspendSidebarServiceView,
+  suspendIdleSidebarViews,
   toggleSidebarPanel,
   setSidebarPinned,
   setSidebarWidth,

@@ -217,6 +217,8 @@ class StorageManager {
     };
 
     this.cache = {};
+    this._pendingWrites = new Map();
+    this._compactKeys = new Set(['history', 'downloads', 'session']);
     this._encryptionWarned = false;
     this._initAll();
     if (!this.isProfileChild) {
@@ -230,16 +232,79 @@ class StorageManager {
     return JSON.parse(JSON.stringify(this.defaults[key]));
   }
 
+  _serializeKey(key, data) {
+    return this._compactKeys && this._compactKeys.has(key)
+      ? JSON.stringify(data)
+      : JSON.stringify(data, null, 2);
+  }
+
+  _atomicWriteFile(filePath, content) {
+    if (!fs.existsSync(this.dataDir)) {
+      fs.mkdirSync(this.dataDir, { recursive: true });
+    }
+    const tmpPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+    const bakPath = `${filePath}.bak`;
+    fs.writeFileSync(tmpPath, content, 'utf-8');
+    // Keep last known-good file as .bak before replacing live file
+    if (fs.existsSync(filePath)) {
+      try {
+        fs.copyFileSync(filePath, bakPath);
+      } catch (_) {}
+    }
+    try {
+      fs.renameSync(tmpPath, filePath);
+    } catch (renameErr) {
+      // Fallback on Windows if AV/file lock temporarily blocks atomic rename
+      try {
+        fs.copyFileSync(tmpPath, filePath);
+        fs.unlinkSync(tmpPath);
+      } catch (copyErr) {
+        try {
+          if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+        } catch (_) {}
+        throw copyErr;
+      }
+    }
+  }
+
   _initAll() {
     for (const [key, filePath] of Object.entries(this.files)) {
       if (!fs.existsSync(filePath)) {
+        const bakPath = `${filePath}.bak`;
+        if (fs.existsSync(bakPath)) {
+          try {
+            const bakData = JSON.parse(fs.readFileSync(bakPath, 'utf-8'));
+            this._write(key, bakData);
+            console.warn(`[Storage] Recovered missing ${key} from backup.`);
+            continue;
+          } catch (_) {}
+        }
         this._write(key, this._cloneDefault(key));
       } else {
         try {
           const raw = fs.readFileSync(filePath, 'utf-8');
           this.cache[key] = JSON.parse(raw);
-        } catch (_) {
-          this._write(key, this._cloneDefault(key));
+        } catch (parseErr) {
+          // Quarantine corrupted file instead of silently destroying user data
+          try {
+            const corruptPath = `${filePath}.corrupt-${Date.now()}`;
+            fs.copyFileSync(filePath, corruptPath);
+            console.error(`[Storage] Corrupted ${key} quarantined to ${corruptPath}:`, parseErr.message);
+          } catch (_) {}
+          // Attempt automatic recovery from .bak before falling back to defaults
+          const bakPath = `${filePath}.bak`;
+          let recovered = false;
+          if (fs.existsSync(bakPath)) {
+            try {
+              const bakData = JSON.parse(fs.readFileSync(bakPath, 'utf-8'));
+              this._write(key, bakData);
+              recovered = true;
+              console.warn(`[Storage] Recovered corrupted ${key} from .bak backup.`);
+            } catch (_) {}
+          }
+          if (!recovered) {
+            this._write(key, this._cloneDefault(key));
+          }
         }
       }
     }
@@ -247,15 +312,59 @@ class StorageManager {
 
   _write(key, data) {
     this.cache[key] = data;
+    const pendingTimer = this._pendingWrites?.get(key);
+    if (pendingTimer) {
+      clearTimeout(pendingTimer);
+      this._pendingWrites.delete(key);
+    }
     try {
-      if (!fs.existsSync(this.dataDir)) {
-        fs.mkdirSync(this.dataDir, { recursive: true });
-      }
-      fs.writeFileSync(this.files[key], JSON.stringify(data, null, 2), 'utf-8');
+      this._atomicWriteFile(this.files[key], this._serializeKey(key, data));
     } catch (err) {
       console.error(`[Storage] Failed writing ${key}:`, err.message);
     }
     return data;
+  }
+
+  _scheduleWrite(key, data, delayMs = 600) {
+    this.cache[key] = data;
+    if (!this._pendingWrites) this._pendingWrites = new Map();
+    const existing = this._pendingWrites.get(key);
+    if (existing) clearTimeout(existing);
+    const timer = setTimeout(() => {
+      this._pendingWrites.delete(key);
+      if (!Object.prototype.hasOwnProperty.call(this.cache, key)) return;
+      try {
+        this._atomicWriteFile(this.files[key], this._serializeKey(key, this.cache[key]));
+      } catch (err) {
+        console.error(`[Storage] Failed deferred writing ${key}:`, err.message);
+      }
+    }, Math.max(50, delayMs));
+    if (typeof timer.unref === 'function') timer.unref();
+    this._pendingWrites.set(key, timer);
+    return data;
+  }
+
+  flushAll() {
+    if (this._pendingWrites instanceof Map) {
+      for (const [key, timer] of Array.from(this._pendingWrites.entries())) {
+        clearTimeout(timer);
+        this._pendingWrites.delete(key);
+        if (Object.prototype.hasOwnProperty.call(this.cache, key)) {
+          try {
+            this._atomicWriteFile(this.files[key], this._serializeKey(key, this.cache[key]));
+          } catch (err) {
+            console.error(`[Storage] Failed flushing ${key}:`, err.message);
+          }
+        }
+      }
+    }
+    if (!this.isProfileChild && this._profileStorages instanceof Map) {
+      for (const child of this._profileStorages.values()) {
+        if (child && typeof child.flushAll === 'function') {
+          child.flushAll();
+        }
+      }
+    }
   }
 
   get(key) {
@@ -1070,12 +1179,13 @@ class StorageManager {
     s.totalAdsBlocked = (s.totalAdsBlocked || 0) + count;
     this.cache.settings = s;
     if (s.totalAdsBlocked % 15 === 0) {
-      this._write('settings', s);
+      this._scheduleWrite('settings', s, 1500);
     }
     return s.totalAdsBlocked;
   }
 
   flushSettings() {
+    this.flushAll();
     if (this.cache.settings) {
       this._write('settings', this.cache.settings);
     }
@@ -1575,7 +1685,7 @@ class StorageManager {
       } else {
         list[existingIdx] = existing;
       }
-      return this._write('history', list);
+      return this._scheduleWrite('history', list, 800);
     }
     list.unshift({
       id: 'h-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
@@ -1586,7 +1696,7 @@ class StorageManager {
       visitCount: 1
     });
     if (list.length > 800) list.length = 800;
-    return this._write('history', list);
+    return this._scheduleWrite('history', list, 800);
   }
 
   clearHistory(range = 'all', profileId) {
@@ -1675,9 +1785,9 @@ class StorageManager {
     return this.get('downloads');
   }
 
-  upsertDownload(entry, profileId) {
+  upsertDownload(entry, profileId, { deferWrite = false } = {}) {
     const target = this._targetFor(profileId);
-    if (target !== this) return target.upsertDownload(entry);
+    if (target !== this) return target.upsertDownload(entry, undefined, { deferWrite });
     const list = [...this._readOwnDownloads()];
     const idx = list.findIndex(d => d.id === entry.id);
     if (idx !== -1) {
@@ -1685,8 +1795,15 @@ class StorageManager {
     } else {
       list.unshift(entry);
     }
-    if (list.length > 100) list.length = 100;
-    return this._write('downloads', list);
+    if (list.length > 250) {
+      // Preserve progressing/paused downloads when trimming old completed records
+      const active = list.filter((d) => d && (d.state === 'progressing' || d.state === 'paused'));
+      const inactive = list.filter((d) => !d || (d.state !== 'progressing' && d.state !== 'paused'));
+      const trimmed = [...active, ...inactive.slice(0, Math.max(0, 250 - active.length))];
+      list.length = 0;
+      list.push(...trimmed);
+    }
+    return deferWrite ? this._scheduleWrite('downloads', list, 1800) : this._write('downloads', list);
   }
 
   removeDownload(id, profileId) {

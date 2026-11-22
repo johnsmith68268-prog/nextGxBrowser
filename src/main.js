@@ -1,4 +1,15 @@
-const { app, session } = require('electron');
+const { app, session, nativeTheme } = require('electron');
+
+if (process.platform === 'win32' && typeof app.setAppUserModelId === 'function') {
+  app.setAppUserModelId('com.marjan.nextgxbrowser');
+}
+
+nativeTheme.themeSource = 'dark';
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+}
 
 const isRunningAsRoot =
   typeof process.geteuid === 'function'
@@ -9,9 +20,9 @@ if (isRunningAsRoot) {
 }
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
-const { state, initCore } = require('./main/core');
+const { windowContexts, state, initCore } = require('./main/core');
 const { cleanupOrphanedWallpapers } = require('./main/wallpapers');
-const { broadcastAdblockUpdate } = require('./main/broadcast');
+const { broadcastAdblockUpdate, cancelScheduledAdblockBroadcast } = require('./main/broadcast');
 const { cancelScheduledSessionSave, saveSessionNow } = require('./main/session');
 const { setupDownloadListener } = require('./main/downloads');
 const { broadcastCookiesUpdate, cancelScheduledCookiesBroadcast } = require('./main/cookies');
@@ -52,26 +63,56 @@ configureShortcuts({
   closeSidebarPanel
 });
 
-app.whenReady().then(async () => {
-  initCore({
-    onAdblockUpdate: (stats) => {
-      broadcastAdblockUpdate(stats);
+app.on('second-instance', (_event, argv) => {
+  const existingCtx =
+    Array.from(windowContexts.values()).find((c) => c && !c.incognito && c.win && !c.win.isDestroyed()) ||
+    Array.from(windowContexts.values()).find((c) => c && c.win && !c.win.isDestroyed()) ||
+    null;
+
+  const urlArg = Array.isArray(argv)
+    ? argv.find((arg) => typeof arg === 'string' && /^https?:\/\//i.test(arg.trim()))
+    : null;
+
+  if (existingCtx && existingCtx.win) {
+    if (existingCtx.win.isMinimized()) existingCtx.win.restore();
+    existingCtx.win.focus();
+    if (urlArg) {
+      createTab(existingCtx, { url: urlArg.trim(), active: true });
     }
-  });
-
-  ensureProfileSessionInitialized('default', { setupPermissionsForSession });
-  const activeProfileId = state.storage.getActiveProfileId();
-  if (activeProfileId && activeProfileId !== 'default') {
-    ensureProfileSessionInitialized(activeProfileId, { setupPermissionsForSession });
+  } else if (app.isReady()) {
+    createBrowserWindow({ incognito: false, initialUrl: urlArg ? urlArg.trim() : null });
   }
-  cleanupOrphanedWallpapers();
-  await restorePersistedExtensions();
-  registerIpcHandlers();
-
-  openStartupWindows();
-  startBackgroundTimers();
-  startCornerBackgroundRefresh();
 });
+
+if (gotSingleInstanceLock) {
+  app.whenReady().then(async () => {
+    initCore({
+      onAdblockUpdate: (stats) => {
+        broadcastAdblockUpdate(stats, { throttled: true });
+      }
+    });
+
+    ensureProfileSessionInitialized('default', { setupPermissionsForSession });
+    const activeProfileId = state.storage.getActiveProfileId();
+    if (activeProfileId && activeProfileId !== 'default') {
+      ensureProfileSessionInitialized(activeProfileId, { setupPermissionsForSession });
+    }
+    registerIpcHandlers();
+    openStartupWindows();
+    startBackgroundTimers();
+    startCornerBackgroundRefresh();
+
+    // Non-blocking post-window startup tasks so first frame renders immediately
+    setTimeout(() => {
+      restorePersistedExtensions().catch((err) => {
+        console.error('[Extensions] Startup restore failed:', err);
+      });
+    }, 50);
+    setTimeout(() => {
+      cleanupOrphanedWallpapers();
+    }, 5000);
+  });
+}
 
 app.on('before-quit', () => {
   state.isAppQuitting = true;
@@ -80,8 +121,12 @@ app.on('before-quit', () => {
   gxControl.shutdown();
   cancelScheduledSessionSave();
   cancelScheduledCookiesBroadcast();
+  cancelScheduledAdblockBroadcast();
   saveSessionNow({ allowEmpty: false });
-  if (state.storage) state.storage.flushSettings();
+  if (state.storage) {
+    if (typeof state.storage.flushAll === 'function') state.storage.flushAll();
+    state.storage.flushSettings();
+  }
 });
 
 app.on('window-all-closed', () => {

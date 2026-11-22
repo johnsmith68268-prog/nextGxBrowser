@@ -211,7 +211,7 @@ function registerPrivacyAndPasswordIpcHandlers(handleInternal, { getSenderProfil
 
   // Security hardening: copy decrypted password via main-process Electron clipboard by entry ID
   // so renderer DOM buttons never need plaintext password attributes.
-  handleInternal('passwords:copy', (e, arg) => {
+  handleInternal('passwords:copy', async (e, arg) => {
     const pid = resolveProfileId(e);
     const id = typeof arg === 'object' && arg !== null ? arg.id : arg;
     if (!id || typeof id !== 'string') {
@@ -222,7 +222,7 @@ function registerPrivacyAndPasswordIpcHandlers(handleInternal, { getSenderProfil
       return { ok: false, error: 'Password entry not found.' };
     }
     try {
-      clipboard.writeText(String(entry.password ?? ''));
+      await clipboard.writeText(String(entry.password ?? ''));
       return { ok: true, id: entry.id };
     } catch (err) {
       return { ok: false, error: err?.message || 'Failed to copy to clipboard.' };

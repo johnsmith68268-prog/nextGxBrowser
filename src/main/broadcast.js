@@ -151,18 +151,66 @@ function notifyActiveWebUiTabShown(ctx) {
   }
 }
 
-function broadcastAdblockUpdate(stats) {
-  const payload = stats || (state.adBlocker ? state.adBlocker.getStats() : null);
+const ADBLOCK_BROADCAST_THROTTLE_MS = 750;
+let adblockBroadcastTimer = null;
+let lastAdblockBroadcastAt = 0;
+let pendingAdblockPayload = null;
+
+function flushAdblockBroadcastNow(stats) {
+  const payload = stats || pendingAdblockPayload || (state.adBlocker ? state.adBlocker.getStats() : null);
+  pendingAdblockPayload = null;
   if (!payload) return;
+  lastAdblockBroadcastAt = Date.now();
   for (const ctx of windowContexts.values()) {
     if (ctx.win && !ctx.win.isDestroyed()) {
       ctx.win.webContents.send('adblock:update', payload);
     }
-    if (ctx.popoverView && ctx.popoverView.webContents && !ctx.popoverView.webContents.isDestroyed()) {
+    if (
+      ctx.popoverOpenKind &&
+      ctx.popoverView &&
+      ctx.popoverView.webContents &&
+      !ctx.popoverView.webContents.isDestroyed()
+    ) {
       ctx.popoverView.webContents.send('adblock:update', payload);
     }
   }
   sendToWebUiTabs('adblock:update', payload);
+}
+
+function broadcastAdblockUpdate(stats, { throttled = false } = {}) {
+  const payload = stats || (state.adBlocker ? state.adBlocker.getStats() : null);
+  if (!payload) return;
+  if (!throttled) {
+    if (adblockBroadcastTimer) {
+      clearTimeout(adblockBroadcastTimer);
+      adblockBroadcastTimer = null;
+    }
+    flushAdblockBroadcastNow(payload);
+    return;
+  }
+  pendingAdblockPayload = payload;
+  const elapsed = Date.now() - lastAdblockBroadcastAt;
+  if (elapsed >= ADBLOCK_BROADCAST_THROTTLE_MS && !adblockBroadcastTimer) {
+    flushAdblockBroadcastNow(payload);
+    return;
+  }
+  if (!adblockBroadcastTimer) {
+    const delay = Math.max(50, ADBLOCK_BROADCAST_THROTTLE_MS - elapsed);
+    adblockBroadcastTimer = setTimeout(() => {
+      adblockBroadcastTimer = null;
+      if (!state.isAppQuitting) {
+        flushAdblockBroadcastNow();
+      }
+    }, delay);
+  }
+}
+
+function cancelScheduledAdblockBroadcast() {
+  if (adblockBroadcastTimer) {
+    clearTimeout(adblockBroadcastTimer);
+    adblockBroadcastTimer = null;
+  }
+  pendingAdblockPayload = null;
 }
 
 function broadcastHistoryUpdate({ profileId = null } = {}) {
@@ -197,7 +245,12 @@ function broadcastProfilesUpdate() {
     if (ctx.win && !ctx.win.isDestroyed()) {
       ctx.win.webContents.send('profiles:update', payload);
     }
-    if (ctx.popoverView && ctx.popoverView.webContents && !ctx.popoverView.webContents.isDestroyed()) {
+    if (
+      ctx.popoverOpenKind &&
+      ctx.popoverView &&
+      ctx.popoverView.webContents &&
+      !ctx.popoverView.webContents.isDestroyed()
+    ) {
       ctx.popoverView.webContents.send('profiles:update', payload);
     }
     for (const tab of ctx.tabs.values()) {
@@ -223,7 +276,12 @@ function broadcastDownloadsUpdate(downloads, { profileId = null } = {}) {
     if (ctx.win && !ctx.win.isDestroyed()) {
       ctx.win.webContents.send('downloads:update', payload);
     }
-    if (ctx.popoverView && ctx.popoverView.webContents && !ctx.popoverView.webContents.isDestroyed()) {
+    if (
+      ctx.popoverOpenKind &&
+      ctx.popoverView &&
+      ctx.popoverView.webContents &&
+      !ctx.popoverView.webContents.isDestroyed()
+    ) {
       ctx.popoverView.webContents.send('downloads:update', payload);
     }
     for (const tab of ctx.tabs.values()) {
@@ -345,6 +403,7 @@ module.exports = {
   sendToCornerTabs,
   notifyActiveWebUiTabShown,
   broadcastAdblockUpdate,
+  cancelScheduledAdblockBroadcast,
   broadcastHistoryUpdate,
   broadcastPasswordsUpdate,
   broadcastPermissionsUpdate,

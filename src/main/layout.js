@@ -13,6 +13,32 @@ const splitViewMod = () => require('./splitview');
 
 const EFFECTIVE_PANEL_MIN_FLOOR = 240;
 const MIN_TAB_VIEWPORT_WIDTH = 160;
+const PARKED_BOUNDS = { x: -5000, y: -5000, width: 1, height: 1 };
+
+function setViewVisible(view, visible) {
+  if (!view || typeof view.setVisible !== 'function') return;
+  try {
+    view.setVisible(Boolean(visible));
+  } catch (_) {}
+}
+
+function hideView(view) {
+  if (!view) return;
+  setViewVisible(view, false);
+  try {
+    view.setBounds(PARKED_BOUNDS);
+  } catch (_) {}
+}
+
+function showView(view, bounds) {
+  if (!view) return;
+  setViewVisible(view, true);
+  if (bounds) {
+    try {
+      view.setBounds(bounds);
+    } catch (_) {}
+  }
+}
 
 function getMaxEffectiveSidebarPanelWidth(ctx) {
   if (!ctx || !ctx.win || ctx.win.isDestroyed()) return SIDEBAR_PANEL_MAX_WIDTH;
@@ -117,39 +143,39 @@ function updateActiveViewBounds(ctx) {
     for (const [id, tab] of ctx.tabs.entries()) {
       if (!tab.view) continue;
       if (id === leftTab.id) {
-        tab.view.setBounds(paneBounds.left);
+        showView(tab.view, paneBounds.left);
       } else if (id === rightTab.id) {
-        tab.view.setBounds(paneBounds.right);
+        showView(tab.view, paneBounds.right);
       } else {
-        tab.view.setBounds({ x: -5000, y: -5000, width: 1, height: 1 });
+        hideView(tab.view);
       }
     }
   } else {
     for (const [id, tab] of ctx.tabs.entries()) {
       if (!tab.view) continue;
       if (id === ctx.activeTabId && !tab.sleeping) {
-        tab.view.setBounds({
+        showView(tab.view, {
           x: effectiveTabLeft,
           y: top,
           width: contentW,
           height: contentH
         });
       } else {
-        tab.view.setBounds({ x: -5000, y: -5000, width: 1, height: 1 });
+        hideView(tab.view);
       }
     }
   }
 
   if (ctx.sidebarPanelFrameView) {
     if (panelOpen) {
-      ctx.sidebarPanelFrameView.setBounds({
+      showView(ctx.sidebarPanelFrameView, {
         x: SIDEBAR_ICON_WIDTH,
         y: top,
         width: panelWidth,
         height: Math.max(120, contentHeight - top - bottomOffset)
       });
     } else {
-      ctx.sidebarPanelFrameView.setBounds({ x: -5000, y: -5000, width: 1, height: 1 });
+      hideView(ctx.sidebarPanelFrameView);
     }
   }
 
@@ -160,28 +186,28 @@ function updateActiveViewBounds(ctx) {
     for (const [key, view] of panel.views.entries()) {
       if (!view) continue;
       if (panelOpen && key === panel.activeKey) {
-        view.setBounds({
+        showView(view, {
           x: SIDEBAR_ICON_WIDTH,
           y: panelY,
           width: panelContentW,
           height: panelH
         });
       } else {
-        view.setBounds({ x: -5000, y: -5000, width: 1, height: 1 });
+        hideView(view);
       }
     }
   }
 
   if (ctx.screenshotView) {
     if (ctx.pendingScreenshotDataUrl) {
-      ctx.screenshotView.setBounds({
+      showView(ctx.screenshotView, {
         x: effectiveTabLeft,
         y: top,
         width: Math.max(120, contentWidth - effectiveTabLeft - rightOffset),
         height: Math.max(120, contentHeight - top - bottomOffset)
       });
     } else {
-      ctx.screenshotView.setBounds({ x: -5000, y: -5000, width: 1, height: 1 });
+      hideView(ctx.screenshotView);
     }
   }
 
@@ -191,6 +217,9 @@ function updateActiveViewBounds(ctx) {
 module.exports = {
   getMaxEffectiveSidebarPanelWidth,
   getEffectiveSidebarPanelWidth,
+  setViewVisible,
+  hideView,
+  showView,
   bringOverlaysToFront,
   updateActiveViewBounds
 };

@@ -1,6 +1,7 @@
 const { app } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const { pathToFileURL } = require('url');
 const { state } = require('./core');
 const { isPathInsideDir } = require('./utils');
 const { broadcastSettingsUpdate } = require('./broadcast');
@@ -70,10 +71,8 @@ function getCustomWallpaperDataUrl(filename) {
   try {
     const stat = fs.statSync(safePath);
     if (!stat.isFile() || stat.size <= 0 || stat.size > WALLPAPER_MAX_BYTES) return '';
-    const buf = fs.readFileSync(safePath);
-    const detected = detectWallpaperImageFormat(buf);
-    if (!detected) return '';
-    return `data:${detected.mime};base64,${buf.toString('base64')}`;
+    // Return lightweight file:// URL with mtime cache-buster instead of reading 5MB & base64-encoding per New Tab
+    return `${pathToFileURL(safePath).href}?t=${Math.floor(stat.mtimeMs || Date.now())}`;
   } catch (_) {
     return '';
   }
@@ -143,7 +142,7 @@ function saveCustomWallpaperPayload(payload) {
     return {
       ok: true,
       settings: updated,
-      dataUrl: `data:${detected.mime};base64,${buf.toString('base64')}`
+      dataUrl: `${pathToFileURL(destPath).href}?t=${Date.now()}`
     };
   } catch (err) {
     console.error('[Wallpaper] Failed to save custom wallpaper:', err.message);

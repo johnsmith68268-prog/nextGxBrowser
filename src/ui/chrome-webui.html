@@ -2,6 +2,7 @@
 <html lang="en" data-theme="gx-violet">
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file: https: http:; font-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none';" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>nextGx System Settings & Manager</title>
   <link rel="stylesheet" href="theme.css" />
@@ -1416,7 +1417,14 @@
 <body>
   <header class="webui-topbar">
     <div class="webui-brand">
-      <span class="badge">nextGx</span>
+      <img
+        src="assets/nextgx-emblem.png"
+        alt="nGX"
+        width="24"
+        height="24"
+        draggable="false"
+        style="display:block;width:24px;height:24px;object-fit:contain;flex-shrink:0;filter:var(--gx-emblem-filter, none) drop-shadow(0 0 5px var(--nx-accent-soft));transition:filter 0.25s ease;"
+      />
       <span class="nx-heading" id="pageHeaderTitle">History</span>
     </div>
 

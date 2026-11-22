@@ -129,7 +129,7 @@ body {
   min-height: 82px;
   background: var(--bg-deep);
   border-bottom: 1px solid var(--nx-accent);
-  box-shadow: inset 0 -1px 0 var(--nx-accent-soft);
+  box-shadow: inset 0 -1px 0 var(--nx-accent-soft), inset 2px 0 0 var(--nx-accent);
   display: flex;
   flex-direction: column;
   z-index: 30;
@@ -167,22 +167,31 @@ body {
 }
 
 .nx-brand-mark {
-  width: 24px;
-  height: 24px;
-  border-radius: var(--nx-radius-xs);
-  clip-path: var(--nx-chamfer-sm);
-  border: 1.5px solid var(--nx-accent);
-  background: var(--nx-accent-soft);
-  color: var(--nx-accent-bright);
-  box-shadow: var(--nx-glow-sm);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+  flex-shrink: 0;
+  transition: transform var(--nx-motion-fast) var(--nx-motion-ease);
+}
+
+.nx-brand-logo-img {
+  width: 22px;
+  height: 22px;
+  display: block;
+  object-fit: contain;
+  filter: var(--gx-emblem-filter, none) drop-shadow(0 0 4px var(--nx-accent-soft));
+  transition: filter var(--nx-motion-base) var(--nx-motion-ease), transform var(--nx-motion-fast) var(--nx-motion-ease);
 }
 
 .nx-brand:hover .nx-brand-mark {
-  box-shadow: var(--nx-glow-md);
+  transform: scale(1.07);
+}
+
+.nx-brand:hover .nx-brand-logo-img {
+  filter: var(--gx-emblem-filter, none) drop-shadow(0 0 10px var(--nx-accent));
 }
 
 .nx-brand-text {
@@ -394,6 +403,40 @@ body {
 }
 
 /* Chamfered Opera GX Style Tabs */
+.nx-corner-tab {
+  width: 34px;
+  height: 31px;
+  flex: 0 0 34px;
+  border-radius: var(--nx-radius-sm) var(--nx-radius-sm) 0 0;
+  border: 1px solid var(--border-glass);
+  border-bottom: none;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--nx-accent) 12%, var(--bg-chrome)), var(--bg-chrome));
+  color: var(--nx-accent-bright);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  clip-path: var(--nx-chamfer-tab);
+  align-self: center;
+  margin-right: -3px;
+  -webkit-app-region: no-drag;
+  transition: background var(--nx-motion-fast) var(--nx-motion-ease), border-color var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+}
+
+.nx-corner-tab:hover {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--nx-accent) 22%, var(--bg-surface)), var(--bg-surface));
+  border-color: var(--nx-accent);
+  color: var(--nx-accent-bright);
+  box-shadow: inset 0 2px 0 var(--nx-accent-bright), var(--nx-glow-sm);
+}
+
+.nx-corner-tab.active {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--nx-accent) 28%, var(--bg-surface)), var(--bg-chrome));
+  border-color: var(--nx-accent);
+  color: var(--nx-accent-bright);
+  box-shadow: inset 0 2px 0 var(--nx-accent-bright), var(--nx-glow-md);
+}
+
 .nx-tabs-strip {
   display: flex;
   align-items: center;
@@ -449,14 +492,15 @@ body {
 }
 
 .nx-tab {
-  height: 30px;
+  height: 31px;
   flex: 1 1 165px;
   min-width: 68px;
   max-width: 215px;
-  padding: 0 8px;
-  background: var(--nx-glass-subtle);
-  border: 1px solid transparent;
-  border-radius: var(--nx-radius-sm);
+  padding: 0 9px;
+  background: color-mix(in srgb, var(--bg-chrome) 75%, transparent);
+  border: 1px solid var(--border-glass);
+  border-bottom: none;
+  border-radius: var(--nx-radius-sm) var(--nx-radius-sm) 0 0;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -464,6 +508,7 @@ body {
   color: var(--text-muted);
   cursor: pointer;
   clip-path: var(--nx-chamfer-tab);
+  align-self: flex-end;
   -webkit-app-region: no-drag;
   transition: background var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease), border-color var(--nx-motion-fast) var(--nx-motion-ease), opacity var(--nx-motion-fast) var(--nx-motion-ease);
 }
@@ -518,17 +563,17 @@ body {
 }
 
 .nx-tab:hover {
-  background: var(--bg-surface);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--nx-accent) 14%, var(--bg-surface)), var(--bg-chrome));
   color: var(--text-main);
   border-color: var(--nx-accent-soft);
-  box-shadow: var(--nx-glow-sm), inset 0 0 8px var(--nx-accent-soft);
+  box-shadow: inset 0 2px 0 var(--nx-accent-soft), var(--nx-glow-sm);
 }
 
 .nx-tab.active {
-  background: var(--bg-surface);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--nx-accent) 26%, var(--bg-surface)), var(--bg-chrome));
   color: var(--text-main);
   border-color: var(--nx-accent);
-  box-shadow: var(--nx-glow-md), inset 0 -2px 0 var(--nx-accent-bright), inset 0 0 10px var(--nx-accent-soft);
+  box-shadow: inset 0 2px 0 var(--nx-accent-bright), var(--nx-glow-md), inset 0 0 10px var(--nx-accent-soft);
 }
 
 .nx-tab.in-split {
@@ -1002,6 +1047,10 @@ body {
 
 .address-lead-btn.insecure {
   color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
+  padding: 0 7px;
+  border-radius: var(--nx-radius-xs);
 }
 
 .dl-active-dot {
@@ -1180,7 +1229,8 @@ body {
   min-width: 50px;
   height: 100%;
   background: var(--bg-deep);
-  border-right: 1px solid var(--nx-accent-soft);
+  border-right: 1px solid var(--nx-accent);
+  box-shadow: inset -1px 0 0 var(--nx-accent-soft), inset 2px 0 0 var(--nx-accent);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -1268,7 +1318,7 @@ body {
 }
 
 .sidebar-btn.active {
-  animation: nxActiveRailGlow 3.2s ease-in-out infinite;
+  box-shadow: var(--nx-glow-md), inset 0 0 10px var(--nx-accent-soft);
 }
 
 .sidebar-btn.active::before {

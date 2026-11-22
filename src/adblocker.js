@@ -108,6 +108,52 @@ const TRACKER_URL_PATTERNS = [
   /\/gtag\/js/i
 ];
 
+// Pre-indexed Set & path-rule lookups for O(labels) per-request matching instead of linear scans
+function buildDomainIndex(domains) {
+  const hostSet = new Set();
+  const pathRules = [];
+  for (const raw of domains) {
+    const rule = raw.toLowerCase();
+    const slashIdx = rule.indexOf('/');
+    if (slashIdx !== -1) {
+      pathRules.push({
+        rule,
+        host: rule.slice(0, slashIdx),
+        path: rule.slice(slashIdx)
+      });
+    } else {
+      hostSet.add(rule);
+    }
+  }
+  return { hostSet, pathRules };
+}
+
+const TRACKER_INDEX = buildDomainIndex(TRACKER_DOMAINS);
+const AD_INDEX = buildDomainIndex(AD_DOMAINS);
+const AD_URL_COMBINED_RE = new RegExp(AD_URL_PATTERNS.map((r) => `(?:${r.source})`).join('|'), 'i');
+const TRACKER_URL_COMBINED_RE = new RegExp(TRACKER_URL_PATTERNS.map((r) => `(?:${r.source})`).join('|'), 'i');
+
+function matchHostInIndex(host, pathname, index) {
+  if (!host) return '';
+  // Check exact host and each parent domain label (e.g. a.b.c -> a.b.c, b.c, c)
+  let candidate = host;
+  while (candidate) {
+    if (index.hostSet.has(candidate)) return candidate;
+    const dot = candidate.indexOf('.');
+    if (dot === -1) break;
+    candidate = candidate.slice(dot + 1);
+  }
+  if (index.pathRules.length > 0 && pathname) {
+    for (let i = 0; i < index.pathRules.length; i++) {
+      const pr = index.pathRules[i];
+      if ((host === pr.host || host.endsWith(`.${pr.host}`)) && pathname.startsWith(pr.path)) {
+        return pr.rule;
+      }
+    }
+  }
+  return '';
+}
+
 const MAX_PER_SITE_ORIGINS = 100;
 
 const COSMETIC_AD_CSS = `
@@ -227,17 +273,15 @@ class AdBlocker {
     return !this.isSiteAllowlisted(norm);
   }
 
-  shouldBlock(urlStr, resourceType, initiator = '') {
-    if (
-      !urlStr ||
-      urlStr.startsWith('file://') ||
-      urlStr.startsWith('data:') ||
-      urlStr.startsWith('devtools://') ||
-      urlStr.startsWith('about:') ||
-      urlStr.startsWith('chrome://') ||
-      urlStr.startsWith('chrome-extension://') ||
-      urlStr.startsWith('nextgx://')
-    ) {
+  shouldBlock(urlStr, resourceType, initiator = '', { initiatorNormalized = false } = {}) {
+    if (!urlStr) return false;
+    // Fast-path skip non-HTTP(S) schemes before any parsing
+    const c0 = urlStr.charCodeAt(0);
+    if (c0 !== 104 && c0 !== 72) {
+      // Does not start with 'h' or 'H' (not http:// or https://)
+      return false;
+    }
+    if (!/^https?:\/\//i.test(urlStr)) {
       return false;
     }
 
@@ -256,46 +300,61 @@ class AdBlocker {
         ? settings.trackerBlockEnabled
         : true;
 
-    const rawInitiator =
-      typeof initiator === 'object' && initiator !== null
-        ? initiator.initiatorOrigin || initiator.initiator
-        : initiator;
-    const initiatorOrigin = extractOrigin(rawInitiator);
+    let initiatorOrigin = '';
+    if (initiatorNormalized) {
+      initiatorOrigin = typeof initiator === 'string' ? initiator : '';
+    } else {
+      const rawInitiator =
+        typeof initiator === 'object' && initiator !== null
+          ? initiator.initiatorOrigin || initiator.initiator
+          : initiator;
+      initiatorOrigin = extractOrigin(rawInitiator);
+    }
     if (initiatorOrigin && this.isSiteAllowlisted(initiatorOrigin)) {
       return false;
     }
 
-    const lower = urlStr.toLowerCase();
     let parsedUrl = null;
     try {
       parsedUrl = new URL(urlStr);
     } catch (_) {}
 
-    // Check tracker domains first so tracker domains are never blocked when trackerBlockEnabled is off
-    for (const domain of TRACKER_DOMAINS) {
-      if (matchesDomainRule(parsedUrl, lower, domain)) {
-        return trackersEnabled ? { blocked: true, reason: domain, category: 'tracker' } : false;
-      }
-    }
+    if (parsedUrl) {
+      const host = parsedUrl.hostname.toLowerCase();
+      const pathname = parsedUrl.pathname.toLowerCase();
 
-    for (const domain of AD_DOMAINS) {
-      if (matchesDomainRule(parsedUrl, lower, domain)) {
-        return { blocked: true, reason: domain, category: 'ad' };
+      // Check tracker domains first so tracker domains are never blocked when trackerBlockEnabled is off
+      const trackerHit = matchHostInIndex(host, pathname, TRACKER_INDEX);
+      if (trackerHit) {
+        return trackersEnabled ? { blocked: true, reason: trackerHit, category: 'tracker' } : false;
       }
-    }
 
-    for (const pattern of AD_URL_PATTERNS) {
-      if (pattern.test(urlStr)) {
-        return { blocked: true, reason: pattern.source, category: 'ad' };
+      const adHit = matchHostInIndex(host, pathname, AD_INDEX);
+      if (adHit) {
+        return { blocked: true, reason: adHit, category: 'ad' };
       }
-    }
-
-    if (trackersEnabled) {
-      for (const pattern of TRACKER_URL_PATTERNS) {
-        if (pattern.test(urlStr)) {
-          return { blocked: true, reason: pattern.source, category: 'tracker' };
+    } else {
+      const lower = urlStr.toLowerCase();
+      for (const domain of TRACKER_DOMAINS) {
+        if (matchesDomainRule(null, lower, domain)) {
+          return trackersEnabled ? { blocked: true, reason: domain, category: 'tracker' } : false;
         }
       }
+      for (const domain of AD_DOMAINS) {
+        if (matchesDomainRule(null, lower, domain)) {
+          return { blocked: true, reason: domain, category: 'ad' };
+        }
+      }
+    }
+
+    if (AD_URL_COMBINED_RE.test(urlStr)) {
+      const matchedPat = AD_URL_PATTERNS.find((p) => p.test(urlStr));
+      return { blocked: true, reason: matchedPat ? matchedPat.source : 'ad-pattern', category: 'ad' };
+    }
+
+    if (trackersEnabled && TRACKER_URL_COMBINED_RE.test(urlStr)) {
+      const matchedPat = TRACKER_URL_PATTERNS.find((p) => p.test(urlStr));
+      return { blocked: true, reason: matchedPat ? matchedPat.source : 'tracker-pattern', category: 'tracker' };
     }
 
     return false;
@@ -337,7 +396,9 @@ class AdBlocker {
 
     ses.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, (details, callback) => {
       const initiatorOrigin = extractOrigin(details.initiatorOrigin || details.initiator);
-      const match = this.shouldBlock(details.url, details.resourceType, initiatorOrigin);
+      const match = this.shouldBlock(details.url, details.resourceType, initiatorOrigin, {
+        initiatorNormalized: true
+      });
       if (match && match.blocked) {
         this.sessionBlocked += 1;
         const total = this.storage.incrementBlockedCount(1);

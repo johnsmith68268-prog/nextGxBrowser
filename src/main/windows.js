@@ -4,16 +4,23 @@ const {
   BOOKMARKS_BAR_HEIGHT,
   SIDEBAR_ICON_WIDTH,
   PRIVATE_WINDOW_TITLE,
+  APP_ICON_FILE,
   INDEX_FILE,
   PRELOAD_FILE,
   windowContexts,
+  webContentsToWinId,
   registerWebContents,
   state
 } = require('./core');
-const { getInternalUiQuery, getOriginForUrl } = require('./utils');
+const { getInternalUiQuery, attachInternalNavigationGuard } = require('./utils');
 const { bringOverlaysToFront, updateActiveViewBounds } = require('./layout');
 const { attachKeyboardShortcuts } = require('./shortcuts');
+const { attachChromeContextMenu } = require('./context-menu');
 const { closePopover } = require('./popovers');
+const {
+  setupPermissionsForSession,
+  cancelPendingPermissionsForWindow
+} = require('./permissions');
 const {
   sanitizeRestorableTabUrl,
   isDirectDownloadRestoreUrl,
@@ -38,7 +45,7 @@ const {
   syncSidebarFrameViewState,
   cleanupSidebarPanelViews
 } = require('./sidebar');
-const { setupDownloadListener } = require('./downloads');
+const { setupDownloadListener, clearIncognitoDownloads } = require('./downloads');
 const { collectSystemStats } = require('./stats');
 const player = require('./player');
 const { registerCornerPreloadForSession } = require('./gxcorner');
@@ -51,30 +58,7 @@ const {
 const { ensureProfileSessionInitialized } = require('./profiles');
 const splitViewMod = () => require('./splitview');
 
-function setupPermissionsForSession(ses, profileId = 'default') {
-  const mapPerm = (p) => {
-    if (p === 'media' || p === 'videoCapture') return 'camera';
-    if (p === 'audioCapture') return 'microphone';
-    if (p === 'geolocation') return 'geolocation';
-    if (p === 'notifications') return 'notifications';
-    return null;
-  };
-
-  ses.setPermissionCheckHandler((_wc, permission, requestingOrigin) => {
-    const key = mapPerm(permission);
-    if (!key) return true;
-    return state.storage.getSitePermissions(requestingOrigin, profileId)[key] !== 'block';
-  });
-
-  ses.setPermissionRequestHandler((webContents, permission, callback, details) => {
-    const origin = getOriginForUrl(details?.requestingUrl || webContents.getURL());
-    const key = mapPerm(permission);
-    if (!key || !origin) return callback(true);
-    return callback(state.storage.getSitePermissions(origin, profileId)[key] !== 'block');
-  });
-}
-
-function createBrowserWindow({ incognito = false, restoreTabs = null, profileId = null } = {}) {
+function createBrowserWindow({ incognito = false, restoreTabs = null, profileId = null, initialUrl = null } = {}) {
   initFullscreenListeners();
 
   const resolvedProfileId =
@@ -88,8 +72,8 @@ function createBrowserWindow({ incognito = false, restoreTabs = null, profileId 
 
   if (incognito) {
     state.adBlocker.attachToSession(winSession);
-    setupPermissionsForSession(winSession, resolvedProfileId);
-    setupDownloadListener(winSession, resolvedProfileId);
+    setupPermissionsForSession(winSession, resolvedProfileId, { incognito: true });
+    setupDownloadListener(winSession, resolvedProfileId, { incognito: true });
     registerCornerPreloadForSession(winSession);
   }
 
@@ -105,7 +89,9 @@ function createBrowserWindow({ incognito = false, restoreTabs = null, profileId 
     height: 890,
     minWidth: 960,
     minHeight: 620,
+    show: false,
     frame: false,
+    ...(APP_ICON_FILE ? { icon: APP_ICON_FILE } : {}),
     backgroundColor: incognito ? '#09090d' : '#12101b',
     title: incognito ? PRIVATE_WINDOW_TITLE : normalTitle,
     webPreferences: {
@@ -115,6 +101,15 @@ function createBrowserWindow({ incognito = false, restoreTabs = null, profileId 
       sandbox: true
     }
   });
+
+  const showWindowSafely = () => {
+    if (!win.isDestroyed() && !win.isVisible()) {
+      win.show();
+    }
+  };
+  win.once('ready-to-show', showWindowSafely);
+  const showFallbackTimer = setTimeout(showWindowSafely, 700);
+  if (typeof showFallbackTimer.unref === 'function') showFallbackTimer.unref();
 
   if (incognito) {
     win.on('page-title-updated', (e) => {
@@ -174,8 +169,10 @@ function createBrowserWindow({ incognito = false, restoreTabs = null, profileId 
 
   windowContexts.set(win.id, ctx);
   registerWebContents(win.webContents, win.id);
+  attachInternalNavigationGuard(win.webContents);
 
   attachKeyboardShortcuts(ctx, win.webContents);
+  attachChromeContextMenu(ctx);
   attachWindowFullscreenHandlers(ctx);
 
   win.loadFile(INDEX_FILE, {
@@ -183,14 +180,24 @@ function createBrowserWindow({ incognito = false, restoreTabs = null, profileId 
   });
 
   win.on('resize', () => {
-    if (ctx.popoverOpenKind === 'tab-context' || ctx.popoverOpenKind === 'bookmark-folder') closePopover(ctx);
+    if (
+      ctx.popoverOpenKind === 'tab-context' ||
+      ctx.popoverOpenKind === 'bookmark-folder'
+    ) {
+      closePopover(ctx);
+    }
     updateActiveViewBounds(ctx);
     if (ctx.sidebarPanel?.open) {
       syncSidebarFrameViewState(ctx);
     }
   });
   win.on('blur', () => {
-    if (ctx.popoverOpenKind === 'tab-context' || ctx.popoverOpenKind === 'bookmark-folder') closePopover(ctx);
+    if (
+      ctx.popoverOpenKind === 'tab-context' ||
+      ctx.popoverOpenKind === 'bookmark-folder'
+    ) {
+      closePopover(ctx);
+    }
   });
   win.on('maximize', () => updateActiveViewBounds(ctx));
   win.on('unmaximize', () => updateActiveViewBounds(ctx));
@@ -217,15 +224,31 @@ function createBrowserWindow({ incognito = false, restoreTabs = null, profileId 
     }
   });
   win.on('closed', () => {
+    clearTimeout(showFallbackTimer);
+    cancelPendingPermissionsForWindow(ctx);
     ctx.split = null;
     if (ctx.splitsByWorkspace instanceof Map) {
       ctx.splitsByWorkspace.clear();
     }
     cleanupWindowFullscreen(ctx);
     cleanupSidebarPanelViews(ctx);
+    if (ctx.screenshotView) {
+      if (ctx.screenshotView.webContents) webContentsToWinId.delete(ctx.screenshotView.webContents.id);
+      ctx.screenshotView = null;
+    }
+    ctx.pendingScreenshotDataUrl = '';
+    if (ctx.popoverView) {
+      if (ctx.popoverView.webContents) webContentsToWinId.delete(ctx.popoverView.webContents.id);
+      ctx.popoverView = null;
+    }
     player.onWindowClosed(ctx);
     windowContexts.delete(win.id);
-    if (!ctx.incognito && !state.isAppQuitting) {
+    if (ctx.incognito) {
+      const hasRemainingIncognito = Array.from(windowContexts.values()).some((c) => c && c.incognito);
+      if (!hasRemainingIncognito) {
+        clearIncognitoDownloads();
+      }
+    } else if (!state.isAppQuitting) {
       const hasRemainingNormalWindow = Array.from(windowContexts.values()).some((c) => c && !c.incognito);
       if (hasRemainingNormalWindow) {
         pruneAllEmptyGroups();
@@ -279,7 +302,9 @@ function createBrowserWindow({ incognito = false, restoreTabs = null, profileId 
             workspaceId: wsId,
             groupId: grpId,
             active: false,
-            deferActivate: true
+            deferActivate: true,
+            // Lazy-restore non-active tabs as sleeping stubs to cut startup RAM & load time
+            sleeping: true
           });
           if (created) {
             restoredIndexToTabId.set(i, created.id);
@@ -397,7 +422,8 @@ function createBrowserWindow({ incognito = false, restoreTabs = null, profileId 
       scheduleSessionSave(ctx);
     } else {
       ctx.activeWorkspaceId = DEFAULT_WORKSPACE_ID;
-      createTabInternal(ctx, { url: 'nextgx://newtab', workspaceId: DEFAULT_WORKSPACE_ID, active: true });
+      const startUrl = typeof initialUrl === 'string' && initialUrl.trim() ? initialUrl.trim() : 'nextgx://newtab';
+      createTabInternal(ctx, { url: startUrl, workspaceId: DEFAULT_WORKSPACE_ID, active: true });
       ctx.pendingRestoreTabs = null;
       ctx.restoringSession = false;
       ctx.sessionReady = true;

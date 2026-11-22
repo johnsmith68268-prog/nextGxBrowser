@@ -227,11 +227,13 @@ function applyFullscreenBounds(ctx) {
   for (const view of managedViews) {
     if (!view || view === fsView) continue;
     try {
+      if (typeof view.setVisible === 'function') view.setVisible(false);
       view.setBounds(PARKED_BOUNDS);
     } catch (_) {}
   }
 
   try {
+    if (typeof fsView.setVisible === 'function') fsView.setVisible(true);
     fsView.setBounds({
       x: 0,
       y: 0,
@@ -479,6 +481,9 @@ function exitFullscreen(ctx, { skipLayout = false } = {}) {
         try {
           if (bounds && typeof child.setBounds === 'function') {
             child.setBounds(bounds);
+          }
+          if (bounds && bounds.x >= -1000 && bounds.width > 1 && bounds.height > 1 && typeof child.setVisible === 'function') {
+            child.setVisible(true);
           }
         } catch (_) {}
       }

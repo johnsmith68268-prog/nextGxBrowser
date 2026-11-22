@@ -4,6 +4,7 @@ const { isNewTabUrl } = require('./utils');
 const { sleepTab } = require('./tabs');
 const gxControl = require('./gxcontrol');
 const playerMod = () => require('./player');
+const sidebarMod = () => require('./sidebar');
 
 let prevCpuInfo = os.cpus();
 let statsIntervalId = null;
@@ -98,13 +99,40 @@ function broadcastSystemStatsNow({ sample = null } = {}) {
   return stats;
 }
 
+function shouldPollMetricsFast() {
+  const s = state.storage?.getSettings?.() || {};
+  if (s.gxRamLimiterEnabled || s.gxCpuLimiterEnabled) return true;
+  for (const ctx of windowContexts.values()) {
+    if (!ctx || !ctx.win || ctx.win.isDestroyed()) continue;
+    if (ctx.gxControlOpen) return true;
+    const activeTab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
+    if (activeTab && !activeTab.sleeping && isNewTabUrl(activeTab.url)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+const FAST_STATS_INTERVAL_MS = 2500;
+const IDLE_STATS_INTERVAL_MS = 15000;
+let lastStatsPollAt = 0;
+
 function startBackgroundTimers() {
   stopBackgroundTimers();
   gxControl.primeMetrics();
+  lastStatsPollAt = 0;
 
   statsIntervalId = setInterval(async () => {
     if (statsTickInFlight || state.isAppQuitting) return;
+    const now = Date.now();
+    const fast = shouldPollMetricsFast();
+    const minInterval = fast ? FAST_STATS_INTERVAL_MS : IDLE_STATS_INTERVAL_MS;
+    if (lastStatsPollAt > 0 && now - lastStatsPollAt < minInterval - 100) {
+      playerMod().pruneStaleSources();
+      return;
+    }
     statsTickInFlight = true;
+    lastStatsPollAt = now;
     try {
       const sample = gxControl.sampleProcessMetrics({ force: true });
       await gxControl.enforceOnTick(sample, { sleepTab });
@@ -116,7 +144,7 @@ function startBackgroundTimers() {
     } finally {
       statsTickInFlight = false;
     }
-  }, 2500);
+  }, FAST_STATS_INTERVAL_MS);
 
   autoSleepIntervalId = setInterval(() => {
     if (state.isAppQuitting) return;
@@ -141,6 +169,7 @@ function startBackgroundTimers() {
         }
       }
     }
+    sidebarMod().suspendIdleSidebarViews(timeoutMs);
   }, 20000);
 }
 

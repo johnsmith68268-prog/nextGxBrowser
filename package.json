@@ -7,8 +7,12 @@
   "scripts": {
     "start": "node scripts/launch.js",
     "dev": "node scripts/launch.js --enable-logging",
+    "test": "node --test tests/*.test.js",
     "build:linux": "electron-builder --linux AppImage deb",
-    "build:win": "electron-builder --win nsis appx"
+    "build:win": "electron-builder --win nsis portable",
+    "build:win:exe": "electron-builder --win nsis",
+    "build:win:msix": "electron-builder --win appx",
+    "build:win:all": "electron-builder --win nsis portable appx"
   },
   "keywords": [
     "nextgx",
@@ -21,12 +25,24 @@
   "author": "Marjan",
   "license": "MIT",
   "devDependencies": {
-    "electron": "^45.3.3"
+    "electron": "^45.3.3",
+    "electron-builder": "^26.18.0"
   },
   "build": {
     "appId": "com.marjan.nextgxbrowser",
     "productName": "nextGx Browser",
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "build/icon.ico",
+      "build/icon.png",
+      "package.json"
+    ],
     "linux": {
+      "icon": "build/icon.png",
       "target": [
         "AppImage",
         "deb"
@@ -34,15 +50,46 @@
       "category": "Network;WebBrowser"
     },
     "win": {
+      "icon": "build/icon.ico",
       "target": [
-        "nsis",
-        "appx"
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "nextGx Browser",
+      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico"
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}-${arch}.${ext}"
     },
     "appx": {
       "applicationId": "Marjan.nextGxBrowser",
-      "backgroundColor": "#0d0e12",
-      "displayName": "nextGx Browser"
+      "identityName": "Marjan.nextGxBrowser",
+      "publisher": "CN=Marjan",
+      "publisherDisplayName": "Marjan",
+      "backgroundColor": "#120f0a",
+      "displayName": "nextGx Browser",
+      "showNameOnTiles": true,
+      "artifactName": "${productName}-${version}-${arch}.msix"
     }
   }
 }

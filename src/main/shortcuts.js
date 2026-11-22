@@ -108,7 +108,15 @@ function attachKeyboardShortcuts(ctx, webContents) {
           shortcutDeps.closeSidebarPanel(ctx);
         }
       } else {
-        shortcutDeps.closePopover(ctx);
+        const activeTab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
+        if (activeTab && activeTab.isLoading && activeTab.view?.webContents && !activeTab.view.webContents.isDestroyed()) {
+          event.preventDefault();
+          try {
+            activeTab.view.webContents.stop();
+          } catch (_) {}
+        } else {
+          shortcutDeps.closePopover(ctx);
+        }
       }
     }
   });

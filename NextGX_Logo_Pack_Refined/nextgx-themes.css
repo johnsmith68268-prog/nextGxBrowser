@@ -1,0 +1,25 @@
+/* NextGX adaptive theme tokens */
+:root, [data-nextgx-theme="violet"] {
+  --gx-primary:#B65BFA; --gx-secondary:#7C3AED;
+}
+[data-nextgx-theme="crimson"] {
+  --gx-primary:#FF3155; --gx-secondary:#B91C3C;
+}
+[data-nextgx-theme="cyber-cyan"] {
+  --gx-primary:#00DDF5; --gx-secondary:#087DDF;
+}
+[data-nextgx-theme="matrix-emerald"] {
+  --gx-primary:#00C99A; --gx-secondary:#008F75;
+}
+[data-nextgx-theme="neon-magenta"] {
+  --gx-primary:#F02FA7; --gx-secondary:#A51B9B;
+}
+[data-nextgx-theme="solar-amber"] {
+  --gx-primary:#FFAA32; --gx-secondary:#E45A18;
+}
+[data-nextgx-theme="acid-lime"] {
+  --gx-primary:#A4DB36; --gx-secondary:#43A85B;
+}
+[data-nextgx-theme="frost-ice"] {
+  --gx-primary:#9DDCFF; --gx-secondary:#4389D8;
+}

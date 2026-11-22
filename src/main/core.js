@@ -1,4 +1,5 @@
 const path = require('path');
+const fs = require('fs');
 const { pathToFileURL } = require('url');
 const { StorageManager } = require('../storage');
 const { AdBlocker } = require('../adblocker');
@@ -14,6 +15,15 @@ const SIDEBAR_PANEL_MAX_WIDTH = 640;
 const PRIVATE_WINDOW_TITLE = 'nextGx Private';
 
 const SRC_DIR = path.resolve(__dirname, '..');
+const APP_ROOT_DIR = path.resolve(SRC_DIR, '..');
+const APP_ICON_ICO = path.join(APP_ROOT_DIR, 'build', 'icon.ico');
+const APP_ICON_PNG = path.join(APP_ROOT_DIR, 'build', 'icon.png');
+const APP_ICON_FILE =
+  process.platform === 'win32' && fs.existsSync(APP_ICON_ICO)
+    ? APP_ICON_ICO
+    : fs.existsSync(APP_ICON_PNG)
+    ? APP_ICON_PNG
+    : undefined;
 const UI_DIR = path.resolve(SRC_DIR, 'ui');
 const INDEX_FILE = path.join(UI_DIR, 'index.html');
 const NEW_TAB_FILE = path.join(UI_DIR, 'newtab.html');
@@ -80,6 +90,7 @@ module.exports = {
   SIDEBAR_PANEL_MAX_WIDTH,
   PRIVATE_WINDOW_TITLE,
   SRC_DIR,
+  APP_ICON_FILE,
   UI_DIR,
   INDEX_FILE,
   NEW_TAB_FILE,

@@ -115,6 +115,9 @@ async function renderCurrentPage() {
 }
 
 // 1. HISTORY (Recently Closed + Today / Yesterday / Older Grouping + Visit Counts + Favicons + Time Range Clear)
+let historyVisibleLimit = 100;
+let lastHistorySearchKey = '';
+
 async function renderHistoryPage({ force = true } = {}) {
   const seq = ++renderSeq;
   const [list, closedTabs] = await Promise.all([
@@ -122,10 +125,15 @@ async function renderHistoryPage({ force = true } = {}) {
     window.gxChromePagesAPI.getClosedTabs ? window.gxChromePagesAPI.getClosedTabs() : Promise.resolve([])
   ]);
   if (seq !== renderSeq || currentPage !== 'history') return;
+  if (searchQuery !== lastHistorySearchKey) {
+    lastHistorySearchKey = searchQuery;
+    historyVisibleLimit = 100;
+  }
 
   const renderKey = JSON.stringify({
     day: new Date().toDateString(),
     q: searchQuery,
+    limit: historyVisibleLimit,
     closed: closedTabs || [],
     history: list || []
   });
@@ -212,8 +220,10 @@ async function renderHistoryPage({ force = true } = {}) {
     const todayMs = startOfToday.getTime();
     const yesterdayMs = todayMs - 24 * 3600 * 1000;
 
+    const visibleItems = filtered.slice(0, historyVisibleLimit);
+    const remainingCount = Math.max(0, filtered.length - visibleItems.length);
     const groups = { Today: [], Yesterday: [], Older: [] };
-    for (const item of filtered) {
+    for (const item of visibleItems) {
       const t = item.visitedAt || 0;
       if (t >= todayMs) groups.Today.push(item);
       else if (t >= yesterdayMs) groups.Yesterday.push(item);
@@ -250,10 +260,25 @@ async function renderHistoryPage({ force = true } = {}) {
         </div>
       `;
     }
+    if (remainingCount > 0) {
+      historyHtml += `
+        <div style="display:flex;justify-content:center;padding:8px 0 20px;">
+          <button type="button" class="btn" id="btnLoadMoreHistory">Show more history (${remainingCount} remaining)</button>
+        </div>
+      `;
+    }
   }
 
   mainContainer.innerHTML = closedSectionHtml + historyHtml;
   if (!force && prevScrollY > 0) window.scrollTo(0, prevScrollY);
+
+  const btnLoadMoreHistory = document.getElementById('btnLoadMoreHistory');
+  if (btnLoadMoreHistory) {
+    btnLoadMoreHistory.addEventListener('click', () => {
+      historyVisibleLimit += 100;
+      renderHistoryPage({ force: true });
+    });
+  }
 
   const btnClearClosed = document.getElementById('btnClearClosedTabs');
   if (btnClearClosed) {
@@ -945,8 +970,25 @@ function renderPasswordRowHtml(pw) {
 
 async function renderPasswordsPage() {
   const seq = ++renderSeq;
-  const list = (await window.gxChromePagesAPI.getPasswords()) || [];
+  const [listRaw, encStatus] = await Promise.all([
+    window.gxChromePagesAPI.getPasswords(),
+    window.gxChromePagesAPI.getPasswordEncryptionStatus
+      ? window.gxChromePagesAPI.getPasswordEncryptionStatus().catch(() => ({ available: true }))
+      : Promise.resolve({ available: true })
+  ]);
+  const list = listRaw || [];
   if (seq !== renderSeq || currentPage !== 'passwords') return;
+  const encryptionWarningHtml =
+    encStatus && encStatus.available === false
+      ? `
+        <div class="io-banner warning" role="alert" style="margin-bottom:14px;">
+          <div class="io-banner-body">
+            <div class="io-banner-title">OS Keyring Encryption Unavailable</div>
+            <div class="io-banner-detail">Your operating system encryption service (safeStorage) is currently unavailable. Newly saved passwords may be stored unencrypted until OS keyring support is enabled.</div>
+          </div>
+        </div>
+      `
+      : '';
 
   pwLookupById.clear();
   for (const pw of list) {
@@ -1098,6 +1140,7 @@ async function renderPasswordsPage() {
   `;
 
   mainContainer.innerHTML = `
+    ${encryptionWarningHtml}
     ${exportWarningHtml}
     ${pwBannerHtml}
     ${generatorCardHtml}

@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('gxAPI', {
   // Tab Management
   createTab: (options) => ipcRenderer.invoke('tabs:create', options),
+  openGxCorner: () => ipcRenderer.invoke('tabs:open-corner'),
   switchTab: (tabId) => ipcRenderer.invoke('tabs:switch', tabId),
   closeTab: (tabId) => ipcRenderer.invoke('tabs:close', tabId),
   closeOtherTabs: (tabId) => ipcRenderer.invoke('tabs:close-others', tabId),
@@ -90,6 +91,7 @@ contextBridge.exposeInMainWorld('gxAPI', {
   startAreaScreenshot: () => ipcRenderer.invoke('tabs:screenshot-area-start'),
   finishAreaScreenshot: (rect) => ipcRenderer.invoke('tabs:screenshot-area-finish', rect),
   cancelAreaScreenshot: () => ipcRenderer.invoke('tabs:screenshot-area-cancel'),
+  savePageAsPdf: () => ipcRenderer.invoke('tabs:save-pdf'),
   toggleReaderMode: () => ipcRenderer.invoke('tabs:reader-mode'),
   findInPage: (text, forward) => ipcRenderer.invoke('tabs:find', { text, forward }),
   stopFindInPage: () => ipcRenderer.invoke('tabs:stop-find'),
@@ -100,12 +102,14 @@ contextBridge.exposeInMainWorld('gxAPI', {
   // Floating Popover Overlay Management
   openPopover: (options) => ipcRenderer.invoke('popover:open', options),
   resizePopover: (options) => ipcRenderer.invoke('popover:resize', options),
-  closePopover: () => ipcRenderer.invoke('popover:close'),
+  closePopover: (opts) => ipcRenderer.invoke('popover:close', opts),
   triggerMenuAction: (action) => ipcRenderer.invoke('menu:action', action),
+  setChromeContextTarget: (target) => ipcRenderer.invoke('contextmenu:chrome-target', target),
 
   // Site Permissions & Privacy Dashboard
   getSitePermissions: (origin) => ipcRenderer.invoke('permissions:get', origin),
   setSitePermission: (origin, key, value) => ipcRenderer.invoke('permissions:set', { origin, key, value }),
+  respondPermissionPrompt: (payload) => ipcRenderer.invoke('permissions:prompt-respond', payload),
   clearSitePermission: (origin, key) =>
     ipcRenderer.invoke(
       'privacy:clear-site-permission',
@@ -119,7 +123,7 @@ contextBridge.exposeInMainWorld('gxAPI', {
   // Sidebar Overlay Panel (GX Left Rail)
   toggleSidebarPanel: (serviceKey) => ipcRenderer.invoke('sidebar:toggle', serviceKey),
   openSidebarPanel: (serviceKey) => ipcRenderer.invoke('sidebar:open', serviceKey),
-  closeSidebarPanel: () => ipcRenderer.invoke('sidebar:close'),
+  closeSidebarPanel: (opts) => ipcRenderer.invoke('sidebar:close', opts),
   setSidebarPinned: (pinned) => ipcRenderer.invoke('sidebar:set-pinned', pinned),
   toggleSidebarPin: () => ipcRenderer.invoke('sidebar:set-pinned'),
   reloadSidebarPanel: () => ipcRenderer.invoke('sidebar:reload'),
@@ -167,6 +171,7 @@ contextBridge.exposeInMainWorld('gxAPI', {
 
   // Passwords & Notes
   getPasswords: () => ipcRenderer.invoke('passwords:get'),
+  getPasswordEncryptionStatus: () => ipcRenderer.invoke('passwords:encryption-status'),
   addPassword: (entry) => ipcRenderer.invoke('passwords:add', entry),
   updatePassword: (entry) => ipcRenderer.invoke('passwords:update', entry),
   removePassword: (id) => ipcRenderer.invoke('passwords:remove', id),

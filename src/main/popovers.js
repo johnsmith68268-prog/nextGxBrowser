@@ -5,10 +5,12 @@ const {
   PRELOAD_FILE,
   registerWebContents
 } = require('./core');
-const { getInternalUiQuery } = require('./utils');
+const { getInternalUiQuery, attachInternalNavigationGuard } = require('./utils');
 const { attachKeyboardShortcuts } = require('./shortcuts');
 const { closeExtensionPopup } = require('./extension-popup');
 const { getExtensionsDropdownData } = require('./extensions');
+const sidebarMod = () => require('./sidebar');
+const permissionsMod = () => require('./permissions');
 
 const WINDOW_MARGIN = 8;
 
@@ -32,6 +34,16 @@ const POPOVER_KIND_SPECS = {
     maxW: 320,
     minH: 100,
     maxH: 540
+  },
+  'permission-prompt': {
+    isMenu: false,
+    align: 'left',
+    defaultW: 332,
+    defaultH: 176,
+    minW: 300,
+    maxW: 390,
+    minH: 140,
+    maxH: 280
   },
   'bookmark-folder': {
     isMenu: true,
@@ -129,7 +141,7 @@ function getPopoverCacheKey(kind, payload) {
       : [];
     return `extensions-dropdown:${rows.length}`;
   }
-  if (kind === 'downloads' || kind === 'tab-context') {
+  if (kind === 'downloads' || kind === 'tab-context' || kind === 'permission-prompt') {
     return null;
   }
   return kind || null;
@@ -210,11 +222,17 @@ function ensurePopoverView(ctx) {
     ctx.popoverView.setBackgroundColor('#00000000');
   } catch (_) {}
   registerWebContents(ctx.popoverView.webContents, ctx.win.id);
+  attachInternalNavigationGuard(ctx.popoverView.webContents);
   attachKeyboardShortcuts(ctx, ctx.popoverView.webContents);
   ctx.popoverView.webContents.loadFile(POPOVER_FILE, {
     query: getInternalUiQuery(ctx.incognito)
   });
   ctx.win.contentView.addChildView(ctx.popoverView);
+  if (typeof ctx.popoverView.setVisible === 'function') {
+    try {
+      ctx.popoverView.setVisible(false);
+    } catch (_) {}
+  }
   ctx.popoverView.setBounds({ x: -5000, y: -5000, width: 1, height: 1 });
 
   if (ctx.win && !ctx.win.isDestroyed() && !ctx._popoverResizeListenerAttached) {
@@ -258,10 +276,11 @@ function restoreFocusAfterPopover(ctx) {
   restoreFocusToActiveTab(ctx);
 }
 
-function closePopover(ctx) {
+function closePopover(ctx, { restoreFocus = true } = {}) {
   if (!ctx) return;
   closeExtensionPopup(ctx);
   const wasOpen = Boolean(ctx.popoverOpenKind);
+  const wasPermissionPrompt = ctx.popoverOpenKind === 'permission-prompt';
   const popoverFocused = Boolean(
     ctx.popoverView &&
     ctx.popoverView.webContents &&
@@ -273,6 +292,11 @@ function closePopover(ctx) {
   ctx.popoverAnchor = null;
   ctx.popoverLastSize = null;
   if (ctx.popoverView) {
+    if (typeof ctx.popoverView.setVisible === 'function') {
+      try {
+        ctx.popoverView.setVisible(false);
+      } catch (_) {}
+    }
     ctx.popoverView.setBounds({ x: -5000, y: -5000, width: 1, height: 1 });
     if (ctx.popoverView.webContents && !ctx.popoverView.webContents.isDestroyed()) {
       ctx.popoverView.webContents.send('popover:data', { closed: true });
@@ -281,7 +305,12 @@ function closePopover(ctx) {
   if (ctx.win && !ctx.win.isDestroyed() && ctx.win.webContents && !ctx.win.webContents.isDestroyed()) {
     ctx.win.webContents.send('popover:data', { closed: true });
   }
-  if (wasOpen || popoverFocused) {
+  if (wasPermissionPrompt) {
+    try {
+      permissionsMod().onPermissionPopoverClosed(ctx);
+    } catch (_) {}
+  }
+  if (restoreFocus && (wasOpen || popoverFocused)) {
     restoreFocusAfterPopover(ctx);
   }
 }
@@ -320,7 +349,7 @@ function resizePopover(ctx, { kind, width, height } = {}) {
 }
 
 function openPopover(ctx, { kind, x, y, width, height, payload }) {
-  if (ctx.popoverOpenKind === kind && kind !== 'tab-context') {
+  if (ctx.popoverOpenKind === kind && kind !== 'tab-context' && kind !== 'permission-prompt') {
     const isDifferentFolder =
       kind === 'bookmark-folder' &&
       ctx.popoverPayload?.payload?.folder !== payload?.folder;
@@ -329,7 +358,13 @@ function openPopover(ctx, { kind, x, y, width, height, payload }) {
       return false;
     }
   }
+  if (ctx.popoverOpenKind === 'permission-prompt' && kind !== 'permission-prompt') {
+    try {
+      permissionsMod().onPermissionPopoverClosed(ctx);
+    } catch (_) {}
+  }
   closeExtensionPopup(ctx);
+  sidebarMod().closeSidebarIfUnpinned(ctx, { restoreFocus: false, ignoreGrace: true });
 
   const spec = getPopoverSpec(kind);
   let effectivePayload = payload || {};
@@ -349,7 +384,7 @@ function openPopover(ctx, { kind, x, y, width, height, payload }) {
     const items = Array.isArray(effectivePayload?.items) ? effectivePayload.items : [];
     const rawH = items.length === 0 ? 96 : 54 + items.length * 33;
     estimatedHeight = Math.max(84, Math.min(560, height || rawH));
-  } else if (kind === 'menu' || kind === 'tab-context' || kind === 'screenshot' || kind === 'shield' || kind === 'permissions') {
+  } else if (kind === 'menu' || kind === 'tab-context' || kind === 'screenshot' || kind === 'shield' || kind === 'permissions' || kind === 'permission-prompt') {
     estimatedWidth = spec.defaultW;
     estimatedHeight = spec.defaultH;
   }
@@ -389,6 +424,11 @@ function openPopover(ctx, { kind, x, y, width, height, payload }) {
   const initialBounds = computePopoverBounds(ctx, kind, initialW, initialH);
 
   ctx.win.contentView.addChildView(view);
+  if (typeof view.setVisible === 'function') {
+    try {
+      view.setVisible(true);
+    } catch (_) {}
+  }
   view.setBounds(initialBounds);
   if ((isTabContext || isBookmarkFolder) && view.webContents && !view.webContents.isDestroyed()) {
     view.webContents.focus();

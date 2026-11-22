@@ -1,7 +1,10 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="gx-violet">
+
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; font-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none';" />
   <title>Popover</title>
   <link rel="stylesheet" href="theme.css" />
   <style>
@@ -93,7 +96,9 @@
       height: 0;
     }
 
-    .hidden { display: none !important; }
+    .hidden {
+      display: none !important;
+    }
 
     #view-menu,
     #view-permissions,
@@ -101,6 +106,7 @@
     #view-downloads,
     #view-shield,
     #view-tab-context,
+    #view-address-context,
     #view-group-context,
     #view-workspace-context,
     #view-bookmark-folder,
@@ -115,7 +121,8 @@
     }
 
     #view-menu,
-    #view-tab-context {
+    #view-tab-context,
+    #view-address-context {
       gap: 0;
     }
 
@@ -160,7 +167,13 @@
       height: 19px;
       flex-shrink: 0;
     }
-    .nx-switch input { opacity: 0; width: 0; height: 0; }
+
+    .nx-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
     .nx-slider {
       position: absolute;
       cursor: pointer;
@@ -170,6 +183,7 @@
       border-radius: var(--nx-radius-pill);
       transition: background-color var(--nx-motion-base) var(--nx-motion-ease), border-color var(--nx-motion-base) var(--nx-motion-ease), box-shadow var(--nx-motion-base) var(--nx-motion-ease);
     }
+
     .nx-slider::before {
       position: absolute;
       content: "";
@@ -181,12 +195,14 @@
       border-radius: 50%;
       transition: transform var(--nx-motion-base) var(--nx-motion-ease);
     }
-    .nx-switch input:checked + .nx-slider {
+
+    .nx-switch input:checked+.nx-slider {
       background: var(--accent);
       border-color: var(--accent-bright);
       box-shadow: var(--nx-glow-sm);
     }
-    .nx-switch input:checked + .nx-slider::before {
+
+    .nx-switch input:checked+.nx-slider::before {
       transform: translateX(15px);
     }
 
@@ -314,8 +330,16 @@
       flex-shrink: 0;
     }
 
-    .sec-status { font-size: 13px; font-weight: 700; }
-    .sec-origin { font-size: 11px; color: var(--muted); word-break: break-all; }
+    .sec-status {
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .sec-origin {
+      font-size: 11px;
+      color: var(--muted);
+      word-break: break-all;
+    }
 
     .pop-section-label {
       font-size: 11px;
@@ -392,15 +416,25 @@
       cursor: pointer;
       transition: border-color var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
     }
+
     .mini-btn:hover {
       border-color: var(--accent);
       color: var(--accent-bright);
       box-shadow: var(--nx-glow-sm);
     }
-    .mini-btn:disabled { opacity: 0.45; cursor: default; }
-    .mini-btn:disabled:hover { border-color: var(--border); color: var(--text); box-shadow: none; }
 
-    .nx-switch input:disabled + .nx-slider {
+    .mini-btn:disabled {
+      opacity: 0.45;
+      cursor: default;
+    }
+
+    .mini-btn:disabled:hover {
+      border-color: var(--border);
+      color: var(--text);
+      box-shadow: none;
+    }
+
+    .nx-switch input:disabled+.nx-slider {
       opacity: 0.45;
       cursor: not-allowed;
     }
@@ -743,14 +777,37 @@
     }
 
     /* Workspaces & Tab Island Context Menus / Editors */
-    [data-group-color="group-1"] { --group-color: var(--nx-group-1); }
-    [data-group-color="group-2"] { --group-color: var(--nx-group-2); }
-    [data-group-color="group-3"] { --group-color: var(--nx-group-3); }
-    [data-group-color="group-4"] { --group-color: var(--nx-group-4); }
-    [data-group-color="group-5"] { --group-color: var(--nx-group-5); }
-    [data-group-color="group-6"] { --group-color: var(--nx-group-6); }
-    [data-group-color="group-7"] { --group-color: var(--nx-group-7); }
-    [data-group-color="group-8"] { --group-color: var(--nx-group-8); }
+    [data-group-color="group-1"] {
+      --group-color: var(--nx-group-1);
+    }
+
+    [data-group-color="group-2"] {
+      --group-color: var(--nx-group-2);
+    }
+
+    [data-group-color="group-3"] {
+      --group-color: var(--nx-group-3);
+    }
+
+    [data-group-color="group-4"] {
+      --group-color: var(--nx-group-4);
+    }
+
+    [data-group-color="group-5"] {
+      --group-color: var(--nx-group-5);
+    }
+
+    [data-group-color="group-6"] {
+      --group-color: var(--nx-group-6);
+    }
+
+    [data-group-color="group-7"] {
+      --group-color: var(--nx-group-7);
+    }
+
+    [data-group-color="group-8"] {
+      --group-color: var(--nx-group-8);
+    }
 
     .ctx-dyn-section {
       display: flex;
@@ -904,14 +961,37 @@
     }
 
     /* Profiles Popover */
-    [data-profile-color="gx-violet"] { --profile-color: var(--nx-swatch-violet); }
-    [data-profile-color="crimson"] { --profile-color: var(--nx-swatch-crimson); }
-    [data-profile-color="cyan"] { --profile-color: var(--nx-swatch-cyan); }
-    [data-profile-color="emerald"] { --profile-color: var(--nx-swatch-emerald); }
-    [data-profile-color="magenta"] { --profile-color: var(--nx-swatch-magenta); }
-    [data-profile-color="amber"] { --profile-color: var(--nx-swatch-amber); }
-    [data-profile-color="lime"] { --profile-color: var(--nx-swatch-lime); }
-    [data-profile-color="ice"] { --profile-color: var(--nx-swatch-ice); }
+    [data-profile-color="gx-violet"] {
+      --profile-color: var(--nx-swatch-violet);
+    }
+
+    [data-profile-color="crimson"] {
+      --profile-color: var(--nx-swatch-crimson);
+    }
+
+    [data-profile-color="cyan"] {
+      --profile-color: var(--nx-swatch-cyan);
+    }
+
+    [data-profile-color="emerald"] {
+      --profile-color: var(--nx-swatch-emerald);
+    }
+
+    [data-profile-color="magenta"] {
+      --profile-color: var(--nx-swatch-magenta);
+    }
+
+    [data-profile-color="amber"] {
+      --profile-color: var(--nx-swatch-amber);
+    }
+
+    [data-profile-color="lime"] {
+      --profile-color: var(--nx-swatch-lime);
+    }
+
+    [data-profile-color="ice"] {
+      --profile-color: var(--nx-swatch-ice);
+    }
 
     .prof-header {
       display: flex;
@@ -1183,26 +1263,36 @@
     }
   </style>
 </head>
+
 <body>
   <!-- 1. FLOATING 3-DOT MENU -->
   <div id="view-menu" class="hidden">
     <button class="menu-item" data-act="new-tab">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
         New Tab
       </span>
       <kbd>Ctrl+T</kbd>
     </button>
     <button class="menu-item" data-act="new-window">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <path d="M3 9h18" />
+        </svg>
         New Window
       </span>
       <kbd>Ctrl+N</kbd>
     </button>
     <button class="menu-item" data-act="new-incognito">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h20M5 12l2-5h10l2 5"/><circle cx="8" cy="16" r="2.5"/><circle cx="16" cy="16" r="2.5"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M2 12h20M5 12l2-5h10l2 5" />
+          <circle cx="8" cy="16" r="2.5" />
+          <circle cx="16" cy="16" r="2.5" />
+        </svg>
         New Private Window
       </span>
       <kbd>Ctrl+Shift+N</kbd>
@@ -1212,49 +1302,69 @@
 
     <button class="menu-item" data-act="history">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="9" />
+          <polyline points="12 7 12 12 15 14" />
+        </svg>
         History
       </span>
       <kbd>Ctrl+H</kbd>
     </button>
     <button class="menu-item" data-act="downloads">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="7 10 12 15 17 10" />
+          <line x1="12" y1="15" x2="12" y2="3" />
+        </svg>
         Downloads
       </span>
       <kbd>Ctrl+J</kbd>
     </button>
     <button class="menu-item" data-act="bookmark-current">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon
+            points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+        </svg>
         Bookmark this page
       </span>
       <kbd>Ctrl+D</kbd>
     </button>
     <button class="menu-item" data-act="bookmarks">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+        </svg>
         Bookmarks Manager
       </span>
       <span></span>
     </button>
     <button class="menu-item" data-act="passwords">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <path
+            d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
+        </svg>
         Passwords & Autofill
       </span>
       <span></span>
     </button>
     <button class="menu-item" data-act="privacy">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+        </svg>
         Privacy &amp; Security
       </span>
       <span></span>
     </button>
     <button class="menu-item" data-act="extensions">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5a2.5 2.5 0 0 0-5 0V5H4c-1.1 0-2 .9-2 2v3.8h1.5c1.5 0 2.7 1.2 2.7 2.7S5 16.2 3.5 16.2H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.5 1.2-2.7 2.7-2.7s2.7 1.2 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5a2.5 2.5 0 0 0 0-5z"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <path
+            d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5a2.5 2.5 0 0 0-5 0V5H4c-1.1 0-2 .9-2 2v3.8h1.5c1.5 0 2.7 1.2 2.7 2.7S5 16.2 3.5 16.2H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.5 1.2-2.7 2.7-2.7s2.7 1.2 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5a2.5 2.5 0 0 0 0-5z" />
+        </svg>
         Extensions
       </span>
       <span></span>
@@ -1270,35 +1380,50 @@
         <button class="zbtn" id="btnZoomIn" title="Zoom In (Ctrl+= / Ctrl++)">+</button>
         <button class="zbtn zbtn-reset" id="btnZoomReset" title="Reset Zoom (Ctrl+0)">Reset</button>
         <button class="zbtn" id="btnFs" title="Fullscreen (F11)">
-          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+          </svg>
         </button>
       </div>
     </div>
 
     <button class="menu-item" data-act="screenshot-area">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+          <circle cx="12" cy="13" r="4" />
+        </svg>
         Capture Area Screenshot
       </span>
       <span></span>
     </button>
     <button class="menu-item" data-act="print">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="6 9 6 2 18 2 18 9" />
+          <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+          <rect x="6" y="14" width="12" height="8" />
+        </svg>
         Print...
       </span>
       <kbd>Ctrl+P</kbd>
     </button>
     <button class="menu-item" data-act="find">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8" />
+          <path d="M21 21l-4.35-4.35" />
+        </svg>
         Find in page...
       </span>
       <kbd>Ctrl+F</kbd>
     </button>
     <button class="menu-item" data-act="devtools">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="16 18 22 12 16 6" />
+          <polyline points="8 6 2 12 8 18" />
+        </svg>
         Developer Tools
       </span>
       <kbd>F12</kbd>
@@ -1308,14 +1433,22 @@
 
     <button class="menu-item" data-act="settings">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3" />
+          <path
+            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
         Settings
       </span>
       <span></span>
     </button>
     <button class="menu-item" data-act="exit">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+          <polyline points="16 17 21 12 16 7" />
+          <line x1="21" y1="12" x2="9" y2="12" />
+        </svg>
         Exit nextGx
       </span>
       <span></span>
@@ -1324,11 +1457,16 @@
 
   <!-- 2. LOCK / SITE SECURITY & PERMISSIONS POPOVER -->
   <div id="view-permissions" class="hidden" style="display:flex;flex-direction:column;gap:8px;">
-    <div class="sec-header">
-      <svg id="secIcon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--success);flex-shrink:0;"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-      <div>
+    <div class="sec-header" style="align-items:flex-start;">
+      <svg id="secIcon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"
+        style="color:var(--success);flex-shrink:0;margin-top:2px;">
+        <rect x="3" y="11" width="18" height="11" rx="2" />
+        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+      </svg>
+      <div style="min-width:0;">
         <div class="sec-status" id="secStatusText">Connection is secure</div>
         <div class="sec-origin" id="secOriginText">https://example.com</div>
+        <div id="secNoticeText" style="font-size:11px;line-height:1.4;color:var(--muted);margin-top:4px;"></div>
       </div>
     </div>
 
@@ -1368,24 +1506,45 @@
     </div>
 
     <div class="sep"></div>
-    <div class="pop-section-label nx-heading">Cookies & Site Data</div>
+    <div class="pop-section-label nx-heading">Cookies &amp; Site Data</div>
     <div class="perm-row">
       <span id="popCookieCountText">0 cookies</span>
       <button class="mini-btn" id="btnClearSiteCookies">Clear cookies for this site</button>
     </div>
+    <div class="sep"></div>
+    <button class="menu-item" id="btnOpenSiteSettings">
+      <span class="menu-left">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3" />
+          <path
+            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+        Site settings
+      </span>
+      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+        <polyline points="15 3 21 3 21 9" />
+        <line x1="10" y1="14" x2="21" y2="3" />
+      </svg>
+    </button>
   </div>
 
   <!-- 3. SCREENSHOT MODE POPOVER -->
   <div id="view-screenshot" class="hidden" style="display:flex;flex-direction:column;gap:6px;">
     <button class="menu-item" id="btnShotArea">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2v4M6 18v4M2 6h4M18 6h4M6 6h12v12H6z"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M6 2v4M6 18v4M2 6h4M18 6h4M6 6h12v12H6z" />
+        </svg>
         Capture Selected Area
       </span>
     </button>
     <button class="menu-item" id="btnShotFull">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="12" cy="12" r="3"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
         Capture Full View
       </span>
     </button>
@@ -1403,8 +1562,9 @@
   <!-- 5. PRIVACY SHIELD PER-SITE POPOVER -->
   <div id="view-shield" class="hidden" style="display:flex;flex-direction:column;gap:8px;">
     <div class="sec-header">
-      <svg id="shieldPopIcon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--success);flex-shrink:0;">
-        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+      <svg id="shieldPopIcon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+        stroke-width="2" style="color:var(--success);flex-shrink:0;">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
       </svg>
       <div style="min-width:0;">
         <div class="sec-status" id="shieldStatusText">Shield active on this site</div>
@@ -1453,41 +1613,91 @@
     </div>
   </div>
 
+  <!-- 6b. SITE PERMISSION REQUEST PROMPT -->
+  <div id="view-permission-prompt" class="hidden" role="dialog" aria-label="Permission request">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--accent)" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+      </svg>
+      <div style="min-width:0;flex:1;">
+        <div id="permPromptHost" class="nx-heading"
+          style="font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+          Site</div>
+        <div id="permPromptDesc" style="font-size:12px;color:var(--muted);margin-top:2px;">wants to access permission
+        </div>
+      </div>
+    </div>
+    <div id="permPromptIncognitoNote" class="hidden"
+      style="font-size:11px;color:var(--muted);margin-bottom:8px;padding:6px 8px;border-radius:8px;background:rgba(255,255,255,0.04);">
+      Private window: decision applies to this window session only.</div>
+    <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">
+      <button type="button" class="mini-btn" id="btnPermPromptAlways"
+        style="flex:1;background:var(--accent);color:#fff;border-color:transparent;font-weight:600;">Allow</button>
+      <button type="button" class="mini-btn" id="btnPermPromptOnce" style="flex:1;">Allow once</button>
+      <button type="button" class="mini-btn" id="btnPermPromptBlock" style="flex:1;color:#ff8a8a;">Block</button>
+    </div>
+  </div>
+
   <!-- 6. TAB CONTEXT MENU POPOVER -->
   <div id="view-tab-context" class="hidden" role="menu" aria-label="Tab actions">
     <button class="menu-item" data-tab-act="duplicate" role="menuitem">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="9" width="13" height="13" rx="2" />
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </svg>
         Duplicate Tab
       </span>
     </button>
     <button class="menu-item" data-tab-act="reload" role="menuitem">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+          <polyline points="21 3 21 9 15 9" />
+        </svg>
         Reload
       </span>
     </button>
     <button class="menu-item" data-tab-act="pin" id="btnTabCtxPin" role="menuitem">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 17v5" />
+          <path
+            d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+        </svg>
         <span id="tabCtxPinLabel">Pin Tab</span>
       </span>
     </button>
     <button class="menu-item" data-tab-act="split" id="btnTabCtxSplit" role="menuitem">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <line x1="12" y1="4" x2="12" y2="20" />
+        </svg>
         <span id="tabCtxSplitLabel">Split with this tab</span>
       </span>
     </button>
     <button class="menu-item" data-tab-act="hibernate" id="btnTabCtxHibernate" role="menuitem">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+        </svg>
         Hibernate Tab
       </span>
     </button>
     <button class="menu-item" data-tab-act="pop-out-video" id="btnTabCtxPopOutVideo" role="menuitem">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="15" rx="2"/><rect x="11.5" y="10.5" width="8.5" height="6.5" rx="1" fill="currentColor" stroke="none"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="4" width="20" height="15" rx="2" />
+          <rect x="11.5" y="10.5" width="8.5" height="6.5" rx="1" fill="currentColor" stroke="none" />
+        </svg>
         <span id="tabCtxPopOutLabel">Pop out video</span>
       </span>
     </button>
@@ -1499,13 +1709,21 @@
 
     <button class="menu-item" data-tab-act="close" role="menuitem">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round">
+          <path d="M18 6L6 18M6 6l12 12" />
+        </svg>
         Close Tab
       </span>
     </button>
     <button class="menu-item" data-tab-act="close-others" id="btnTabCtxCloseOthers" role="menuitem">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="14" rx="2"/><path d="M7.5 8.5l5 5M12.5 8.5l-5 5"/><path d="M21 8v11a2 2 0 0 1-2 2H8"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4" width="14" height="14" rx="2" />
+          <path d="M7.5 8.5l5 5M12.5 8.5l-5 5" />
+          <path d="M21 8v11a2 2 0 0 1-2 2H8" />
+        </svg>
         Close Other Tabs
       </span>
     </button>
@@ -1518,7 +1736,8 @@
       <span class="ctx-editor-badge" id="grpCtxCount"></span>
     </div>
     <form id="grpCtxRenameForm" class="ctx-input-row">
-      <input type="text" id="grpCtxNameInput" class="ctx-input" maxlength="40" placeholder="Group name" autocomplete="off" />
+      <input type="text" id="grpCtxNameInput" class="ctx-input" maxlength="40" placeholder="Group name"
+        autocomplete="off" />
       <button type="submit" class="ctx-submit-btn">Save</button>
     </form>
     <div id="grpCtxError" class="ctx-error hidden"></div>
@@ -1535,19 +1754,28 @@
     <div class="sep"></div>
     <button type="button" class="menu-item" id="btnGrpCtxToggleCollapse" role="menuitem">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
         <span id="grpCtxCollapseLabel">Collapse Group</span>
       </span>
     </button>
     <button type="button" class="menu-item" id="btnGrpCtxNewTab" role="menuitem">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
         New Tab in Group
       </span>
     </button>
     <button type="button" class="menu-item danger" id="btnGrpCtxUngroup" role="menuitem">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round">
+          <path d="M18 6L6 18M6 6l12 12" />
+        </svg>
         Ungroup
       </span>
     </button>
@@ -1560,7 +1788,8 @@
       <span class="ctx-editor-badge" id="wsCtxCount"></span>
     </div>
     <form id="wsCtxForm" class="ctx-input-row">
-      <input type="text" id="wsCtxNameInput" class="ctx-input" maxlength="40" placeholder="Workspace name" autocomplete="off" />
+      <input type="text" id="wsCtxNameInput" class="ctx-input" maxlength="40" placeholder="Workspace name"
+        autocomplete="off" />
       <button type="submit" class="ctx-submit-btn" id="wsCtxSubmitBtn">Save</button>
     </form>
     <div id="wsCtxError" class="ctx-error hidden"></div>
@@ -1568,13 +1797,21 @@
       <div class="sep"></div>
       <button type="button" class="menu-item" id="btnWsCtxSwitch" role="menuitem">
         <span class="menu-left">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
           Switch to Workspace
         </span>
       </button>
       <button type="button" class="menu-item danger" id="btnWsCtxDelete" role="menuitem">
         <span class="menu-left">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+            <path d="M10 11v6M14 11v6" />
+          </svg>
           Delete Workspace
         </span>
         <span class="ctx-hint" id="wsCtxDeleteHint">Tabs to Default</span>
@@ -1586,7 +1823,10 @@
   <div id="view-bookmark-folder" class="hidden" role="menu" aria-label="Bookmark folder">
     <div class="bm-folder-hdr">
       <span class="bm-folder-hdr-title nx-heading">
-        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+        </svg>
         <span id="bmFolderPopTitle">Folder</span>
       </span>
     </div>
@@ -1598,7 +1838,10 @@
   <div id="view-extensions-dropdown" class="hidden" role="region" aria-label="Extensions">
     <div class="ext-dd-header">
       <span class="ext-dd-title nx-heading">
-        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5a2.5 2.5 0 0 0-5 0V5H4c-1.1 0-2 .9-2 2v3.8h1.5c1.5 0 2.7 1.2 2.7 2.7S5 16.2 3.5 16.2H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.5 1.2-2.7 2.7-2.7s2.7 1.2 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5a2.5 2.5 0 0 0 0-5z"/></svg>
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+          <path
+            d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5a2.5 2.5 0 0 0-5 0V5H4c-1.1 0-2 .9-2 2v3.8h1.5c1.5 0 2.7 1.2 2.7 2.7S5 16.2 3.5 16.2H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.5 1.2-2.7 2.7-2.7s2.7 1.2 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5a2.5 2.5 0 0 0 0-5z" />
+        </svg>
         Extensions
       </span>
       <span class="ext-dd-count" id="extDropdownCount"></span>
@@ -1609,7 +1852,11 @@
     <div class="ext-dd-footer">
       <button type="button" class="menu-item ext-dd-manage-btn" id="btnManageExtensions">
         <span class="menu-left">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3" />
+            <path
+              d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
           Manage Extensions
         </span>
         <span style="color:var(--muted);font-size:11px;">↗</span>
@@ -1621,7 +1868,11 @@
   <div id="view-profiles" class="hidden" role="region" aria-label="Profiles">
     <div class="prof-header">
       <span class="prof-title nx-heading">
-        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+          <circle cx="12" cy="7" r="4" />
+        </svg>
         Profiles
       </span>
       <span class="ext-dd-count" id="profCount"></span>
@@ -1634,13 +1885,20 @@
     <div class="prof-footer">
       <button type="button" class="menu-item" id="btnProfAdd">
         <span class="menu-left">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
           Add profile
         </span>
       </button>
       <button type="button" class="menu-item" id="btnProfManageSettings">
         <span class="menu-left">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3" />
+            <path
+              d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
           Manage Profiles in Settings
         </span>
         <span style="color:var(--muted);font-size:11px;">↗</span>
@@ -1661,7 +1919,7 @@
       }
       const initialTheme = params.get('theme');
       if (initialTheme) applyTheme(initialTheme);
-      window.gxAPI?.getSettings?.().then((s) => applyTheme(s?.theme)).catch(() => {});
+      window.gxAPI?.getSettings?.().then((s) => applyTheme(s?.theme)).catch(() => { });
       window.gxAPI?.onSettingsUpdate?.((s) => {
         if (s && s.theme) applyTheme(s.theme);
       });
@@ -1708,6 +1966,7 @@
 
     let activePopoverKind = null;
     let activeViewId = null;
+    let currentAddrCtx = null;
     let popoverOpenSeq = 0;
     let lastReportedSize = { kind: null, width: 0, height: 0 };
     let settleTimer = null;
@@ -1723,6 +1982,7 @@
       currentShieldUrl = '';
       lastShieldSiteInfo = null;
       currentTabCtx = null;
+      currentAddrCtx = null;
       currentGroupCtx = null;
       currentWorkspaceCtx = null;
       currentWorkspaceMode = null;
@@ -1748,6 +2008,7 @@
         'view-downloads',
         'view-shield',
         'view-tab-context',
+        'view-address-context',
         'view-group-context',
         'view-workspace-context',
         'view-bookmark-folder',
@@ -1834,7 +2095,7 @@
             targetW === null
               ? true
               : typeof lastReportedSize.width === 'number' &&
-                Math.abs(lastReportedSize.width - targetW) <= 1;
+              Math.abs(lastReportedSize.width - targetW) <= 1;
           const sameAsLast =
             !force &&
             lastReportedSize.kind === kind &&
@@ -1849,8 +2110,8 @@
                 targetW !== null
                   ? targetW
                   : lastReportedSize.kind === kind
-                  ? lastReportedSize.width
-                  : null,
+                    ? lastReportedSize.width
+                    : null,
               height: contentH
             };
             window.gxAPI.resizePopover(nextPayload);
@@ -1910,7 +2171,7 @@
               measureAndResizePopover(kind, viewId);
             }
           })
-          .catch(() => {});
+          .catch(() => { });
       }
 
       clearTimeout(settleTimer);
@@ -1932,7 +2193,7 @@
           if (u.protocol === 'http:' || u.protocol === 'https:') {
             return `${u.origin}/favicon.ico`;
           }
-        } catch (_) {}
+        } catch (_) { }
       }
       return '';
     }
@@ -2083,13 +2344,29 @@
         currentOrigin = payload?.origin || '';
         const isSecure = Boolean(payload?.isSecure);
         const isHttp = Boolean(payload?.isHttpInsecure);
-        document.getElementById('secOriginText').textContent = payload?.url || currentOrigin || 'Internal Page';
+        let displayHost = payload?.url || currentOrigin || 'Internal Page';
+        try {
+          if (currentOrigin) displayHost = new URL(currentOrigin).host || displayHost;
+        } catch (_) { }
+        document.getElementById('secOriginText').textContent = displayHost;
         document.getElementById('secStatusText').textContent = isHttp
-          ? 'Not Secure (HTTP)'
+          ? 'Your connection to this site is not secure'
           : isSecure
-          ? 'Connection is secure'
-          : 'nextGx Internal Page';
-        document.getElementById('secIcon').style.color = isHttp ? 'var(--warning)' : 'var(--success)';
+            ? 'Connection is secure'
+            : 'nextGx Internal Page';
+        const noticeEl = document.getElementById('secNoticeText');
+        if (noticeEl) {
+          noticeEl.textContent = isHttp
+            ? 'You should not enter any sensitive information on this site (for example, passwords or credit cards), because it could be stolen by attackers.'
+            : isSecure
+              ? 'Your information (for example, passwords or credit card numbers) is private when it is sent to this site.'
+              : 'Built-in browser page running locally inside nextGx Browser.';
+        }
+        const secIconEl = document.getElementById('secIcon');
+        secIconEl.style.color = isHttp ? 'var(--warning)' : 'var(--success)';
+        secIconEl.innerHTML = isHttp
+          ? '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>'
+          : '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>';
         fitPopoverToView('permissions', 'view-permissions', { reset: true });
 
         if (currentOrigin) {
@@ -2186,10 +2463,10 @@
             hibernateBtn.title = currentTabCtx?.sleeping
               ? 'Tab is already hibernated'
               : currentTabCtx?.isActive
-              ? 'Active tab cannot be hibernated'
-              : isVisibleSplitPane
-              ? 'Split view pane cannot be hibernated'
-              : 'Suspend tab to save memory';
+                ? 'Active tab cannot be hibernated'
+                : isVisibleSplitPane
+                  ? 'Split view pane cannot be hibernated'
+                  : 'Suspend tab to save memory';
           }
           if (popOutBtn) {
             const canPopOut = Boolean((currentTabCtx?.hasPlayingVideo || currentTabCtx?.pipActive) && !currentTabCtx?.sleeping);
@@ -2200,10 +2477,10 @@
             popOutBtn.title = !canPopOut
               ? 'Play a video in this tab to pop out'
               : currentTabCtx?.pipActive
-              ? 'Return popped-out video to this tab'
-              : currentTabCtx?.videoTitle
-              ? `Pop out "${currentTabCtx.videoTitle}" (Picture-in-Picture)`
-              : 'Pop out video (Picture-in-Picture)';
+                ? 'Return popped-out video to this tab'
+                : currentTabCtx?.videoTitle
+                  ? `Pop out "${currentTabCtx.videoTitle}" (Picture-in-Picture)`
+                  : 'Pop out video (Picture-in-Picture)';
           }
           if (closeOthersBtn) {
             closeOthersBtn.disabled =
@@ -2214,6 +2491,17 @@
           renderTabContextGroupAndWorkspaceSections(currentTabCtx);
           fitPopoverToView('tab-context', 'view-tab-context', { reset: true });
         }
+      } else if (kind === 'permission-prompt') {
+        currentPermPromptReqId = payload?.requestId || '';
+        showOnly('view-permission-prompt');
+        const hostEl = document.getElementById('permPromptHost');
+        const descEl = document.getElementById('permPromptDesc');
+        const incogEl = document.getElementById('permPromptIncognitoNote');
+        const labels = Array.isArray(payload?.labels) && payload.labels.length ? payload.labels : ['Site permission'];
+        if (hostEl) hostEl.textContent = payload?.host || payload?.origin || 'This site';
+        if (descEl) descEl.textContent = `wants to use your ${labels.join(' & ')}`;
+        if (incogEl) incogEl.classList.toggle('hidden', !payload?.incognito);
+        fitPopoverToView('permission-prompt', 'view-permission-prompt', { reset: true });
       } else if (kind === 'bookmark-folder') {
         showOnly('view-bookmark-folder');
         renderBookmarkFolderItems(payload?.folder || '', payload?.items || []);
@@ -2273,8 +2561,8 @@
         mainBtn.title = !isEnabled
           ? `${ext.name || 'Extension'} (Disabled)`
           : hasPopup
-          ? `Open ${ext.name || 'Extension'}`
-          : `${ext.name || 'Extension'} — No popup`;
+            ? `Open ${ext.name || 'Extension'}`
+            : `${ext.name || 'Extension'} — No popup`;
 
         const iconWrap = document.createElement('span');
         iconWrap.className = 'ext-dd-icon';
@@ -2338,8 +2626,8 @@
         pinBtn.title = !isEnabled
           ? 'Enable extension to pin'
           : isPinned
-          ? 'Unpin from toolbar'
-          : 'Pin to toolbar';
+            ? 'Unpin from toolbar'
+            : 'Pin to toolbar';
         pinBtn.setAttribute('aria-label', pinBtn.title);
         pinBtn.setAttribute('aria-pressed', isPinned && isEnabled ? 'true' : 'false');
         pinBtn.innerHTML = `<svg viewBox="0 0 24 24" width="13" height="13" fill="${isPinned && isEnabled ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>`;
@@ -2541,11 +2829,10 @@
           <span class="prof-info">
             <span class="prof-name-line">
               <span class="prof-name">${escapeHtml(prof.name)}</span>
-              ${
-                isActive
-                  ? `<span class="prof-check" title="Active profile"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>`
-                  : ''
-              }
+              ${isActive
+            ? `<span class="prof-check" title="Active profile"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>`
+            : ''
+          }
             </span>
             <span class="prof-meta">${escapeHtml(metaParts.join(' • ') || 'Click to open window')}</span>
           </span>
@@ -3001,6 +3288,17 @@
       });
     });
 
+    let currentPermPromptReqId = '';
+    const respondPermPrompt = (decision) => {
+      if (!currentPermPromptReqId) return;
+      const reqId = currentPermPromptReqId;
+      currentPermPromptReqId = '';
+      window.gxAPI.respondPermissionPrompt?.({ requestId: reqId, decision });
+    };
+    document.getElementById('btnPermPromptAlways')?.addEventListener('click', () => respondPermPrompt('allow-always'));
+    document.getElementById('btnPermPromptOnce')?.addEventListener('click', () => respondPermPrompt('allow-once'));
+    document.getElementById('btnPermPromptBlock')?.addEventListener('click', () => respondPermPrompt('block'));
+
     document.addEventListener('keydown', (e) => {
       if (
         document.activeElement &&
@@ -3020,20 +3318,20 @@
         tabCtxView && !tabCtxView.classList.contains('hidden')
           ? tabCtxView
           : grpCtxView && !grpCtxView.classList.contains('hidden')
-          ? grpCtxView
-          : wsCtxView && !wsCtxView.classList.contains('hidden')
-          ? wsCtxView
-          : bmFolderView && !bmFolderView.classList.contains('hidden')
-          ? bmFolderView
-          : mainMenuView && !mainMenuView.classList.contains('hidden')
-          ? mainMenuView
-          : shotView && !shotView.classList.contains('hidden')
-          ? shotView
-          : extDdView && !extDdView.classList.contains('hidden')
-          ? extDdView
-          : profView && !profView.classList.contains('hidden')
-          ? profView
-          : null;
+            ? grpCtxView
+            : wsCtxView && !wsCtxView.classList.contains('hidden')
+              ? wsCtxView
+              : bmFolderView && !bmFolderView.classList.contains('hidden')
+                ? bmFolderView
+                : mainMenuView && !mainMenuView.classList.contains('hidden')
+                  ? mainMenuView
+                  : shotView && !shotView.classList.contains('hidden')
+                    ? shotView
+                    : extDdView && !extDdView.classList.contains('hidden')
+                      ? extDdView
+                      : profView && !profView.classList.contains('hidden')
+                        ? profView
+                        : null;
       if (!activeMenu) return;
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
       const items = Array.from(
@@ -3082,6 +3380,10 @@
         const zoomEl = document.getElementById('zoomPct');
         if (zoomEl) zoomEl.textContent = `${state.activeTab.zoomPercent}%`;
       }
+    });
+
+    document.getElementById('btnOpenSiteSettings')?.addEventListener('click', () => {
+      window.gxAPI.triggerMenuAction('settings');
     });
 
     document.querySelectorAll('[data-perm]').forEach((sel) => {
@@ -3228,4 +3530,5 @@
     });
   </script>
 </body>
+
 </html>

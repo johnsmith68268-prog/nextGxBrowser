@@ -74,7 +74,7 @@ function resolveSafeDownloadPath(targetPath) {
       return null;
     }
   } catch (_) {
-    return resolved;
+    return null;
   }
 }
 
@@ -103,10 +103,44 @@ function isAutofillHostMatch(pageHost, savedSite) {
   const current = normalizeAutofillHost(pageHost);
   const saved = normalizeAutofillHost(savedSite);
   if (!current || !saved) return false;
-  if (current === saved) return true;
-  if (isIpAddress(current) || isIpAddress(saved)) return false;
-  if (!saved.includes('.')) return false;
-  return current.endsWith(`.${saved}`);
+  // Exact normalized host match only (normalizeAutofillHost already normalizes www. apex)
+  // Prevents credential leakage across untrusted subdomains on shared hosting (e.g. *.github.io).
+  return current === saved;
+}
+
+const MAX_FAVICON_DATA_URI_LEN = 32 * 1024;
+const SAFE_DATA_FAVICON_RE = /^data:image\/(?:png|jpeg|jpg|webp|gif|x-icon|vnd\.microsoft\.icon);base64,[a-z0-9+/=]+$/i;
+
+function sanitizeFaviconUrl(rawUrl) {
+  if (typeof rawUrl !== 'string') return '';
+  const trimmed = rawUrl.trim();
+  if (!trimmed || /[\u0000-\u001f\u007f]/.test(trimmed)) return '';
+  if (/^data:/i.test(trimmed)) {
+    if (trimmed.length > MAX_FAVICON_DATA_URI_LEN) return '';
+    return SAFE_DATA_FAVICON_RE.test(trimmed) ? trimmed : '';
+  }
+  if (trimmed.length > 2048) return '';
+  try {
+    const u = new URL(trimmed);
+    if (u.protocol === 'https:' || u.protocol === 'http:') {
+      return u.toString();
+    }
+  } catch (_) {}
+  return '';
+}
+
+function attachInternalNavigationGuard(wc) {
+  if (!wc || wc.isDestroyed?.()) return;
+  if (wc._nxInternalGuardAttached) return;
+  wc._nxInternalGuardAttached = true;
+  try {
+    wc.setWindowOpenHandler(() => ({ action: 'deny' }));
+  } catch (_) {}
+  wc.on('will-navigate', (event, targetUrl) => {
+    if (!resolveInternalUiFile(targetUrl)) {
+      event.preventDefault();
+    }
+  });
 }
 
 function isNewTabUrl(urlStr) {
@@ -218,5 +252,7 @@ module.exports = {
   getInternalUiQuery,
   appendInternalUrlParams,
   getOriginForUrl,
-  detectFileCategory
+  detectFileCategory,
+  sanitizeFaviconUrl,
+  attachInternalNavigationGuard
 };

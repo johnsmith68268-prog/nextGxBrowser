@@ -11,7 +11,8 @@ const {
   isCornerUrl,
   isWebUiUrl,
   isErrorPageUrl,
-  appendInternalUrlParams
+  appendInternalUrlParams,
+  sanitizeFaviconUrl
 } = require('./utils');
 const {
   getFailedUrlFromErrorPage,
@@ -30,10 +31,20 @@ const {
 const { updateActiveViewBounds } = require('./layout');
 const { scheduleSessionSave } = require('./session');
 const { attachKeyboardShortcuts } = require('./shortcuts');
+const { attachWebContentsContextMenu } = require('./context-menu');
 const { restoreFocusToActiveTab, closePopover } = require('./popovers');
 const gxControl = require('./gxcontrol');
 const player = require('./player');
 const splitView = require('./splitview');
+const sidebarMod = () => require('./sidebar');
+const TAB_AUDIO_HOLD_MS = 3000;
+
+function clearTabAudioHoldTimer(tab) {
+  if (tab && tab._audioHoldTimer) {
+    clearTimeout(tab._audioHoldTimer);
+    tab._audioHoldTimer = null;
+  }
+}
 const {
   DEFAULT_WORKSPACE_ID,
   hasWorkspace,
@@ -66,10 +77,12 @@ function buildWebContentsViewForTab(ctx, tab) {
   registerWebContents(wc, ctx.win.id);
   wc.setUserAgent(wc.getUserAgent().replace(/Electron\/[^\s]+\s?/g, ''));
   attachKeyboardShortcuts(ctx, wc);
+  attachWebContentsContextMenu(ctx, wc, { isSidebar: false });
 
   wc.on('focus', () => {
     splitView.onTabWebContentsFocused(ctx, tab.id);
     if (ctx.popoverOpenKind) closePopover(ctx);
+    sidebarMod().closeSidebarIfUnpinned(ctx, { restoreFocus: false });
   });
 
   wc.setWindowOpenHandler(({ url }) => {
@@ -127,7 +140,9 @@ function buildWebContentsViewForTab(ctx, tab) {
 
   wc.on('page-favicon-updated', (_e, favicons) => {
     if (Array.isArray(favicons) && favicons.length > 0 && !isErrorPageUrl(tab.url)) {
-      tab.favicon = favicons[0];
+      const safeFavicon = sanitizeFaviconUrl(favicons[0]);
+      if (!safeFavicon || safeFavicon === tab.favicon) return;
+      tab.favicon = safeFavicon;
       if (!ctx.incognito && !shouldSkipHistory(tab.url)) {
         state.storage.addHistory({ title: tab.title, url: tab.url, favicon: tab.favicon, isVisit: false }, ctx.profileId);
         broadcastHistoryUpdate({ profileId: ctx.profileId });
@@ -235,6 +250,8 @@ function buildWebContentsViewForTab(ctx, tab) {
   });
 
   wc.on('did-navigate', (_e, url) => {
+    clearTabAudioHoldTimer(tab);
+    tab.audible = Boolean(typeof wc.isCurrentlyAudible === 'function' && wc.isCurrentlyAudible());
     state.adBlocker.clearCosmeticKeys(wc);
     player.onTabNavigated(ctx, tab);
     handleUrlChange(url);
@@ -245,11 +262,35 @@ function buildWebContentsViewForTab(ctx, tab) {
   });
   wc.on('dom-ready', () => state.adBlocker.injectCosmeticFilters(wc));
   wc.on('audio-state-changed', (event) => {
-    tab.audible = Boolean(event.audible);
-    player.onTabAudioChanged(ctx, tab, tab.audible);
-    broadcastState(ctx);
+    const isAudibleNow = Boolean(event.audible);
+    player.onTabAudioChanged(ctx, tab, isAudibleNow);
+    if (isAudibleNow) {
+      clearTabAudioHoldTimer(tab);
+      if (!tab.audible) {
+        tab.audible = true;
+        broadcastState(ctx);
+      }
+    } else if (tab.audible && !tab._audioHoldTimer) {
+      tab._audioHoldTimer = setTimeout(() => {
+        tab._audioHoldTimer = null;
+        if (!ctx || !ctx.win || ctx.win.isDestroyed()) return;
+        if (ctx.tabs.get(tab.id) !== tab || tab.sleeping) return;
+        const stillAudible = Boolean(
+          tab.view &&
+            tab.view.webContents &&
+            !tab.view.webContents.isDestroyed() &&
+            typeof tab.view.webContents.isCurrentlyAudible === 'function' &&
+            tab.view.webContents.isCurrentlyAudible()
+        );
+        if (!stillAudible && tab.audible) {
+          tab.audible = false;
+          broadcastState(ctx);
+        }
+      }, TAB_AUDIO_HOLD_MS);
+    }
   });
   wc.once('destroyed', () => {
+    clearTabAudioHoldTimer(tab);
     player.onWebContentsDestroyed(wc.id);
   });
   wc.on('found-in-page', (_event, result) => {
@@ -350,6 +391,7 @@ function createTabInternal(
     insertIndex,
     title,
     deferActivate = false,
+    sleeping = false,
     workspaceId,
     groupId = null
   } = {}
@@ -381,20 +423,21 @@ function createTabInternal(
     }
   }
 
+  const startAsleep = Boolean(sleeping && deferActivate);
   const tab = {
     id,
     title: initialTitle,
     url: resolvedUrl,
     failedUrl: '',
     favicon: '',
-    isLoading: true,
+    isLoading: !startAsleep,
     canGoBack: false,
     canGoForward: false,
     pinned: isPinned,
     workspaceId: resolvedWsId,
     groupId: resolvedGroupId,
     incognito: Boolean(ctx.incognito),
-    sleeping: false,
+    sleeping: startAsleep,
     audible: false,
     readerMode: false,
     zoomFactor: 1.0,
@@ -403,7 +446,9 @@ function createTabInternal(
     view: null
   };
 
-  tab.view = buildWebContentsViewForTab(ctx, tab);
+  if (!startAsleep) {
+    tab.view = buildWebContentsViewForTab(ctx, tab);
+  }
   ctx.tabs.set(id, tab);
 
   const lastPinnedIdx = ctx.tabOrder.findLastIndex((tid) => ctx.tabs.get(tid)?.pinned);
@@ -432,10 +477,19 @@ function createTabInternal(
   }
   syncTabsMapOrder(ctx);
 
-  tab.view.webContents.loadURL(resolvedUrl).catch(() => {});
+  if (tab.view) {
+    tab.view.webContents.loadURL(resolvedUrl).catch(() => {});
+  }
 
   if (deferActivate) {
-    tab.view.setBounds({ x: -5000, y: -5000, width: 1, height: 1 });
+    if (tab.view) {
+      if (typeof tab.view.setVisible === 'function') {
+        try {
+          tab.view.setVisible(false);
+        } catch (_) {}
+      }
+      tab.view.setBounds({ x: -5000, y: -5000, width: 1, height: 1 });
+    }
   } else if (active || !ctx.activeTabId) {
     switchTab(ctx, id);
   } else {
@@ -532,6 +586,7 @@ function sleepTab(ctx, tabId) {
     return serializeTabs(ctx);
   }
   player.onTabHibernated(ctx, tab);
+  clearTabAudioHoldTimer(tab);
   if (tab.view) {
     gxControl.onTabDetached(tab);
     try {
@@ -594,6 +649,7 @@ function closeTab(ctx, tabId) {
   if (idx !== -1) ctx.tabOrder.splice(idx, 1);
 
   player.onTabClosed(ctx, tab);
+  clearTabAudioHoldTimer(tab);
   if (tab.view) {
     gxControl.onTabDetached(tab);
     try {
@@ -1164,6 +1220,22 @@ function toggleActiveTabDevTools(ctx) {
   }
 }
 
+function openOrFocusGxCornerTab(ctx) {
+  if (!ctx || !ctx.win || ctx.win.isDestroyed()) return serializeTabs(ctx);
+  sidebarMod().closeSidebarIfUnpinned(ctx, { restoreFocus: false, ignoreGrace: true });
+  const activeWsId = ctx.incognito ? DEFAULT_WORKSPACE_ID : ctx.activeWorkspaceId || DEFAULT_WORKSPACE_ID;
+
+  // Prefer an existing GX Corner tab in the current workspace (or pinned)
+  for (const id of ctx.tabOrder) {
+    const t = ctx.tabs.get(id);
+    if (!t || !isCornerUrl(t.url)) continue;
+    if (isTabVisibleInWorkspace(t, activeWsId)) {
+      return switchTab(ctx, id);
+    }
+  }
+  return createTab(ctx, { url: 'nextgx://corner', active: true });
+}
+
 module.exports = {
   serializeTabs,
   broadcastState,
@@ -1173,6 +1245,7 @@ module.exports = {
   recordClosedTabIfEligible,
   createTabInternal,
   createTab,
+  openOrFocusGxCornerTab,
   wakeTab,
   switchTab,
   sleepTab,

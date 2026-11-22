@@ -2,6 +2,7 @@
 <html lang="en" data-theme="gx-violet">
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; font-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none';" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>nextGx Browser</title>
   <link rel="stylesheet" href="theme.css" />
@@ -10,15 +11,9 @@
 <body>
   <!-- TOP CHROME (82px base + 30px slim Bookmarks Bar when enabled) -->
   <header class="nx-top-chrome has-bookmarks-bar" id="topChrome">
-    <!-- Row 1: Titlebar + Brand + Workspace Switcher + Pill Tabs -->
+    <!-- Row 1: Titlebar + Brand + Workspace Switcher + GX Corner + Pill Tabs -->
     <div class="nx-titlebar">
       <div class="nx-brand" id="btnBrandHome" title="nextGx Browser — Start Page">
-        <div class="nx-brand-mark">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.3">
-            <path d="M12 2L3 7v10l9 5 9-5V7l-9-5z" />
-            <path d="M12 8v8M8 12h8" />
-          </svg>
-        </div>
         <span class="nx-brand-text">next<strong>Gx</strong></span>
       </div>
 
@@ -31,6 +26,16 @@
           </svg>
         </button>
       </div>
+
+      <!-- Permanent Opera GX-Style GX Corner Tab beside Tabs -->
+      <button type="button" class="nx-corner-tab" id="btnGxCornerTab" title="GX Corner — Gaming News, Releases &amp; Deals" aria-label="GX Corner" aria-pressed="false">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="6" width="20" height="12" rx="4" />
+          <path d="M6 12h4M8 10v4" />
+          <circle cx="15.5" cy="11" r="1" fill="currentColor" stroke="none" />
+          <circle cx="18" cy="13" r="1" fill="currentColor" stroke="none" />
+        </svg>
+      </button>
 
       <div class="nx-tabs-strip" id="tabsStrip">
         <button class="nx-tab-scroll-btn hidden" id="btnTabsScrollLeft" title="Scroll tabs left" aria-label="Scroll tabs left">

@@ -483,6 +483,43 @@ function parseFeedXml(xmlText, feedMeta = {}) {
   return items;
 }
 
+function isPrivateOrReservedIp(ip) {
+  if (!ip || typeof ip !== 'string') return true;
+  const clean = ip.trim().toLowerCase().replace(/^\[|\]$/g, '');
+  if (!clean) return true;
+  if (clean === 'localhost' || clean.endsWith('.localhost') || clean.endsWith('.local')) return true;
+  // IPv4-mapped IPv6 (e.g. ::ffff:127.0.0.1)
+  const v4Mapped = clean.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/);
+  const v4 = v4Mapped ? v4Mapped[1] : clean;
+  const parts = v4.split('.');
+  if (parts.length === 4 && parts.every((p) => /^\d+$/.test(p))) {
+    const [a, b] = parts.map((n) => parseInt(n, 10));
+    if (a === 0 || a === 10 || a === 127) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
+    if (a >= 224) return true; // multicast/reserved
+    return false;
+  }
+  if (clean.includes(':')) {
+    if (clean === '::' || clean === '::1') return true;
+    if (clean.startsWith('fc') || clean.startsWith('fd') || clean.startsWith('fe80')) return true;
+  }
+  return false;
+}
+
+function getCornerUserAgent() {
+  let ver = '3.0.0';
+  try {
+    const appObj = electron && electron.app;
+    if (appObj && typeof appObj.getVersion === 'function') {
+      ver = appObj.getVersion() || ver;
+    }
+  } catch (_) {}
+  return `nextGxBrowser/${ver} (GX Corner RSS Reader)`;
+}
+
 function fetchTextViaNodeHttp(
   urlStr,
   {
@@ -496,6 +533,12 @@ function fetchTextViaNodeHttp(
     const safeUrl = sanitizeHttpUrl(urlStr);
     if (!safeUrl) {
       reject(new Error('Invalid feed URL'));
+      return;
+    }
+
+    const parsedCheck = new URL(safeUrl);
+    if (isPrivateOrReservedIp(parsedCheck.hostname)) {
+      reject(new Error('Blocked private or loopback feed host'));
       return;
     }
 
@@ -557,7 +600,7 @@ function fetchTextViaNodeHttp(
       parsed,
       {
         headers: {
-          'User-Agent': 'nextGxBrowser/2.5 (GX Corner RSS Reader)',
+          'User-Agent': getCornerUserAgent(),
           Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.1'
         }
       },
@@ -716,6 +759,10 @@ async function readResponseBodyBounded(res, maxBytes = MAX_FEED_BYTES) {
 async function fetchTextDefault(urlStr, { timeoutMs = PER_FEED_TIMEOUT_MS, signal = null } = {}) {
   const safeUrl = sanitizeHttpUrl(urlStr);
   if (!safeUrl) throw new Error('Invalid feed URL');
+  const parsedCheck = new URL(safeUrl);
+  if (isPrivateOrReservedIp(parsedCheck.hostname)) {
+    throw new Error('Blocked private or loopback feed host');
+  }
 
   const netFetch = electron && electron.net && typeof electron.net.fetch === 'function' ? electron.net.fetch : null;
   if (!netFetch) {
@@ -739,10 +786,20 @@ async function fetchTextDefault(urlStr, { timeoutMs = PER_FEED_TIMEOUT_MS, signa
       redirect: 'follow',
       signal: controller.signal,
       headers: {
-        'User-Agent': 'nextGxBrowser/2.5 (GX Corner RSS Reader)',
+        'User-Agent': getCornerUserAgent(),
         Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.1'
       }
     });
+    if (res && res.url) {
+      try {
+        const finalHost = new URL(res.url).hostname;
+        if (isPrivateOrReservedIp(finalHost)) {
+          throw new Error('Blocked redirect to private or loopback host');
+        }
+      } catch (err) {
+        if (err && /Blocked redirect/i.test(err.message)) throw err;
+      }
+    }
     if (!res || !res.ok) {
       throw new Error(`HTTP ${res ? res.status : 'error'}`);
     }
@@ -1211,6 +1268,7 @@ module.exports = {
   loadCuratedData,
   sanitizeHttpUrl,
   sanitizeThumbnailUrl,
+  isPrivateOrReservedIp,
   decodeXmlEntities,
   stripHtmlToText,
   sanitizeTitleText,

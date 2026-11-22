@@ -7,6 +7,11 @@ const { broadcastCookiesUpdate } = require('./cookies');
 const { registerCornerPreloadForSession } = require('./gxcorner');
 
 const initializedSessions = new WeakSet();
+const initializedSessionList = new Set();
+
+function getInitializedProfileSessions() {
+  return Array.from(initializedSessionList);
+}
 
 function getProfilePartitionName(profileId) {
   const pid = typeof profileId === 'string' && profileId.trim() ? profileId.trim().toLowerCase() : DEFAULT_PROFILE_ID;
@@ -25,6 +30,7 @@ function ensureProfileSessionInitialized(profileId, { setupPermissionsForSession
   const ses = getSessionForProfile(pid);
   if (!ses || initializedSessions.has(ses)) return ses;
   initializedSessions.add(ses);
+  initializedSessionList.add(ses);
 
   if (state.adBlocker) {
     state.adBlocker.attachToSession(ses);
@@ -35,6 +41,14 @@ function ensureProfileSessionInitialized(profileId, { setupPermissionsForSession
   }
   setupDownloadListener(ses, pid);
   registerCornerPreloadForSession(ses);
+  if (ses !== session.defaultSession) {
+    try {
+      const { syncPersistedExtensionsToSession } = require('./extensions');
+      if (typeof syncPersistedExtensionsToSession === 'function') {
+        syncPersistedExtensionsToSession(ses).catch(() => {});
+      }
+    } catch (_) {}
+  }
   if (ses.cookies && typeof ses.cookies.on === 'function') {
     ses.cookies.on('changed', () => {
       broadcastCookiesUpdate({ profileId: pid });
@@ -241,6 +255,7 @@ function registerProfileIpcHandlers(handleInternal) {
 module.exports = {
   getProfilePartitionName,
   getSessionForProfile,
+  getInitializedProfileSessions,
   ensureProfileSessionInitialized,
   listProfilesData,
   getActiveProfileData,

@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">nextGx Browser App Icon</title>
+  <desc id="desc">Refined pure-vector nGX monogram on a dark gaming browser tile with Solar Amber default palette and live CSS variable theming.</desc>
+  <defs>
+    <linearGradient id="gx-tile-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="var(--gx-tile-top, #201812)"/>
+      <stop offset="55%" stop-color="var(--gx-tile-mid, #14100C)"/>
+      <stop offset="100%" stop-color="var(--gx-tile-bot, #0B0907)"/>
+    </linearGradient>
+    <radialGradient id="gx-ambient" cx="50%" cy="46%" r="58%">
+      <stop offset="0%" stop-color="var(--gx-primary, #FFAA32)" stop-opacity="0.22"/>
+      <stop offset="65%" stop-color="var(--gx-secondary, #E45A18)" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="var(--gx-secondary, #E45A18)" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="gx-gradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="var(--gx-highlight, #FFD166)"/>
+      <stop offset="48%" stop-color="var(--gx-primary, #FFAA32)"/>
+      <stop offset="100%" stop-color="var(--gx-secondary, #E45A18)"/>
+    </linearGradient>
+    <linearGradient id="gx-rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="var(--gx-highlight, #FFD166)" stop-opacity="0.85"/>
+      <stop offset="50%" stop-color="var(--gx-primary, #FFAA32)" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="var(--gx-secondary, #E45A18)" stop-opacity="0.75"/>
+    </linearGradient>
+    <filter id="gx-glow" x="-20%" y="-25%" width="140%" height="150%">
+      <feGaussianBlur stdDeviation="3.2" result="blur"/>
+      <feColorMatrix in="blur" type="matrix"
+        values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.34 0" result="soft"/>
+      <feMerge>
+        <feMergeNode in="soft"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Rounded dark gaming tile -->
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#gx-tile-bg)"/>
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#gx-ambient)"/>
+  <!-- Subtle top specular gloss -->
+  <path d="M64 11 H192 C220 11 243 32 245 59 C210 38 158 30 128 30 C98 30 46 38 11 59 C13 32 36 11 64 11 Z" fill="#FFFFFF" fill-opacity="0.055"/>
+  <!-- Neon rim border -->
+  <rect x="10.5" y="10.5" width="235" height="235" rx="53.5" fill="none" stroke="url(#gx-rim)" stroke-width="3.5"/>
+
+  <!-- Pure-vector optically centered nGX monogram (bold legible n matched to GX weight) -->
+  <g transform="translate(-3.6 42.4) scale(0.68 0.86)" fill="url(#gx-gradient)" filter="url(#gx-glow)">
+    <!-- Bold custom geometric lowercase n -->
+    <path d="M38 154 L38 64 L59 64 L59 79 C65 68 75 62 87 62 C102 62 111 73 111 93 L111 154 L89 154 L89 96 C89 86 83 81 75 81 C66 81 60 88 60 99 L60 154 Z"/>
+    <!-- Custom oversized uppercase G -->
+    <path d="M177 42 C143 42 119 65 119 99 C119 133 143 157 177 157 C198 157 215 149 227 134 L227 91 L174 91 L174 113 L202 113 C197 125 188 132 177 132 C157 132 145 118 145 99 C145 80 158 66 178 66 C191 66 201 72 208 83 L230 69 C218 51 200 42 177 42 Z"/>
+    <!-- Custom oversized uppercase X -->
+    <path d="M242 46 H272 L294 80 L317 46 H347 L309 100 L349 154 H318 L293 119 L269 154 H239 L278 100 L242 46 Z"/>
+  </g>
+</svg>

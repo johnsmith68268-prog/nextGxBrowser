@@ -201,6 +201,13 @@ function refreshEntryLabels(entry, target) {
   }
 }
 
+function isWebContentsPlayingMedia(wcId) {
+  if (typeof wcId !== 'number') return false;
+  const entry = sources.get(wcId);
+  if (!entry) return false;
+  return Boolean(entry.isPlaying || entry.audible || entry.pipActive);
+}
+
 function getTabVideoState(tab) {
   if (!tab || tab.sleeping || !tab.view || !tab.view.webContents || tab.view.webContents.isDestroyed()) {
     return { hasPlayingVideo: false, pipActive: false, videoTitle: '' };
@@ -1178,6 +1185,7 @@ module.exports = {
   PAUSED_SOURCE_IDLE_TTL_MS,
   MAX_SWITCHER_SOURCES,
   sanitizeArtworkUrl,
+  isWebContentsPlayingMedia,
   getTabVideoState,
   serializePlayerState,
   sendPlayerStateToWebContents,

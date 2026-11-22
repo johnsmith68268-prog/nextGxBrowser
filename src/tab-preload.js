@@ -37,6 +37,7 @@ const internalPageKind = isFileTopFrame ? ipcRenderer.sendSync('internal:get-pag
 if (internalPageKind === 'newtab') {
   contextBridge.exposeInMainWorld('gxNewTabAPI', {
     getInitialData: () => ipcRenderer.invoke('newtab:get-data'),
+    getHistory: () => ipcRenderer.invoke('history:get'),
     navigate: (urlOrQuery) => ipcRenderer.invoke('tabs:navigate', urlOrQuery),
     addSpeedDial: (item) => ipcRenderer.invoke('newtab:add-dial', item),
     removeSpeedDial: (id) => ipcRenderer.invoke('newtab:remove-dial', id),
@@ -159,6 +160,7 @@ if (internalPageKind === 'webui') {
     onAdblockUpdate: (cb) => ipcRenderer.on('adblock:update', (_e, data) => cb(data)),
     onPageShown: (cb) => ipcRenderer.on('webui:shown', () => cb()),
     getSystemStats: () => ipcRenderer.invoke('system:stats'),
+    getPasswordEncryptionStatus: () => ipcRenderer.invoke('passwords:encryption-status'),
     sleepBackgroundTabs: () => ipcRenderer.invoke('tabs:sleep-background'),
     clearBrowsingData: (opts) => ipcRenderer.invoke('cleaner:run', opts)
   });
@@ -864,18 +866,27 @@ if (internalPageKind === 'player') {
     if (document.documentElement && typeof MutationObserver === 'function') {
       try {
         const obs = new MutationObserver((mutations) => {
+          if (mutationTimer) return;
           let relevant = false;
           for (let i = 0; i < mutations.length && !relevant; i++) {
             const m = mutations[i];
             for (let j = 0; j < m.addedNodes.length; j++) {
-              if (nodeMayContainMedia(m.addedNodes[j])) {
+              const n = m.addedNodes[j];
+              if (!n || n.nodeType !== 1) continue;
+              const t = n.tagName;
+              if (t === 'SPAN' || t === 'PATH' || t === 'SVG' || t === 'IMG' || t === 'A' || t === 'P' || t === 'B' || t === 'I') continue;
+              if (nodeMayContainMedia(n)) {
                 relevant = true;
                 break;
               }
             }
             if (!relevant && trackedMedia.size > 0) {
               for (let j = 0; j < m.removedNodes.length; j++) {
-                if (nodeMayContainMedia(m.removedNodes[j])) {
+                const n = m.removedNodes[j];
+                if (!n || n.nodeType !== 1) continue;
+                const t = n.tagName;
+                if (t === 'SPAN' || t === 'PATH' || t === 'SVG' || t === 'IMG' || t === 'A' || t === 'P' || t === 'B' || t === 'I') continue;
+                if (nodeMayContainMedia(n)) {
                   relevant = true;
                   break;
                 }
@@ -1047,19 +1058,40 @@ if (internalPageKind === 'player') {
   });
 })();
 
-// Automatic Website Password Autofill & Save Engine
+// Automatic Website Password Autofill & Save Engine (HTTPS + top frame + user-gesture gated)
 window.addEventListener('DOMContentLoaded', async () => {
-  if (!/^https?:$/i.test(window.location.protocol)) return;
-  const host = normalizeHost(window.location.hostname);
+  // Never autofill inside third-party / nested iframes
+  if (window.top !== window) return;
+  const proto = window.location.protocol;
+  const rawHost = (window.location.hostname || '').toLowerCase();
+  const isLocalDev = rawHost === 'localhost' || rawHost === '127.0.0.1';
+  if (proto !== 'https:' && !(proto === 'http:' && isLocalDev)) return;
+  const host = normalizeHost(rawHost);
   if (!host) return;
 
-  try {
-    const passwords = await ipcRenderer.invoke('autofill:get');
-    const matched = (passwords || []).filter(
-      (p) => p && p.site && isAutofillHostMatch(host, p.site)
-    );
+  let cachedCredentials = null;
+  let fetchingCredentials = null;
+  const loadCredentials = async () => {
+    if (cachedCredentials !== null) return cachedCredentials;
+    if (!fetchingCredentials) {
+      fetchingCredentials = ipcRenderer
+        .invoke('autofill:get')
+        .then((list) => {
+          cachedCredentials = (Array.isArray(list) ? list : []).filter(
+            (p) => p && p.site && normalizeHost(p.site) === host
+          );
+          return cachedCredentials;
+        })
+        .catch(() => {
+          cachedCredentials = [];
+          return [];
+        });
+    }
+    return fetchingCredentials;
+  };
 
-    const fillForms = () => {
+  try {
+    const bindForms = () => {
       const passInputs = document.querySelectorAll('input[type="password"]');
       passInputs.forEach((pwInput) => {
         if (pwInput.dataset.gxAutofillBound) return;
@@ -1070,7 +1102,12 @@ window.addEventListener('DOMContentLoaded', async () => {
           'input[type="email"], input[type="text"][name*="user" i], input[type="text"][name*="login" i], input[type="text"][name*="email" i], input[type="text"]'
         );
 
-        if (matched.length > 0) {
+        let filledOnce = false;
+        const triggerAutofillOnGesture = async (ev) => {
+          if (filledOnce || !ev || !ev.isTrusted) return;
+          const matched = await loadCredentials();
+          if (!matched.length) return;
+          filledOnce = true;
           const cred = matched[0];
           if (userInput && !userInput.value) {
             userInput.value = cred.username;
@@ -1080,14 +1117,22 @@ window.addEventListener('DOMContentLoaded', async () => {
             pwInput.value = cred.password;
             pwInput.dispatchEvent(new Event('input', { bubbles: true }));
           }
+        };
+
+        pwInput.addEventListener('focus', triggerAutofillOnGesture);
+        pwInput.addEventListener('click', triggerAutofillOnGesture);
+        if (userInput) {
+          userInput.addEventListener('focus', triggerAutofillOnGesture);
+          userInput.addEventListener('click', triggerAutofillOnGesture);
         }
 
         if (form && !form.dataset.gxSaveBound) {
           form.dataset.gxSaveBound = '1';
-          form.addEventListener('submit', () => {
+          form.addEventListener('submit', async () => {
             const username = userInput ? userInput.value.trim() : '';
             const password = pwInput.value;
             if (username && password) {
+              const matched = cachedCredentials || (await loadCredentials());
               const alreadySaved = matched.some(
                 (m) => m.username === username && m.password === password
               );
@@ -1103,8 +1148,56 @@ window.addEventListener('DOMContentLoaded', async () => {
       });
     };
 
-    fillForms();
-    const obs = new MutationObserver(() => fillForms());
-    obs.observe(document.documentElement, { childList: true, subtree: true });
+    bindForms();
+
+    const nodeMayHavePasswordField = (node) => {
+      if (!node || node.nodeType !== 1) return false;
+      const tag = node.tagName;
+      if (tag === 'INPUT') {
+        return (node.type || '').toLowerCase() === 'password';
+      }
+      if (tag === 'FORM') return true;
+      if (typeof node.querySelector === 'function') {
+        return Boolean(node.querySelector('input[type="password"]'));
+      }
+      return false;
+    };
+
+    let autofillTimer = null;
+    const scheduleBindForms = () => {
+      if (autofillTimer) return;
+      autofillTimer = setTimeout(() => {
+        autofillTimer = null;
+        bindForms();
+      }, 500);
+    };
+
+    const obs = new MutationObserver((mutations) => {
+      if (autofillTimer) return;
+      for (let i = 0; i < mutations.length; i++) {
+        const added = mutations[i].addedNodes;
+        if (!added || added.length === 0) continue;
+        for (let j = 0; j < added.length; j++) {
+          if (nodeMayHavePasswordField(added[j])) {
+            scheduleBindForms();
+            return;
+          }
+        }
+      }
+    });
+    if (document.documentElement) {
+      obs.observe(document.documentElement, { childList: true, subtree: true });
+      window.addEventListener(
+        'pagehide',
+        () => {
+          obs.disconnect();
+          if (autofillTimer) {
+            clearTimeout(autofillTimer);
+            autofillTimer = null;
+          }
+        },
+        { once: true }
+      );
+    }
   } catch (_) {}
 });

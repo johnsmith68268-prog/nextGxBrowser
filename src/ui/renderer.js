@@ -58,6 +58,7 @@ const bookmarksBar = document.getElementById('bookmarksBar');
 const bookmarksBarItems = document.getElementById('bookmarksBarItems');
 const btnBookmarksManager = document.getElementById('btnBookmarksManager');
 const tabsStrip = document.getElementById('tabsStrip');
+const btnGxCornerTab = document.getElementById('btnGxCornerTab');
 const tabsContainer = document.getElementById('tabsContainer');
 const btnNewTab = document.getElementById('btnNewTab');
 const btnTabsScrollLeft = document.getElementById('btnTabsScrollLeft');
@@ -77,6 +78,15 @@ const btnSiteSecurity = document.getElementById('btnSiteSecurity');
 const secNotSecureLabel = document.getElementById('secNotSecureLabel');
 const topBlockedCount = document.getElementById('topBlockedCount');
 const topToast = document.getElementById('topToast');
+
+const RELOAD_ICON_SVG =
+  '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>';
+const STOP_ICON_SVG =
+  '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+const LOCK_ICON_PATHS =
+  '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>';
+const WARN_ICON_PATHS =
+  '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>';
 
 const btnBack = document.getElementById('btnBack');
 const btnForward = document.getElementById('btnForward');
@@ -164,7 +174,8 @@ function syncLayoutOffsets() {
     left,
     top,
     right,
-    bottom: 0
+    bottom: 0,
+    gxControlOpen: activeLeftTool === 'gxControl'
   });
   updateSplitDividerLayout();
   requestAnimationFrame(() => updateSplitDividerLayout());
@@ -382,6 +393,7 @@ let didDropTab = false;
 let pendingStateDuringDrag = null;
 let suppressTabClickUntil = 0;
 let tabContextMenuOpen = false;
+let suppressAddressFocusSelect = false;
 let activeTabContextMode = null;
 let lastRenderedActiveTabId = null;
 let lastRenderedTabCount = 0;
@@ -678,6 +690,7 @@ function buildTabElement(tab, group, state, activeWsGroupsList, otherClosableCou
     .join(' ');
 
   el.dataset.tabId = tab.id;
+  el.dataset.favicon = tab.favicon || '';
   if (inGroup) {
     el.dataset.groupId = group.id;
     el.dataset.groupColor = group.color || 'group-1';
@@ -993,6 +1006,85 @@ function buildGroupPillElement(group, groupTabs, state) {
 }
 
 // 1. RENDER TABS & TOP BAR (Zero Emojis — Crisp SVGs only)
+let lastTabStripStructureKey = '';
+
+function patchTabElementInPlace(el, tab, group, state) {
+  const isActive = tab.id === state.activeTabId;
+  const split = state.split && state.split.visible ? state.split : null;
+  const splitRole = split
+    ? split.leftTabId === tab.id
+      ? 'left'
+      : split.rightTabId === tab.id
+      ? 'right'
+      : null
+    : null;
+  const isSplitFocused = Boolean(splitRole && split.focusedPane === splitRole);
+
+  el.classList.toggle('active', isActive);
+  el.classList.toggle('sleeping', Boolean(tab.sleeping));
+  el.classList.toggle('audible', Boolean(tab.audible));
+  el.classList.toggle('split-focused', isSplitFocused);
+
+  const splitTitlePrefix = splitRole ? `[Split ${splitRole === 'left' ? 'Left' : 'Right'}] ` : '';
+  const nextTitleAttr = group
+    ? `${splitTitlePrefix}[${group.name}] ${tab.title}\n${tab.url}`
+    : `${splitTitlePrefix}${tab.title}\n${tab.url}`;
+  if (el.title !== nextTitleAttr) el.title = nextTitleAttr;
+
+  const titleEl = el.querySelector('.tab-title');
+  const displayTitle = tab.title || 'Start Page';
+  if (titleEl && titleEl.textContent !== displayTitle) {
+    titleEl.textContent = displayTitle;
+  }
+
+  const prevFav = el.dataset.favicon || '';
+  const nextFav = tab.favicon || '';
+  if (prevFav !== nextFav) {
+    el.dataset.favicon = nextFav;
+    const oldImg = el.querySelector('.tab-favicon');
+    const oldSvg = el.querySelector('.tab-favicon-svg');
+    if (nextFav) {
+      if (oldImg) {
+        oldImg.src = nextFav;
+        oldImg.style.display = '';
+      } else {
+        const img = document.createElement('img');
+        img.className = 'tab-favicon';
+        img.draggable = false;
+        img.alt = '';
+        img.src = nextFav;
+        img.onerror = () => { img.style.display = 'none'; };
+        if (oldSvg) oldSvg.replaceWith(img);
+        else el.prepend(img);
+      }
+    } else if (oldImg) {
+      const wrap = document.createElement('span');
+      wrap.innerHTML = `<svg class="tab-favicon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8"/></svg>`;
+      oldImg.replaceWith(wrap.firstElementChild);
+    }
+  }
+
+  if (!tab.pinned) {
+    const existingAudio = el.querySelector('.tab-audio-svg');
+    if (tab.audible && !existingAudio) {
+      const wrap = document.createElement('span');
+      wrap.innerHTML = `<svg class="tab-audio-svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>`;
+      if (titleEl) el.insertBefore(wrap.firstElementChild, titleEl);
+    } else if (!tab.audible && existingAudio) {
+      existingAudio.remove();
+    }
+
+    const existingSleep = el.querySelector('.tab-sleep-svg');
+    if (tab.sleeping && !existingSleep) {
+      const wrap = document.createElement('span');
+      wrap.innerHTML = `<svg class="tab-sleep-svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`;
+      if (titleEl) el.insertBefore(wrap.firstElementChild, titleEl);
+    } else if (!tab.sleeping && existingSleep) {
+      existingSleep.remove();
+    }
+  }
+}
+
 function renderTabs(state) {
   if (draggedTabId) {
     pendingStateDuringDrag = state;
@@ -1013,7 +1105,6 @@ function renderTabs(state) {
 
   currentState = state;
   renderWorkspaces(state);
-  tabsContainer.innerHTML = '';
 
   const allTabs = Array.isArray(state.tabs) ? state.tabs : [];
   const pinnedTabs = allTabs.filter((t) => t && t.pinned);
@@ -1032,8 +1123,70 @@ function renderTabs(state) {
     .map((g) => ({ ...g, tabCount: groupTabCounts.get(g.id) || 0 }));
   const groupById = new Map(activeWsGroupsList.map((g) => [g.id, g]));
 
+  const splitKey = state.split && state.split.visible ? `${state.split.leftTabId}|${state.split.rightTabId}` : '';
+  const structureKey = [
+    activeWsId,
+    splitKey,
+    pinnedTabs.map((t) => t.id).join(','),
+    wsUnpinnedTabs.map((t) => `${t.id}:${t.groupId || ''}`).join(','),
+    activeWsGroupsList.map((g) => `${g.id}:${g.name}:${g.color}:${g.collapsed ? 1 : 0}:${g.tabCount}`).join(',')
+  ].join('||');
+
   let activeTabEl = null;
   let activeCollapsedPillEl = null;
+
+  if (structureKey === lastTabStripStructureKey && tabsContainer.children.length > 0) {
+    // Fast path: patch tab DOM nodes in-place without destroying/rebuilding listeners
+    const existingTabsById = new Map();
+    tabsContainer.querySelectorAll('.nx-tab[data-tab-id]').forEach((el) => {
+      existingTabsById.set(el.dataset.tabId, el);
+    });
+    let allFound = true;
+    for (const tab of pinnedTabs) {
+      const el = existingTabsById.get(tab.id);
+      if (!el) { allFound = false; break; }
+      patchTabElementInPlace(el, tab, null, state);
+      if (tab.id === state.activeTabId) activeTabEl = el;
+    }
+    if (allFound) {
+      for (const tab of wsUnpinnedTabs) {
+        const grp = tab.groupId ? groupById.get(tab.groupId) || null : null;
+        if (grp && grp.collapsed) {
+          if (tab.id === state.activeTabId) {
+            activeCollapsedPillEl = tabsContainer.querySelector(`.nx-group-pill[data-group-id="${CSS.escape(grp.id)}"]`);
+          }
+          continue;
+        }
+        const el = existingTabsById.get(tab.id);
+        if (!el) { allFound = false; break; }
+        patchTabElementInPlace(el, tab, grp, state);
+        if (tab.id === state.activeTabId) activeTabEl = el;
+      }
+    }
+    if (allFound) {
+      // Also keep collapsed group pills' active highlight in sync
+      for (const grp of activeWsGroupsList) {
+        if (!grp.collapsed) continue;
+        const pill = tabsContainer.querySelector(`.nx-group-pill[data-group-id="${CSS.escape(grp.id)}"]`);
+        if (pill) {
+          const hasActive = wsUnpinnedTabs.some((t) => t.groupId === grp.id && t.id === state.activeTabId);
+          pill.classList.toggle('has-active', hasActive);
+        }
+      }
+      updateTabScrollButtons();
+      const focusStripEl = activeTabEl || activeCollapsedPillEl;
+      if (focusStripEl && !userScrolledTabStrip) {
+        scrollActiveTabIntoView(focusStripEl);
+        updateTabScrollButtons();
+      }
+      // Continue below to sync nav bar & active tab controls
+      syncActiveTabBarControls(state, activeChanged);
+      return;
+    }
+  }
+
+  lastTabStripStructureKey = structureKey;
+  tabsContainer.innerHTML = '';
 
   // Render global pinned tabs first
   for (const tab of pinnedTabs) {
@@ -1093,19 +1246,36 @@ function renderTabs(state) {
     });
   }
 
+  syncActiveTabBarControls(state, activeChanged);
+}
+
+function syncActiveTabBarControls(state, activeChanged = false) {
   const active = state.activeTab;
   if (active) {
     btnBack.disabled = !active.canGoBack;
     btnForward.disabled = !active.canGoForward;
-    btnReload.classList.toggle('spinning', Boolean(active.isLoading));
-    btnReload.title = active.isLoading ? 'Stop loading' : 'Reload (Ctrl+R)';
+    const isLoading = Boolean(active.isLoading);
+    btnReload.classList.remove('spinning');
+    btnReload.classList.toggle('is-stop', isLoading);
+    if (btnReload.dataset.mode !== (isLoading ? 'stop' : 'reload')) {
+      btnReload.innerHTML = isLoading ? STOP_ICON_SVG : RELOAD_ICON_SVG;
+      btnReload.dataset.mode = isLoading ? 'stop' : 'reload';
+    }
+    btnReload.title = isLoading ? 'Stop loading (Esc)' : 'Reload (Ctrl+R)';
+    btnReload.setAttribute('aria-label', isLoading ? 'Stop loading' : 'Reload');
 
     if (document.activeElement !== addressInput || !document.hasFocus() || activeChanged) {
       addressInput.value = active.url === 'nextgx://newtab' ? '' : active.url;
     }
 
-    btnSiteSecurity.classList.toggle('insecure', Boolean(active.isHttpInsecure));
-    secNotSecureLabel.classList.toggle('hidden', !active.isHttpInsecure);
+    const isHttpInsecure = Boolean(active.isHttpInsecure);
+    btnSiteSecurity.classList.toggle('insecure', isHttpInsecure);
+    secNotSecureLabel.classList.toggle('hidden', !isHttpInsecure);
+    const secLockSvg = document.getElementById('secLockSvg');
+    if (secLockSvg && secLockSvg.dataset.state !== (isHttpInsecure ? 'warn' : 'lock')) {
+      secLockSvg.innerHTML = isHttpInsecure ? WARN_ICON_PATHS : LOCK_ICON_PATHS;
+      secLockSvg.dataset.state = isHttpInsecure ? 'warn' : 'lock';
+    }
 
     incognitoIndicator.classList.toggle('hidden', !active.incognito);
     btnBookmarkStar.classList.toggle('active', Boolean(active.isBookmarked));
@@ -1149,6 +1319,12 @@ function renderTabs(state) {
   updateAddressShieldAppearance();
   updateSplitToolbarButton(state.split);
   updateSplitDividerLayout(state.split);
+
+  if (btnGxCornerTab) {
+    const isCornerActive = Boolean(active && active.url === 'nextgx://corner');
+    btnGxCornerTab.classList.toggle('active', isCornerActive);
+    btnGxCornerTab.setAttribute('aria-pressed', isCornerActive ? 'true' : 'false');
+  }
 
   document.querySelectorAll('[data-sidebar-tab]').forEach((btn) => {
     const targetUrl = btn.dataset.sidebarTab || '';
@@ -1344,18 +1520,35 @@ window.addEventListener('mousedown', (e) => {
     updateBookmarkFolderButtonsState();
     window.gxAPI.closePopover();
   }
+  if (sidebarPanelState.open && !sidebarPanelState.pinned) {
+    const clickedSidebar = Boolean(e.target && e.target.closest && e.target.closest('.nx-sidebar, #sidebarPanel'));
+    if (!clickedSidebar) {
+      window.gxAPI.closeSidebarPanel({ restoreFocus: false });
+    }
+  }
 });
 
 // Top Bar Events
+if (btnGxCornerTab) {
+  btnGxCornerTab.addEventListener('click', () => {
+    window.gxSounds?.playTabOpen();
+    window.gxAPI.closePopover();
+    window.gxAPI.openGxCorner();
+  });
+}
+
 document.getElementById('btnNewTab').addEventListener('click', () => {
   window.gxSounds?.playTabOpen();
   window.gxAPI.createTab({ url: 'nextgx://newtab', active: true });
 });
 
-document.getElementById('btnBrandHome').addEventListener('click', () => {
-  window.gxSounds?.playClick();
-  window.gxAPI.goHome();
-});
+const btnBrandHome = document.getElementById('btnBrandHome');
+if (btnBrandHome) {
+  btnBrandHome.addEventListener('click', () => {
+    window.gxSounds?.playClick();
+    window.gxAPI.goHome();
+  });
+}
 
 document.getElementById('btnHome').addEventListener('click', () => {
   window.gxSounds?.playClick();
@@ -1389,7 +1582,20 @@ addressForm.addEventListener('submit', (e) => {
   }
 });
 
-addressInput.addEventListener('focus', () => addressInput.select());
+addressInput.addEventListener('focus', () => {
+  if (suppressAddressFocusSelect) return;
+  addressInput.select();
+});
+
+addressInput.addEventListener('mousedown', (e) => {
+  if (e.button === 2) {
+    window.gxAPI.setChromeContextTarget?.('address-bar');
+    if (document.activeElement !== addressInput) {
+      addressInput.focus();
+      addressInput.select();
+    }
+  }
+});
 
 btnSiteSecurity.addEventListener('click', () => {
   window.gxSounds?.playClick();
@@ -1605,14 +1811,8 @@ window.addEventListener('mouseup', () => {
 
 document.getElementById('btnScreenshot').addEventListener('click', () => {
   window.gxSounds?.playClick();
-  const rect = document.getElementById('btnScreenshot').getBoundingClientRect();
-  window.gxAPI.openPopover({
-    kind: 'screenshot',
-    x: rect.right - 224,
-    y: TOP_CHROME_HEIGHT + 2,
-    width: 224,
-    height: 86
-  });
+  window.gxAPI.closePopover();
+  window.gxAPI.startAreaScreenshot();
 });
 
 document.getElementById('btnTopDownloads').addEventListener('click', () => {
@@ -1767,7 +1967,11 @@ document.querySelectorAll('[data-sidebar-tab]').forEach((btn) => {
   btn.addEventListener('click', () => {
     window.gxSounds?.playTabOpen();
     window.gxAPI.closePopover();
-    window.gxAPI.createTab({ url: targetUrl, active: true });
+    if (targetUrl === 'nextgx://corner' && window.gxAPI.openGxCorner) {
+      window.gxAPI.openGxCorner();
+    } else {
+      window.gxAPI.createTab({ url: targetUrl, active: true });
+    }
   });
 });
 

@@ -4,6 +4,7 @@ const {
   session,
   nativeImage
 } = require('electron');
+const { readClipboardText, writeClipboardText } = require('./clipboard-utils');
 const {
   NEW_TAB_FILE,
   CORNER_FILE,
@@ -13,6 +14,7 @@ const {
   SCREENSHOT_FILE,
   PRELOAD_FILE,
   windowContexts,
+  webContentsToWinId,
   registerWebContents,
   state
 } = require('./core');
@@ -58,6 +60,7 @@ const { openPopover, resizePopover, closePopover } = require('./popovers');
 const { scheduleSessionSave } = require('./session');
 const {
   createTab,
+  openOrFocusGxCornerTab,
   switchTab,
   sleepTab,
   sleepBackgroundTabs,
@@ -97,7 +100,14 @@ const {
 } = require('./extensions');
 const { openExtensionPopup } = require('./extension-popup');
 const { toggleWindowFullscreen } = require('./fullscreen');
-const { saveScreenshotPng } = require('./screenshots');
+const {
+  captureFullPagePng,
+  copyScreenshotPng,
+  saveScreenshotPng,
+  saveScreenshotWithDialog,
+  savePageAsPdf
+} = require('./screenshots');
+const { resolvePermissionPrompt } = require('./permissions');
 const { collectSystemStats, broadcastSystemStatsNow } = require('./stats');
 const gxControl = require('./gxcontrol');
 const { registerPlayerIpcHandlers } = require('./player');
@@ -165,11 +175,15 @@ function registerIpcHandlers() {
   };
 
   ipcMain.handle('autofill:get', (e) => {
-    const frameUrl = e?.senderFrame?.url;
+    // Only allow top-level mainFrame over HTTPS (or localhost/127.0.0.1 for local dev)
+    if (!e?.sender || !e?.senderFrame || e.senderFrame !== e.sender.mainFrame) return [];
+    const frameUrl = e.senderFrame.url;
     if (!frameUrl) return [];
     try {
       const u = new URL(frameUrl);
-      if (u.protocol !== 'http:' && u.protocol !== 'https:') return [];
+      const rawHost = (u.hostname || '').toLowerCase();
+      const isLocalDev = rawHost === 'localhost' || rawHost === '127.0.0.1';
+      if (u.protocol !== 'https:' && !(u.protocol === 'http:' && isLocalDev)) return [];
       const pageHost = u.hostname;
       if (!pageHost) return [];
       const pid = getSenderProfileId(e);
@@ -180,13 +194,19 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle('autofill:save', (e, { username, password } = {}) => {
-    const frameUrl = e?.senderFrame?.url;
+    if (!e?.sender || !e?.senderFrame || e.senderFrame !== e.sender.mainFrame) return false;
+    const ctx = getCtxFromSender(e.sender);
+    // Never persist credentials entered in Private/Incognito windows
+    if (ctx?.incognito) return false;
+    const frameUrl = e.senderFrame.url;
     if (!frameUrl || typeof username !== 'string' || typeof password !== 'string') return false;
     const cleanUser = username.trim();
     if (!cleanUser || !password) return false;
     try {
       const u = new URL(frameUrl);
-      if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+      const rawHost = (u.hostname || '').toLowerCase();
+      const isLocalDev = rawHost === 'localhost' || rawHost === '127.0.0.1';
+      if (u.protocol !== 'https:' && !(u.protocol === 'http:' && isLocalDev)) return false;
       const site = normalizeAutofillHost(u.hostname);
       if (!site) return false;
       const pid = getSenderProfileId(e);
@@ -206,6 +226,7 @@ function registerIpcHandlers() {
     }
     return createTab(ctx, opts || {});
   });
+  handleInternal('tabs:open-corner', (e) => openOrFocusGxCornerTab(getCtxFromSender(e.sender)));
   handleInternal('tabs:switch', (e, tabId) => switchTab(getCtxFromSender(e.sender), tabId));
   handleInternal('tabs:close', (e, tabId) => closeTab(getCtxFromSender(e.sender), tabId));
   handleInternal('tabs:close-others', (e, tabId) => closeOtherTabs(getCtxFromSender(e.sender), tabId));
@@ -267,28 +288,40 @@ function registerIpcHandlers() {
   });
   handleInternal('tabs:back', (e) => {
     const ctx = getCtxFromSender(e.sender);
+    const goBackSafe = (wc) => {
+      if (!wc || wc.isDestroyed()) return;
+      if (wc.navigationHistory) {
+        if (wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
+      } else if (wc.canGoBack()) {
+        wc.goBack();
+      }
+    };
     const sidebarEntry = findSidebarServiceByWebContents(ctx, e.sender);
     if (sidebarEntry) {
-      if (sidebarEntry.view.webContents.canGoBack()) {
-        sidebarEntry.view.webContents.goBack();
-      }
+      goBackSafe(sidebarEntry.view?.webContents);
       return serializeTabs(ctx);
     }
     const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
-    if (tab?.view?.webContents.canGoBack()) tab.view.webContents.goBack();
+    goBackSafe(tab?.view?.webContents);
     return serializeTabs(ctx);
   });
   handleInternal('tabs:forward', (e) => {
     const ctx = getCtxFromSender(e.sender);
+    const goForwardSafe = (wc) => {
+      if (!wc || wc.isDestroyed()) return;
+      if (wc.navigationHistory) {
+        if (wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward();
+      } else if (wc.canGoForward()) {
+        wc.goForward();
+      }
+    };
     const sidebarEntry = findSidebarServiceByWebContents(ctx, e.sender);
     if (sidebarEntry) {
-      if (sidebarEntry.view.webContents.canGoForward()) {
-        sidebarEntry.view.webContents.goForward();
-      }
+      goForwardSafe(sidebarEntry.view?.webContents);
       return serializeTabs(ctx);
     }
     const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
-    if (tab?.view?.webContents.canGoForward()) tab.view.webContents.goForward();
+    goForwardSafe(tab?.view?.webContents);
     return serializeTabs(ctx);
   });
   handleInternal('tabs:reload', (e, tabId) => {
@@ -325,7 +358,13 @@ function registerIpcHandlers() {
   handleInternal('tabs:stop', (e) => {
     const ctx = getCtxFromSender(e.sender);
     const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
-    if (tab?.view) tab.view.webContents.stop();
+    if (tab?.view && !tab.view.webContents.isDestroyed()) {
+      tab.view.webContents.stop();
+    }
+    if (tab && tab.isLoading) {
+      tab.isLoading = false;
+      broadcastState(ctx);
+    }
     return serializeTabs(ctx);
   });
   handleInternal('tabs:home', (e) => {
@@ -367,6 +406,31 @@ function registerIpcHandlers() {
     }
   });
 
+  const destroyScreenshotView = (ctx) => {
+    if (!ctx) return;
+    ctx.pendingScreenshotDataUrl = '';
+    const view = ctx.screenshotView;
+    ctx.screenshotView = null;
+    if (view) {
+      try {
+        if (view.webContents) {
+          webContentsToWinId.delete(view.webContents.id);
+        }
+      } catch (_) {}
+      try {
+        if (ctx.win && !ctx.win.isDestroyed() && ctx.win.contentView) {
+          ctx.win.contentView.removeChildView(view);
+        }
+      } catch (_) {}
+      try {
+        if (view.webContents && !view.webContents.isDestroyed()) {
+          view.webContents.close();
+        }
+      } catch (_) {}
+    }
+    updateActiveViewBounds(ctx);
+  };
+
   handleInternal('tabs:screenshot-area-start', async (e) => {
     const ctx = getCtxFromSender(e.sender);
     closePopover(ctx);
@@ -375,7 +439,8 @@ function registerIpcHandlers() {
     const image = await tab.view.webContents.capturePage();
     ctx.pendingScreenshotDataUrl = image.toDataURL();
 
-    if (!ctx.screenshotView) {
+    let created = false;
+    if (!ctx.screenshotView || !ctx.screenshotView.webContents || ctx.screenshotView.webContents.isDestroyed()) {
       ctx.screenshotView = new WebContentsView({
         webPreferences: {
           preload: PRELOAD_FILE,
@@ -389,38 +454,70 @@ function registerIpcHandlers() {
         query: getInternalUiQuery(ctx.incognito)
       });
       ctx.win.contentView.addChildView(ctx.screenshotView);
+      created = true;
     }
 
     updateActiveViewBounds(ctx);
-    ctx.screenshotView.webContents.send('screenshot:captured', { dataUrl: ctx.pendingScreenshotDataUrl });
-    setTimeout(() => {
-      ctx.screenshotView?.webContents.send('screenshot:captured', { dataUrl: ctx.pendingScreenshotDataUrl });
-    }, 180);
+    const deliverCapture = () => {
+      if (!ctx.pendingScreenshotDataUrl || !ctx.screenshotView || ctx.screenshotView.webContents.isDestroyed()) return;
+      try {
+        ctx.screenshotView.webContents.focus();
+      } catch (_) {}
+      ctx.screenshotView.webContents.send('screenshot:captured', { dataUrl: ctx.pendingScreenshotDataUrl });
+    };
+
+    if (created || ctx.screenshotView.webContents.isLoading()) {
+      ctx.screenshotView.webContents.once('did-finish-load', deliverCapture);
+    } else {
+      deliverCapture();
+    }
     return { ok: true };
   });
 
-  handleInternal('tabs:screenshot-area-finish', async (e, rect) => {
+  handleInternal('tabs:screenshot-area-finish', async (e, payload) => {
     const ctx = getCtxFromSender(e.sender);
     const dataUrl = ctx.pendingScreenshotDataUrl;
-    ctx.pendingScreenshotDataUrl = '';
-    updateActiveViewBounds(ctx);
-    if (!dataUrl || !rect || rect.width < 4 || rect.height < 4) return { ok: false };
+    destroyScreenshotView(ctx);
+    if (!dataUrl) return { ok: false };
+
+    const mode = typeof payload?.mode === 'string' ? payload.mode : 'save';
     const img = nativeImage.createFromDataURL(dataUrl);
+
+    if (mode === 'visible') {
+      return await saveScreenshotWithDialog(ctx, img.toPNG(), 'Visible');
+    }
+    if (mode === 'full') {
+      const fullBuf = await captureFullPagePng(ctx, img.toPNG());
+      return await saveScreenshotWithDialog(ctx, fullBuf || img.toPNG(), 'Full');
+    }
+
+    if (!payload || payload.width < 4 || payload.height < 4) return { ok: false };
     const size = img.getSize();
     const cropRect = {
-      x: Math.max(0, Math.min(size.width - 1, Math.round(rect.x))),
-      y: Math.max(0, Math.min(size.height - 1, Math.round(rect.y))),
-      width: Math.max(1, Math.min(size.width - Math.round(rect.x), Math.round(rect.width))),
-      height: Math.max(1, Math.min(size.height - Math.round(rect.y), Math.round(rect.height)))
+      x: Math.max(0, Math.min(size.width - 1, Math.round(payload.x))),
+      y: Math.max(0, Math.min(size.height - 1, Math.round(payload.y))),
+      width: Math.max(1, Math.min(size.width - Math.round(payload.x), Math.round(payload.width))),
+      height: Math.max(1, Math.min(size.height - Math.round(payload.y), Math.round(payload.height)))
     };
     const cropped = img.crop(cropRect);
-    return await saveScreenshotPng(ctx, cropped.toPNG(), 'Area');
+    const pngBuffer = cropped.toPNG();
+    if (mode === 'copy') {
+      return await copyScreenshotPng(ctx, pngBuffer);
+    }
+    return await saveScreenshotWithDialog(ctx, pngBuffer, 'Snap');
+  });
+
+  handleInternal('tabs:save-pdf', async (e) => {
+    const ctx = getCtxFromSender(e.sender);
+    if (ctx.screenshotView || ctx.pendingScreenshotDataUrl) {
+      destroyScreenshotView(ctx);
+    }
+    return await savePageAsPdf(ctx);
   });
 
   handleInternal('tabs:screenshot-area-cancel', (e) => {
     const ctx = getCtxFromSender(e.sender);
-    ctx.pendingScreenshotDataUrl = '';
-    updateActiveViewBounds(ctx);
+    destroyScreenshotView(ctx);
     return { ok: true };
   });
 
@@ -522,7 +619,7 @@ function registerIpcHandlers() {
 
   handleInternal('popover:open', (e, opts) => openPopover(getCtxFromSender(e.sender), opts || {}));
   handleInternal('popover:resize', (e, opts) => resizePopover(getCtxFromSender(e.sender), opts || {}));
-  handleInternal('popover:close', (e) => closePopover(getCtxFromSender(e.sender)));
+  handleInternal('popover:close', (e, opts) => closePopover(getCtxFromSender(e.sender), opts || {}));
 
   handleInternal('menu:action', (e, action) => {
     const ctx = getCtxFromSender(e.sender);
@@ -626,10 +723,28 @@ function registerIpcHandlers() {
     broadcastPermissionsUpdate({ profileId: pid });
     return updated;
   });
+  handleInternal('permissions:prompt-respond', (e, payload) => {
+    const ctx = getCtxFromSender(e.sender);
+    const res = resolvePermissionPrompt(ctx, payload || {});
+    if (res?.ok && !ctx?.incognito) {
+      broadcastPermissionsUpdate({ profileId: getSenderProfileId(e) });
+    }
+    return res;
+  });
+  handleInternal('contextmenu:chrome-target', (e, target) => {
+    const ctx = getCtxFromSender(e.sender);
+    if (ctx) {
+      ctx._lastChromeContextTarget = typeof target === 'string' ? target : null;
+    }
+    return true;
+  });
 
   handleInternal('layout:set-offsets', (e, partial) => {
     const ctx = getCtxFromSender(e.sender);
     const prevRight = ctx.layoutState?.right || 0;
+    if (partial && typeof partial.gxControlOpen === 'boolean') {
+      ctx.gxControlOpen = partial.gxControlOpen;
+    }
     ctx.layoutState = { ...ctx.layoutState, ...(partial || {}) };
     updateActiveViewBounds(ctx);
     if (ctx.sidebarPanel?.open && (ctx.layoutState.right || 0) !== prevRight) {
@@ -641,7 +756,7 @@ function registerIpcHandlers() {
   // Sidebar Overlay Panel (GX Left Rail)
   handleInternal('sidebar:toggle', (e, keyOrOpts) => toggleSidebarPanel(getCtxFromSender(e.sender), keyOrOpts));
   handleInternal('sidebar:open', (e, keyOrOpts) => openSidebarPanel(getCtxFromSender(e.sender), keyOrOpts));
-  handleInternal('sidebar:close', (e) => closeSidebarPanel(getCtxFromSender(e.sender)));
+  handleInternal('sidebar:close', (e, opts) => closeSidebarPanel(getCtxFromSender(e.sender), opts || {}));
   handleInternal('sidebar:set-pinned', (e, pinned) => setSidebarPinned(getCtxFromSender(e.sender), pinned));
   handleInternal('sidebar:reload', (e) => reloadSidebarPanel(getCtxFromSender(e.sender)));
   handleInternal('sidebar:open-in-new-tab', (e) => openSidebarPanelInNewTab(getCtxFromSender(e.sender)));
@@ -753,6 +868,9 @@ function registerIpcHandlers() {
   registerSplitIpcHandlers(handleInternal);
 
   handleInternal('passwords:get', (e) => state.storage.getPasswords(getSenderProfileId(e)));
+  handleInternal('passwords:encryption-status', () => ({
+    available: Boolean(state.storage?.isPasswordEncryptionAvailable?.())
+  }));
   handleInternal('passwords:add', (e, entry) => {
     const pid = getSenderProfileId(e);
     const result = state.storage.addPassword(entry, pid);

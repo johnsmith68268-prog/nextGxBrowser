@@ -15,6 +15,61 @@ function getSessionExtensionsApi(ses = session.defaultSession) {
   return ses.extensions || ses;
 }
 
+function getAllProfileExtensionSessions() {
+  const sessions = new Set();
+  if (session.defaultSession) sessions.add(session.defaultSession);
+  try {
+    const { getInitializedProfileSessions } = require('./profiles');
+    if (typeof getInitializedProfileSessions === 'function') {
+      for (const s of getInitializedProfileSessions()) {
+        if (s) sessions.add(s);
+      }
+    }
+  } catch (_) { }
+  return Array.from(sessions);
+}
+
+async function mirrorExtensionLoadToOtherSessions(resolvedPath) {
+  const sessions = getAllProfileExtensionSessions();
+  await Promise.allSettled(
+    sessions
+      .filter((s) => s && s !== session.defaultSession)
+      .map(async (ses) => {
+        const api = getSessionExtensionsApi(ses);
+        if (api && typeof api.loadExtension === 'function') {
+          await api.loadExtension(resolvedPath, { allowFileAccess: false });
+        }
+      })
+  );
+}
+
+function mirrorExtensionRemoveFromAllSessions(id) {
+  const sessions = getAllProfileExtensionSessions();
+  for (const ses of sessions) {
+    try {
+      const api = getSessionExtensionsApi(ses);
+      if (api?.getExtension?.(id) && typeof api.removeExtension === 'function') {
+        api.removeExtension(id);
+      }
+    } catch (_) { }
+  }
+}
+
+async function syncPersistedExtensionsToSession(ses) {
+  if (!ses || ses === session.defaultSession || !state.storage) return;
+  const api = getSessionExtensionsApi(ses);
+  if (!api || typeof api.loadExtension !== 'function') return;
+  const stored = state.storage.getExtensions();
+  await Promise.allSettled(
+    stored
+      .filter((rec) => rec && rec.enabled && rec.path)
+      .map(async (rec) => {
+        if (api.getExtension?.(rec.id)) return;
+        await api.loadExtension(rec.path, { allowFileAccess: false });
+      })
+  );
+}
+
 function parseExtensionWarningLines(message) {
   if (!message || typeof message !== 'string') return [];
   return message
@@ -78,7 +133,7 @@ function validateUnpackedExtensionPath(rawPath) {
       nestedCandidates = entries
         .filter((d) => d.isDirectory() && fs.existsSync(path.join(resolved, d.name, 'manifest.json')))
         .map((d) => d.name);
-    } catch (_) {}
+    } catch (_) { }
 
     if (nestedCandidates.length === 1) {
       return {
@@ -205,6 +260,7 @@ async function loadUnpackedExtensionFromPath(folderPath, { persist = true } = {}
     const { value: ext, warnings } = await captureExtensionLoadWarnings(resolvedPath, () =>
       extApi.loadExtension(resolvedPath, { allowFileAccess: false })
     );
+    await mirrorExtensionLoadToOtherSessions(resolvedPath);
 
     const allWarnings = [...warnings];
     if (ext?.manifest?.theme) {
@@ -274,9 +330,7 @@ async function setExtensionEnabled(id, enabled) {
   if (!enabled) {
     try {
       const wasPinned = getPinnedExtensionsFromSettings().some((item) => item && item.id === id);
-      if (liveExt && extApi?.removeExtension) {
-        extApi.removeExtension(id);
-      }
+      mirrorExtensionRemoveFromAllSessions(id);
       if (state.storage) {
         state.storage.upsertExtension({
           id,
@@ -380,13 +434,7 @@ async function reloadManagedExtension(id) {
     };
   }
 
-  if (liveExt && extApi?.removeExtension) {
-    try {
-      extApi.removeExtension(id);
-    } catch (err) {
-      console.error('[Extensions] Error unloading extension prior to reload:', id, err);
-    }
-  }
+  mirrorExtensionRemoveFromAllSessions(id);
 
   const loadRes = await loadUnpackedExtensionFromPath(sourcePath, { persist: true });
   if (!loadRes.ok && state.storage && storedRec) {
@@ -404,14 +452,7 @@ function removeManagedExtension(id) {
     return { ok: false, error: 'Missing extension ID.', extensions: listManagedExtensions() };
   }
   closeExtensionPopupsForExtension(id);
-  try {
-    const extApi = getSessionExtensionsApi(session.defaultSession);
-    if (extApi?.getExtension?.(id) && extApi.removeExtension) {
-      extApi.removeExtension(id);
-    }
-  } catch (err) {
-    console.error('[Extensions] Error unloading extension during remove:', id, err);
-  }
+  mirrorExtensionRemoveFromAllSessions(id);
   if (state.storage) {
     state.storage.removeExtension(id);
     const s = state.storage.getSettings();
@@ -582,18 +623,19 @@ function setExtensionPinned(id, pinned) {
 
 async function restorePersistedExtensions() {
   if (!state.storage) return;
-  const stored = state.storage.getExtensions();
-  for (const rec of stored) {
-    if (!rec || !rec.enabled || !rec.path) continue;
-    const res = await loadUnpackedExtensionFromPath(rec.path, { persist: true });
-    if (!res.ok) {
-      console.error('[Extensions] Failed to restore extension on startup:', rec.name, rec.path, res.error);
-      state.storage.updateExtension(rec.id, {
-        enabled: false,
-        lastError: res.error || 'Failed to restore extension on startup.'
-      });
-    }
-  }
+  const stored = state.storage.getExtensions().filter((rec) => rec && rec.enabled && rec.path);
+  await Promise.allSettled(
+    stored.map(async (rec) => {
+      const res = await loadUnpackedExtensionFromPath(rec.path, { persist: true });
+      if (!res.ok) {
+        console.error('[Extensions] Failed to restore extension on startup:', rec.name, rec.path, res.error);
+        state.storage.updateExtension(rec.id, {
+          enabled: false,
+          lastError: res.error || 'Failed to restore extension on startup.'
+        });
+      }
+    })
+  );
   getExtensionsDropdownData();
 }
 
@@ -660,5 +702,6 @@ module.exports = {
   getExtensionsDropdownData,
   setExtensionPinned,
   restorePersistedExtensions,
+  syncPersistedExtensionsToSession,
   registerExtensionIpcHandlers
 };

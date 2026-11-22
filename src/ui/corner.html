@@ -2,6 +2,7 @@
 <html lang="en" data-theme="gx-violet">
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; font-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none';" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GX Corner — nextGx Browser</title>
   <link rel="stylesheet" href="theme.css" />
@@ -36,8 +37,7 @@
       position: sticky;
       top: 0;
       z-index: 25;
-      background: color-mix(in srgb, var(--bg-chrome) 92%, transparent);
-      backdrop-filter: blur(14px);
+      background: color-mix(in srgb, var(--bg-chrome) 96%, transparent);
       border-bottom: 1px solid var(--nx-accent-soft);
       box-shadow: inset 0 -1px 0 var(--border-glass), var(--nx-shadow-md);
       padding: 12px 28px;
@@ -604,10 +604,9 @@
       text-transform: uppercase;
       padding: 3px 7px;
       border-radius: var(--nx-radius-xs);
-      background: color-mix(in srgb, var(--bg-deep) 88%, transparent);
+      background: color-mix(in srgb, var(--bg-deep) 94%, transparent);
       border: 1px solid var(--nx-accent);
       color: var(--nx-accent-bright);
-      backdrop-filter: blur(6px);
     }
 
     .card-badge.is-free {

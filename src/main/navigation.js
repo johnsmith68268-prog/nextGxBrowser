@@ -87,8 +87,14 @@ function resolveNavigateInput(input) {
     }
   }
   if (/^(https?:\/\/|chrome-extension:\/\/|file:\/\/|view-source:|data:)/i.test(trimmed)) return trimmed;
+  const isLocalHostOrPrivateIp =
+    /^(localhost|127\.\d{1,3}\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}|\[::1\])(:\d+)?(\/.*)?$/i.test(
+      trimmed
+    ) && !trimmed.includes(' ');
+  if (isLocalHostOrPrivateIp) return `http://${trimmed}`;
+
   const isDomainOrIp =
-    /^(localhost(:\d+)?|(\d{1,3}\.){3}\d{1,3}(:\d+)?|([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,})(\/.*)?$/i.test(
+    /^((\d{1,3}\.){3}\d{1,3}(:\d+)?|([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(:\d+)?)(\/.*)?$/i.test(
       trimmed
     ) && !trimmed.includes(' ');
   if (isDomainOrIp) return `https://${trimmed}`;
