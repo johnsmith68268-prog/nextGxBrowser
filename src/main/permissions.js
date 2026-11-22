@@ -1,5 +1,6 @@
 const { windowContexts, webContentsToWinId, state } = require('./core');
 const { getOriginForUrl } = require('./utils');
+const { desktopCapturer } = require('electron');
 const popoversMod = () => require('./popovers');
 
 const SAFE_AUTO_ALLOW_PERMISSIONS = new Set([
@@ -12,7 +13,10 @@ const PERMISSION_LABELS = {
   camera: 'Camera',
   microphone: 'Microphone',
   geolocation: 'Location',
-  notifications: 'Notifications'
+  notifications: 'Notifications',
+  // S-2: screen sharing and clipboard-read now have a prompt path.
+  'screen-share': 'Screen sharing',
+  'clipboard-read': 'Clipboard'
 };
 
 const PROMPT_TIMEOUT_MS = 45000;
@@ -29,6 +33,10 @@ function resolvePermissionKeys(permission, details = {}) {
   }
   if (permission === 'geolocation') return ['geolocation'];
   if (permission === 'notifications') return ['notifications'];
+  // S-2: screen sharing (Meet/Zoom/Teams) and clipboard-read get a prompt path
+  // instead of a silent default-deny. usb/hid/serial stay unmapped (denied).
+  if (permission === 'display-capture') return ['screen-share'];
+  if (permission === 'clipboard-read') return ['clipboard-read'];
   return [];
 }
 
@@ -140,20 +148,32 @@ function resolvePermissionPrompt(ctx, { requestId, decision } = {}) {
   if (requestId && active.requestId !== requestId) return { ok: false };
 
   const allowed = decision === 'allow-once' || decision === 'allow-always';
+  // s-3: per-key decisions only — never overwrite a pre-existing grant with the
+  // opposite decision (e.g. a Block on a camera+mic prompt must not revoke an
+  // already-allowed camera). The request handler already queues only undecided
+  // keys; this guard covers decisions that changed while the prompt was open.
   if (decision === 'allow-always') {
     if (ctx.incognito) {
-      setSessionGrant(ctx, active.origin, active.keys, 'allow');
+      const toAllow = active.keys.filter((k) => getSessionGrant(ctx, active.origin, k) !== 'block');
+      setSessionGrant(ctx, active.origin, toAllow, 'allow');
     } else if (state.storage) {
+      const current = state.storage.getSitePermissions(active.origin, active.profileId);
       for (const k of active.keys) {
-        state.storage.setSitePermission(active.origin, k, 'allow', active.profileId);
+        if (current[k] !== 'block') {
+          state.storage.setSitePermission(active.origin, k, 'allow', active.profileId);
+        }
       }
     }
   } else if (decision === 'block') {
     if (ctx.incognito) {
-      setSessionGrant(ctx, active.origin, active.keys, 'block');
+      const toBlock = active.keys.filter((k) => getSessionGrant(ctx, active.origin, k) !== 'allow');
+      setSessionGrant(ctx, active.origin, toBlock, 'block');
     } else if (state.storage) {
+      const current = state.storage.getSitePermissions(active.origin, active.profileId);
       for (const k of active.keys) {
-        state.storage.setSitePermission(active.origin, k, 'block', active.profileId);
+        if (current[k] !== 'allow') {
+          state.storage.setSitePermission(active.origin, k, 'block', active.profileId);
+        }
       }
     }
   }
@@ -207,11 +227,18 @@ function setupPermissionsForSession(ses, profileId = 'default', { incognito = fa
     if (keys.length === 0) return false;
     const origin = getOriginForUrl(requestingOrigin);
     if (!origin) return false;
-    if (incognito && wc) {
-      const winId = webContentsToWinId.get(wc.id);
-      const ctx = winId ? windowContexts.get(winId) : null;
-      if (ctx && keys.every((k) => getSessionGrant(ctx, origin, k) === 'allow')) return true;
-      if (ctx && keys.some((k) => getSessionGrant(ctx, origin, k) === 'block')) return false;
+    if (incognito) {
+      // s-2: private windows NEVER read persistent (normal-profile) grants —
+      // a site allowed in the normal profile must show as 'prompt' here.
+      // Only this window's session grants count; anything else is undecided,
+      // so return false and let Chromium ask via the request handler.
+      if (wc) {
+        const winId = webContentsToWinId.get(wc.id);
+        const ctx = winId ? windowContexts.get(winId) : null;
+        if (ctx && keys.every((k) => getSessionGrant(ctx, origin, k) === 'allow')) return true;
+        if (ctx && keys.some((k) => getSessionGrant(ctx, origin, k) === 'block')) return false;
+      }
+      return false;
     }
     return evaluatePermissionCheck(state.storage, permission, origin, profileId, details);
   });
@@ -222,7 +249,8 @@ function setupPermissionsForSession(ses, profileId = 'default', { incognito = fa
     }
     const keys = resolvePermissionKeys(permission, details);
     if (keys.length === 0) {
-      // Default-DENY all unmapped sensitive permissions (usb, hid, serial, display-capture, clipboard-read, etc.)
+      // Default-DENY all unmapped sensitive permissions (usb, hid, serial, etc.).
+      // display-capture and clipboard-read ARE mapped (S-2) and prompt below.
       return callback(false);
     }
     const origin = getOriginForUrl(details?.requestingUrl || webContents?.getURL?.() || '');
@@ -239,24 +267,58 @@ function setupPermissionsForSession(ses, profileId = 'default', { incognito = fa
     }
 
     const stored = state.storage ? state.storage.getSitePermissions(origin, profileId) : {};
-    if (keys.some((k) => stored[k] === 'block')) {
-      return callback(false);
-    }
-    if (!incognito && keys.every((k) => stored[k] === 'allow')) {
-      return callback(true);
+    if (!incognito) {
+      // s-2: persistent blocks apply to normal windows only; a private window
+      // must not inherit the normal profile's decisions (it prompts instead).
+      if (keys.some((k) => stored[k] === 'block')) {
+        return callback(false);
+      }
+      if (keys.every((k) => stored[k] === 'allow')) {
+        return callback(true);
+      }
     }
 
     // One or more requested keys are 'ask' -> show in-app permission prompt popover
     if (!ctx || !ctx.win || ctx.win.isDestroyed()) {
       return callback(false);
     }
+
+    // s-3: prompt ONLY for keys that are still undecided in the store this
+    // window reads. Pre-existing grants are preserved and never re-decided:
+    // e.g. camera already allowed + mic asked -> prompt asks about mic only,
+    // so Block cannot revoke the camera grant.
+    const pendingKeys = incognito
+      ? keys.filter((k) => !getSessionGrant(ctx, origin, k))
+      : keys.filter((k) => stored[k] !== 'allow' && stored[k] !== 'block');
+    if (pendingKeys.length === 0) {
+      // Defensive: every key already has a decision (early checks above should
+      // have caught this). Re-check grants instead of prompting.
+      const granted = incognito
+        ? keys.every((k) => getSessionGrant(ctx, origin, k) === 'allow')
+        : keys.every((k) => stored[k] === 'allow');
+      return callback(granted);
+    }
     ensurePromptQueue(ctx).push({
       origin,
-      keys,
+      keys: pendingKeys,
       profileId,
       callback
     });
     pumpPermissionQueue(ctx);
+  });
+
+  // S-2: without a display-media handler, getDisplayMedia() can never return a
+  // stream even after the user allows screen sharing. Return the primary
+  // screen; audio is not captured (video-only stream).
+  ses.setDisplayMediaRequestHandler(async (_request, callback) => {
+    try {
+      const sources = await desktopCapturer.getSources({ types: ['screen'] });
+      const primary = sources.find((src) => String(src.id).startsWith('screen:')) || sources[0];
+      if (!primary) return callback({});
+      callback({ video: primary });
+    } catch (_) {
+      callback({});
+    }
   });
 }
 
