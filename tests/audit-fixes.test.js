@@ -67,8 +67,13 @@ test('SEC-1: Permissions policy enforces default-deny, separates mediaTypes, and
   assert.deepEqual(resolvePermissionKeys('geolocation'), ['geolocation']);
   assert.deepEqual(resolvePermissionKeys('notifications'), ['notifications']);
 
+  // S-2: screen sharing and clipboard-read are promptable (mapped keys), not
+  // default-denied — the user gets an Allow/Block choice like camera/mic.
+  assert.deepEqual(resolvePermissionKeys('display-capture'), ['screen-share']);
+  assert.deepEqual(resolvePermissionKeys('clipboard-read'), ['clipboard-read']);
+
   // Sensitive unmapped capabilities must NOT map and must default-deny
-  for (const dangerous of ['usb', 'hid', 'serial', 'display-capture', 'clipboard-read', 'openExternal', 'midiSysex']) {
+  for (const dangerous of ['usb', 'hid', 'serial', 'openExternal', 'midiSysex']) {
     assert.deepEqual(resolvePermissionKeys(dangerous), []);
   }
 
@@ -83,10 +88,22 @@ test('SEC-1: Permissions policy enforces default-deny, separates mediaTypes, and
   assert.equal(evaluatePermissionCheck(fakeStorage, 'fullscreen', 'https://example.com'), true);
   assert.equal(evaluatePermissionCheck(fakeStorage, 'clipboard-sanitized-write', 'https://example.com'), true);
 
-  // Unknown/dangerous permissions must be DENIED
+  // Unknown/dangerous permissions must be DENIED (unmapped -> false)
   assert.equal(evaluatePermissionCheck(fakeStorage, 'usb', 'https://example.com'), false);
+
+  // Screen-share / clipboard-read with no stored grant return false ('ask'),
+  // which makes Chromium prompt via the request handler — not a deny.
   assert.equal(evaluatePermissionCheck(fakeStorage, 'clipboard-read', 'https://example.com'), false);
   assert.equal(evaluatePermissionCheck(fakeStorage, 'display-capture', 'https://example.com'), false);
+
+  // ...and with a stored allow grant they return true (grants are honored).
+  const grantedStorage = {
+    getSitePermissions() {
+      return { 'screen-share': 'allow', 'clipboard-read': 'allow' };
+    }
+  };
+  assert.equal(evaluatePermissionCheck(grantedStorage, 'clipboard-read', 'https://example.com'), true);
+  assert.equal(evaluatePermissionCheck(grantedStorage, 'display-capture', 'https://example.com'), true);
 
   // 'ask' must return false in check handler (so Chromium triggers prompt), 'block' false, 'allow' true
   assert.equal(evaluatePermissionCheck(fakeStorage, 'videoCapture', 'https://example.com'), false);
@@ -234,17 +251,79 @@ test('PERF-4: Set-based AdBlocker matches ads/trackers accurately and runs fast'
     blocker.shouldBlock('https://cdn.example.org/assets/app.bundle.js', 'script', 'https://news.example', { initiatorNormalized: true });
   }
   const elapsedMs = performance.now() - t0;
-  assert.ok(elapsedMs < 500, `Expected fast matching, took ${elapsedMs.toFixed(1)}ms`);
+  assert.ok(elapsedMs < 250, `Expected fast matching, took ${elapsedMs.toFixed(1)}ms`);
 });
 
-test('SEC-3 / BUG-9: Every active internal UI HTML file has a CSP meta tag and dead left-dock files are removed', () => {
+test('SEC-3 / BUG-9: Every active internal UI HTML file has a CSP meta tag with the intended policy, and dead left-dock files are removed', () => {
   const uiDir = path.join(__dirname, '..', 'src', 'ui');
   const htmlFiles = fs.readdirSync(uiDir).filter((f) => f.endsWith('.html'));
   assert.ok(!htmlFiles.includes('left-dock-header.html'), 'left-dock-header.html should be removed');
   assert.ok(!htmlFiles.includes('left-dock-resizer.html'), 'left-dock-resizer.html should be removed');
   assert.ok(htmlFiles.length >= 9, 'Expected all 9 active UI HTML files');
+
+  // Documented intended policy (shared by all internal pages):
+  // - script-src 'self' 'unsafe-inline' is genuinely required: 7 of the 9 pages
+  //   carry inline <script> blocks (corner, error, newtab, player, popover,
+  //   screenshot, sidebar-panel-chrome). chrome-webui.html and index.html only
+  //   load external scripts, but keep the uniform policy for consistency.
+  // - style-src 'self' 'unsafe-inline' is required by inline <style> blocks and
+  //   inline style="" attributes used across the pages.
+  // - No remote code is ever allowed: no http:/https: in script-src or style-src,
+  //   no 'unsafe-eval', no wildcard '*', and no network at all (connect-src 'none').
+  const COMMON_DIRECTIVES = {
+    'default-src': ["'self'"],
+    'script-src': ["'self'", "'unsafe-inline'"],
+    'style-src': ["'self'", "'unsafe-inline'"],
+    'font-src': ["'self'", 'data:'],
+    'connect-src': ["'none'"],
+    'object-src': ["'none'"],
+    'base-uri': ["'none'"]
+  };
+  // img-src varies by page because only some pages show remote/file images:
+  // - file: images (local wallpapers/favicons): chrome-webui, newtab
+  // - remote images (favicons, artwork, thumbnails): corner, index, player,
+  //   popover, sidebar-panel-chrome
+  // - local images only: error, screenshot
+  const IMG_SRC_BY_FILE = {
+    'chrome-webui.html': ["'self'", 'data:', 'file:', 'https:', 'http:'],
+    'newtab.html': ["'self'", 'data:', 'file:', 'https:', 'http:'],
+    'corner.html': ["'self'", 'data:', 'https:', 'http:'],
+    'index.html': ["'self'", 'data:', 'https:', 'http:'],
+    'player.html': ["'self'", 'data:', 'https:', 'http:'],
+    'popover.html': ["'self'", 'data:', 'https:', 'http:'],
+    'sidebar-panel-chrome.html': ["'self'", 'data:', 'https:', 'http:'],
+    'error.html': ["'self'", 'data:'],
+    'screenshot.html': ["'self'", 'data:']
+  };
+
   for (const file of htmlFiles) {
     const content = fs.readFileSync(path.join(uiDir, file), 'utf-8');
-    assert.match(content, /http-equiv="Content-Security-Policy"/i, `${file} must define a CSP meta tag`);
+    // The meta tag may span multiple lines (popover.html), so match across lines.
+    const meta = content.match(/<meta[^>]*http-equiv="Content-Security-Policy"[^>]*>/is);
+    assert.ok(meta, `${file} must define a CSP meta tag`);
+    const cspValue = meta[0].match(/content="([^"]*)"/s)[1];
+    assert.ok(cspValue.length > 0, `${file} CSP must not be empty`);
+
+    const directives = {};
+    for (const part of cspValue.split(';')) {
+      const tokens = part.trim().split(/\s+/).filter(Boolean);
+      if (tokens.length === 0) continue;
+      directives[tokens[0]] = tokens.slice(1);
+    }
+
+    const expected = { ...COMMON_DIRECTIVES, 'img-src': IMG_SRC_BY_FILE[file] };
+    assert.ok(expected['img-src'], `${file} has no expected img-src policy defined in this test`);
+    assert.deepEqual(
+      Object.keys(directives).sort(),
+      Object.keys(expected).sort(),
+      `${file} CSP must contain exactly the documented directives (no missing, no extra)`
+    );
+    for (const [directive, values] of Object.entries(expected)) {
+      assert.deepEqual(directives[directive], values, `${file} CSP ${directive} must be exactly: ${values.join(' ')}`);
+    }
+
+    // Belt-and-braces guards: never allow a wildcard source or eval anywhere.
+    assert.ok(!cspValue.includes('*'), `${file} CSP must not contain a wildcard source`);
+    assert.ok(!cspValue.includes('unsafe-eval'), `${file} CSP must not allow unsafe-eval`);
   }
 });
