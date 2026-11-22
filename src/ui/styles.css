@@ -1318,7 +1318,7 @@ body {
 }
 
 .sidebar-btn.active {
-  box-shadow: var(--nx-glow-md), inset 0 0 10px var(--nx-accent-soft);
+  animation: nxActiveRailGlow 3.2s ease-in-out infinite;
 }
 
 .sidebar-btn.active::before {

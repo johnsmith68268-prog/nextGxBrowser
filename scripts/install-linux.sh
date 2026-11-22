@@ -46,21 +46,26 @@ LOCAL_APPIMAGE="$(find_local_file 'nextGx-Browser-*.AppImage' || true)"
 
 if [ -n "$LOCAL_DEB" ] && command -v apt-get >/dev/null 2>&1 && [ "${NEXTGX_FORCE_APPIMAGE:-0}" != "1" ]; then
   info "Found local Debian package: $LOCAL_DEB"
+  # s-4: a failed .deb install must fall through to the AppImage fallback
+  # below instead of exiting (this script runs under `set -e`, so each
+  # install attempt is guarded and its result recorded in DEB_OK).
+  DEB_OK=0
   if [ "$(id -u)" -eq 0 ]; then
-    apt-get install -y "$LOCAL_DEB"
+    apt-get install -y "$LOCAL_DEB" && DEB_OK=1 || true
   elif command -v pkexec >/dev/null 2>&1 && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
     info "Launching graphical system installer..."
-    pkexec apt-get install -y "$LOCAL_DEB"
+    pkexec apt-get install -y "$LOCAL_DEB" && DEB_OK=1 || true
   elif command -v sudo >/dev/null 2>&1; then
-    sudo apt-get install -y "$LOCAL_DEB"
+    sudo apt-get install -y "$LOCAL_DEB" && DEB_OK=1 || true
   else
-    LOCAL_DEB=""
+    info "No root/sudo/pkexec available for a system .deb install — falling back to the AppImage install."
   fi
-  if [ -n "$LOCAL_DEB" ]; then
+  if [ "$DEB_OK" -eq 1 ]; then
     info "$APP_NAME installed successfully via .deb!"
     notify_gui "$APP_NAME Installed" "$APP_NAME has been installed! You can now launch it from your Applications menu."
     exit 0
   fi
+  info ".deb install did not succeed — falling back to the AppImage install below."
 fi
 
 # 2) Universal Zero-Sudo AppImage Installation (works on Ubuntu, Fedora, Arch, Mint, Manjaro, openSUSE, Kali, etc.)
@@ -73,14 +78,38 @@ if [ -n "$LOCAL_APPIMAGE" ]; then
 else
   info "Fetching latest $APP_NAME AppImage from GitHub Releases ($REPO)..."
   RELEASE_API="https://api.github.com/repos/$REPO/releases/latest"
-  DL_URL="$(curl -fsSL "$RELEASE_API" | grep -oE '"browser_download_url":[[:space:]]*"[^"]+\.AppImage"' | head -n 1 | sed -E 's/.*"([^"]+)"$/\1/' || true)"
+  RELEASE_JSON="$(curl -fsSL "$RELEASE_API")"
+  DL_URL="$(printf '%s' "$RELEASE_JSON" | grep -oE '"browser_download_url":[[:space:]]*"[^"]+\.AppImage"' | head -n 1 | sed -E 's/.*"([^"]+)"$/\1/' || true)"
+  SUMS_URL="$(printf '%s' "$RELEASE_JSON" | grep -oE '"browser_download_url":[[:space:]]*"[^"]+SHA256SUMS\.txt"' | head -n 1 | sed -E 's/.*"([^"]+)"$/\1/' || true)"
   if [ -z "$DL_URL" ]; then
     echo "[nextGx Installer] ERROR: No local .AppImage/.deb found and no .AppImage asset published on GitHub Releases yet." >&2
     echo "Place nextGx-Browser-3.0.0-x86_64.AppImage next to this script or upload it to GitHub Releases." >&2
     exit 1
   fi
+  # s-10: download to a temp dir and verify the SHA256 checksum published
+  # with the release (SHA256SUMS.txt) before installing anything.
+  DL_TMP="$(mktemp -d)"
+  trap 'rm -rf "$DL_TMP"' EXIT
+  APPIMAGE_FILE="$(basename "$DL_URL")"
   info "Downloading $DL_URL ..."
-  curl -fL --progress-bar "$DL_URL" -o "$TARGET_APPIMAGE"
+  curl -fL --progress-bar "$DL_URL" -o "$DL_TMP/$APPIMAGE_FILE"
+  if [ -n "$SUMS_URL" ]; then
+    curl -fsSL "$SUMS_URL" -o "$DL_TMP/SHA256SUMS.txt"
+    if ! grep -F "  $APPIMAGE_FILE" "$DL_TMP/SHA256SUMS.txt" > "$DL_TMP/appimage.sha256"; then
+      echo "[nextGx Installer] ERROR: SHA256SUMS.txt has no checksum entry for $APPIMAGE_FILE — refusing to install an unverifiable download." >&2
+      exit 1
+    fi
+    if ! (cd "$DL_TMP" && sha256sum -c appimage.sha256); then
+      echo "[nextGx Installer] ERROR: SHA256 checksum mismatch for $APPIMAGE_FILE — the download may be corrupt or tampered with. Aborting." >&2
+      exit 1
+    fi
+    info "SHA256 checksum verified for $APPIMAGE_FILE."
+  else
+    echo "[nextGx Installer] WARNING: this release publishes no SHA256SUMS.txt — installing without checksum verification." >&2
+  fi
+  cp -f "$DL_TMP/$APPIMAGE_FILE" "$TARGET_APPIMAGE"
+  rm -rf "$DL_TMP"
+  trap - EXIT
 fi
 
 chmod +x "$TARGET_APPIMAGE"
@@ -94,14 +123,41 @@ done
 if [ -n "$LOCAL_ICON" ]; then
   cp -f "$LOCAL_ICON" "$ICON_PATH"
 else
-  curl -fsSL "https://raw.githubusercontent.com/$REPO/main/build/icon.png" -o "$ICON_PATH" 2>/dev/null || true
+  # n-4: download to a temp file and move into place only on success, so a
+  # failed download never leaves a 0-byte/partial icon behind.
+  ICON_TMP="$(mktemp "$ICON_DIR/.${APP_ID}.png.XXXXXX")"
+  if curl -fsSL "https://raw.githubusercontent.com/$REPO/main/build/icon.png" -o "$ICON_TMP" 2>/dev/null; then
+    mv -f "$ICON_TMP" "$ICON_PATH"
+  else
+    rm -f "$ICON_TMP"
+  fi
 fi
 
-# Create CLI launcher symlink (handles --no-sandbox fallback if FUSE or unprivileged userns is restricted)
+# Create CLI launcher (s-5: implements the fallback the old comment promised —
+# if the AppImage cannot launch, retry without FUSE, then without the
+# Chromium sandbox, for systems where FUSE or unprivileged userns is restricted)
 LAUNCHER="$BIN_DIR/$APP_ID"
 cat > "$LAUNCHER" <<EOF
 #!/usr/bin/env bash
-exec "$TARGET_APPIMAGE" "\$@"
+# nextGx Browser launcher — falls back gracefully on systems without FUSE
+# or unprivileged user namespaces. Each step runs only if the previous one
+# failed to start (non-zero exit); a normal browser session exits 0.
+APPIMAGE="$TARGET_APPIMAGE"
+
+# 1) Normal launch (needs FUSE to mount the AppImage + userns for the
+#    Chromium sandbox).
+if "\$APPIMAGE" "\$@"; then
+  exit 0
+fi
+
+# 2) No-FUSE fallback: extract-and-run instead of mounting.
+if APPIMAGE_EXTRACT_AND_RUN=1 "\$APPIMAGE" "\$@"; then
+  exit 0
+fi
+
+# 3) Last resort: also disable the Chromium sandbox (systems without
+#    unprivileged user namespaces), still with extract-and-run.
+exec env APPIMAGE_EXTRACT_AND_RUN=1 "\$APPIMAGE" --no-sandbox "\$@"
 EOF
 chmod +x "$LAUNCHER"
 
@@ -113,7 +169,7 @@ Version=1.0
 Type=Application
 Name=$APP_NAME
 Comment=Modern Gaming Chromium Desktop Browser with Built-in Privacy Shield
-Exec="$TARGET_APPIMAGE" %U
+Exec="$LAUNCHER" %U
 Icon=$ICON_PATH
 Terminal=false
 Categories=Network;WebBrowser;

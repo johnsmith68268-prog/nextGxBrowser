@@ -4,7 +4,9 @@ if (process.platform === 'win32' && typeof app.setAppUserModelId === 'function')
   app.setAppUserModelId('com.marjan.nextgxbrowser');
 }
 
-nativeTheme.themeSource = 'dark';
+// n-7: follow the OS theme for native menus/dialogs instead of forcing dark.
+// The app's own GX dark theme is CSS-based and unaffected by this.
+nativeTheme.themeSource = 'system';
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {

@@ -6,7 +6,11 @@ const { detectFileCategory, resolveSafeDownloadPath } = require('./utils');
 const { getCtxFromSender, broadcastDownloadsUpdate } = require('./broadcast');
 
 const inFlightSavePaths = new Set();
-const incognitoDownloads = [];
+// s-13: incognito downloads used to live in ONE shared array, so window A's
+// private downloads showed up in window B. Each private window gets its own
+// session partition (see windows.js), so the session object is the natural
+// per-window key: Map<session, download list>.
+const incognitoDownloadsBySession = new Map();
 const DOWNLOAD_PROGRESS_BROADCAST_MS = 250;
 
 function getUniqueDownloadPath(downloadsDir, rawFileName) {
@@ -29,26 +33,65 @@ function getUniqueDownloadPath(downloadsDir, rawFileName) {
   return { fileName: fallbackName, savePath: fallbackPath, normKey };
 }
 
-function upsertIncognitoDownload(entry) {
-  const idx = incognitoDownloads.findIndex((d) => d.id === entry.id);
-  if (idx !== -1) {
-    incognitoDownloads[idx] = { ...incognitoDownloads[idx], ...entry };
-  } else {
-    incognitoDownloads.unshift({ ...entry });
+function getIncognitoList(session) {
+  let list = incognitoDownloadsBySession.get(session);
+  if (!list) {
+    list = [];
+    incognitoDownloadsBySession.set(session, list);
   }
-  if (incognitoDownloads.length > 100) incognitoDownloads.length = 100;
-  return [...incognitoDownloads];
+  return list;
 }
 
-function clearIncognitoDownloads() {
-  incognitoDownloads.length = 0;
+function snapshotIncognitoDownloads(session) {
+  const list = incognitoDownloadsBySession.get(session);
+  return list ? [...list] : [];
 }
 
-function broadcastIncognitoDownloads() {
-  const snapshot = [...incognitoDownloads];
+// Drop lists whose window is gone. windows.js only calls
+// clearIncognitoDownloads() when the LAST private window closes, so without
+// this a closed window's list would linger while other private windows stay
+// open (invisible, but a leak).
+function pruneStaleIncognitoLists() {
+  const liveSessions = new Set();
+  for (const ctx of windowContexts.values()) {
+    if (ctx && ctx.incognito && ctx.session) liveSessions.add(ctx.session);
+  }
+  for (const ses of incognitoDownloadsBySession.keys()) {
+    if (!liveSessions.has(ses)) incognitoDownloadsBySession.delete(ses);
+  }
+}
+
+function upsertIncognitoDownload(entry, session) {
+  pruneStaleIncognitoLists();
+  const list = getIncognitoList(session);
+  const idx = list.findIndex((d) => d.id === entry.id);
+  if (idx !== -1) {
+    list[idx] = { ...list[idx], ...entry };
+  } else {
+    list.unshift({ ...entry });
+  }
+  if (list.length > 100) list.length = 100;
+  return [...list];
+}
+
+function clearIncognitoDownloads(session = null) {
+  // With a session: clear just that window's list. Without one (windows.js
+  // calls it when the last private window closes): clear everything.
+  if (session) {
+    incognitoDownloadsBySession.delete(session);
+    return;
+  }
+  incognitoDownloadsBySession.clear();
+}
+
+function broadcastIncognitoDownloads(session = null) {
+  pruneStaleIncognitoLists();
   for (const ctx of windowContexts.values()) {
     if (!ctx || !ctx.incognito || !ctx.win || ctx.win.isDestroyed()) continue;
+    if (session && ctx.session !== session) continue;
     try {
+      // Each private window gets ONLY its own session's list.
+      const snapshot = snapshotIncognitoDownloads(ctx.session);
       ctx.win.webContents.send('downloads:update', snapshot);
       ctx.popoverView?.webContents?.send('downloads:update', snapshot);
     } catch (_) {}
@@ -87,8 +130,8 @@ function setupDownloadListener(ses, profileId = 'default', { incognito = false }
     };
 
     if (incognito) {
-      upsertIncognitoDownload(record);
-      broadcastIncognitoDownloads();
+      upsertIncognitoDownload(record, ses);
+      broadcastIncognitoDownloads(ses);
     } else {
       state.storage.upsertDownload(record, profileId, { deferWrite: false });
       broadcastDownloadsUpdate(state.storage.getDownloads(profileId), { profileId });
@@ -120,10 +163,10 @@ function setupDownloadListener(ses, profileId = 'default', { incognito = false }
       prevState = record.state;
 
       if (incognito) {
-        upsertIncognitoDownload(record);
+        upsertIncognitoDownload(record, ses);
         if (stateChanged || now - lastBroadcastAt >= DOWNLOAD_PROGRESS_BROADCAST_MS) {
           lastBroadcastAt = now;
-          broadcastIncognitoDownloads();
+          broadcastIncognitoDownloads(ses);
         }
       } else {
         // Persist immediately only on pause/resume/interrupted transitions; debounce active progress ticks
@@ -146,8 +189,8 @@ function setupDownloadListener(ses, profileId = 'default', { incognito = false }
       record.state = downloadState;
       record.completedAt = Date.now();
       if (incognito) {
-        upsertIncognitoDownload(record);
-        broadcastIncognitoDownloads();
+        upsertIncognitoDownload(record, ses);
+        broadcastIncognitoDownloads(ses);
       } else {
         state.storage.upsertDownload(record, profileId, { deferWrite: false });
         broadcastDownloadsUpdate(state.storage.getDownloads(profileId), { profileId });
@@ -157,21 +200,22 @@ function setupDownloadListener(ses, profileId = 'default', { incognito = false }
 }
 
 function registerDownloadIpcHandlers(handleInternal) {
-  const getPid = (e) => getCtxFromSender(e?.sender)?.profileId || state.storage.getActiveProfileId();
-  const isIncog = (e) => Boolean(getCtxFromSender(e?.sender)?.incognito);
+  const getCtx = (e) => getCtxFromSender(e?.sender);
+  const getPid = (e) => getCtx(e)?.profileId || state.storage.getActiveProfileId();
+  const isIncog = (e) => Boolean(getCtx(e)?.incognito);
+  // s-13: an incognito caller sees only its own window's (session's) list.
+  const getIncogList = (e) => snapshotIncognitoDownloads(getCtx(e)?.session);
 
-  handleInternal('downloads:get', (e) =>
-    isIncog(e) ? [...incognitoDownloads] : state.storage.getDownloads(getPid(e))
-  );
+  handleInternal('downloads:get', (e) => (isIncog(e) ? getIncogList(e) : state.storage.getDownloads(getPid(e))));
   handleInternal('downloads:pause', (e, id) => {
     const item = activeDownloadItems.get(id);
     if (item && !item.isPaused()) item.pause();
-    return isIncog(e) ? [...incognitoDownloads] : state.storage.getDownloads(getPid(e));
+    return isIncog(e) ? getIncogList(e) : state.storage.getDownloads(getPid(e));
   });
   handleInternal('downloads:resume', (e, id) => {
     const item = activeDownloadItems.get(id);
     if (item && item.isPaused()) item.resume();
-    return isIncog(e) ? [...incognitoDownloads] : state.storage.getDownloads(getPid(e));
+    return isIncog(e) ? getIncogList(e) : state.storage.getDownloads(getPid(e));
   });
   handleInternal('downloads:cancel', (e, id) => {
     const item = activeDownloadItems.get(id);
@@ -179,14 +223,17 @@ function registerDownloadIpcHandlers(handleInternal) {
       item.cancel();
       activeDownloadItems.delete(id);
     }
-    return isIncog(e) ? [...incognitoDownloads] : state.storage.getDownloads(getPid(e));
+    return isIncog(e) ? getIncogList(e) : state.storage.getDownloads(getPid(e));
   });
   handleInternal('downloads:remove', (e, id) => {
     if (isIncog(e)) {
-      const idx = incognitoDownloads.findIndex((d) => d.id === id);
-      if (idx !== -1) incognitoDownloads.splice(idx, 1);
-      broadcastIncognitoDownloads();
-      return [...incognitoDownloads];
+      const ses = getCtx(e)?.session;
+      if (!ses) return [];
+      const list = getIncognitoList(ses);
+      const idx = list.findIndex((d) => d.id === id);
+      if (idx !== -1) list.splice(idx, 1);
+      broadcastIncognitoDownloads(ses);
+      return [...list];
     }
     const pid = getPid(e);
     const list = state.storage.removeDownload(id, pid);
@@ -195,8 +242,13 @@ function registerDownloadIpcHandlers(handleInternal) {
   });
   handleInternal('downloads:clear', (e) => {
     if (isIncog(e)) {
-      clearIncognitoDownloads();
-      broadcastIncognitoDownloads();
+      // s-13: clearing in one private window must not wipe other private
+      // windows' lists, so clear only this window's (session's) list.
+      const ses = getCtx(e)?.session;
+      if (ses) {
+        clearIncognitoDownloads(ses);
+        broadcastIncognitoDownloads(ses);
+      }
       return [];
     }
     const pid = getPid(e);

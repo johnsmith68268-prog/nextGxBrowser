@@ -31,6 +31,28 @@ function isWebUrl(url) {
   return typeof url === 'string' && /^https?:\/\//i.test(url);
 }
 
+// s-9: Electron's showSaveDialog result carries no selected-filter info, so
+// the old single dialog with two filters could never honor the "HTML Only"
+// choice — the handler always saved 'HTMLComplete'. The choice now lives in
+// the menu (submenu), and each item calls this helper with its save type.
+async function savePageWithType(ctx, wc, pageTitle, saveType) {
+  if (!wc || wc.isDestroyed() || !ctx.win || ctx.win.isDestroyed()) return;
+  const safeName = pageTitle.replace(/[\\/:*?"<>|]+/g, '_').slice(0, 64) || 'page';
+  const filterName = saveType === 'HTMLOnly' ? 'Webpage, HTML Only' : 'Webpage, Complete';
+  const res = await dialog.showSaveDialog(ctx.win, {
+    title: 'Save Page As',
+    defaultPath: path.join(require('electron').app.getPath('downloads'), `${safeName}.html`),
+    filters: [{ name: filterName, extensions: ['html', 'htm'] }]
+  });
+  if (res.canceled || !res.filePath || wc.isDestroyed()) return;
+  try {
+    await wc.savePage(res.filePath, saveType);
+    ctx.win?.webContents.send('ui:toast', `Saved: ${path.basename(res.filePath)}`);
+  } catch (err) {
+    ctx.win?.webContents.send('ui:toast', `Save failed: ${err?.message || 'Error'}`);
+  }
+}
+
 function attachWebContentsContextMenu(ctx, wc, { isSidebar = false } = {}) {
   if (!ctx || !wc) return;
 
@@ -72,7 +94,9 @@ function attachWebContentsContextMenu(ctx, wc, { isSidebar = false } = {}) {
         {
           label: 'Open link in new window',
           click: () => {
-            windowsMod().createBrowserWindow({ incognito: false, initialUrl: linkUrl });
+            // n-1: from a private window, open a private window so the URL
+            // does not land in normal history.
+            windowsMod().createBrowserWindow({ incognito: Boolean(ctx.incognito), initialUrl: linkUrl });
           }
         },
         {
@@ -316,27 +340,20 @@ function attachWebContentsContextMenu(ctx, wc, { isSidebar = false } = {}) {
         { type: 'separator' },
         {
           label: 'Save as...',
-          accelerator: 'CmdOrCtrl+S',
           enabled: hasWebUrl && !isSidebar,
-          click: async () => {
-            if (wc.isDestroyed() || !ctx.win || ctx.win.isDestroyed()) return;
-            const safeName = pageTitle.replace(/[\\/:*?"<>|]+/g, '_').slice(0, 64) || 'page';
-            const res = await dialog.showSaveDialog(ctx.win, {
-              title: 'Save Page As',
-              defaultPath: path.join(require('electron').app.getPath('downloads'), `${safeName}.html`),
-              filters: [
-                { name: 'Webpage, Complete', extensions: ['html', 'htm'] },
-                { name: 'Webpage, HTML Only', extensions: ['html', 'htm'] }
-              ]
-            });
-            if (res.canceled || !res.filePath || wc.isDestroyed()) return;
-            try {
-              await wc.savePage(res.filePath, 'HTMLComplete');
-              ctx.win?.webContents.send('ui:toast', `Saved: ${path.basename(res.filePath)}`);
-            } catch (err) {
-              ctx.win?.webContents.send('ui:toast', `Save failed: ${err?.message || 'Error'}`);
+          submenu: [
+            {
+              label: 'Webpage, Complete',
+              // Accelerator lives here (not on the submenu parent, where
+              // Electron ignores it) so CmdOrCtrl+S keeps working as before.
+              accelerator: 'CmdOrCtrl+S',
+              click: () => savePageWithType(ctx, wc, pageTitle, 'HTMLComplete')
+            },
+            {
+              label: 'Webpage, HTML Only',
+              click: () => savePageWithType(ctx, wc, pageTitle, 'HTMLOnly')
             }
-          }
+          ]
         },
         {
           label: 'Save as PDF...',

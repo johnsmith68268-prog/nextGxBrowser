@@ -14,7 +14,7 @@
     "build:win": "electron-builder --win nsis portable --publish never",
     "build:win:exe": "electron-builder --win nsis --publish never",
     "build:win:msix": "electron-builder --win appx --publish never",
-    "build:win:all": "electron-builder --win nsis portable appx --publish never"
+    "build:win:all": "electron-builder --win nsis portable --publish never"
   },
   "keywords": [
     "nextgx",
