@@ -11,6 +11,7 @@ html[data-theme="gx-violet"] {
   --bg-chrome: #181524;
   --bg-surface: #221e33;
   --bg-elevated: #2d2844;
+  --nx-wallpaper: var(--nx-wallpaper-gx-violet);
 }
 
 html[data-theme="crimson"] {
@@ -23,6 +24,7 @@ html[data-theme="crimson"] {
   --bg-chrome: #17111c;
   --bg-surface: #24192b;
   --bg-elevated: #31223b;
+  --nx-wallpaper: var(--nx-wallpaper-crimson);
 }
 
 html[data-theme="cyan"] {
@@ -35,6 +37,7 @@ html[data-theme="cyan"] {
   --bg-chrome: #101824;
   --bg-surface: #182334;
   --bg-elevated: #213047;
+  --nx-wallpaper: var(--nx-wallpaper-cyan);
 }
 
 html[data-theme="emerald"] {
@@ -47,6 +50,59 @@ html[data-theme="emerald"] {
   --bg-chrome: #101c19;
   --bg-surface: #172924;
   --bg-elevated: #203831;
+  --nx-wallpaper: var(--nx-wallpaper-emerald);
+}
+
+html[data-theme="magenta"] {
+  --nx-accent: #e028a8;
+  --nx-accent-bright: #ff66d0;
+  --nx-accent-soft: rgba(224, 40, 168, 0.22);
+  --nx-grid-line: rgba(224, 40, 168, 0.05);
+  --nx-on-accent: #ffffff;
+  --bg-deep: #130b14;
+  --bg-chrome: #1c101e;
+  --bg-surface: #28172b;
+  --bg-elevated: #36203b;
+  --nx-wallpaper: var(--nx-wallpaper-magenta);
+}
+
+html[data-theme="amber"] {
+  --nx-accent: #f59e0b;
+  --nx-accent-bright: #fbbf24;
+  --nx-accent-soft: rgba(245, 158, 11, 0.2);
+  --nx-grid-line: rgba(245, 158, 11, 0.045);
+  --nx-on-accent: #160e03;
+  --bg-deep: #120f0a;
+  --bg-chrome: #1a150e;
+  --bg-surface: #261f14;
+  --bg-elevated: #342a1b;
+  --nx-wallpaper: var(--nx-wallpaper-amber);
+}
+
+html[data-theme="lime"] {
+  --nx-accent: #84cc16;
+  --nx-accent-bright: #a3e635;
+  --nx-accent-soft: rgba(132, 204, 22, 0.2);
+  --nx-grid-line: rgba(132, 204, 22, 0.045);
+  --nx-on-accent: #0c1404;
+  --bg-deep: #0c120a;
+  --bg-chrome: #121b0f;
+  --bg-surface: #1b2816;
+  --bg-elevated: #25361e;
+  --nx-wallpaper: var(--nx-wallpaper-lime);
+}
+
+html[data-theme="ice"] {
+  --nx-accent: #a5d8ff;
+  --nx-accent-bright: #e0f2fe;
+  --nx-accent-soft: rgba(165, 216, 255, 0.18);
+  --nx-grid-line: rgba(165, 216, 255, 0.045);
+  --nx-on-accent: #09131c;
+  --bg-deep: #0c1118;
+  --bg-chrome: #121923;
+  --bg-surface: #1b2431;
+  --bg-elevated: #253142;
+  --nx-wallpaper: var(--nx-wallpaper-ice);
 }
 
 html[data-incognito="true"],
@@ -60,9 +116,12 @@ html[data-incognito="true"][data-theme] {
   --bg-chrome: #0f0f17;
   --bg-surface: #181824;
   --bg-elevated: #222233;
+  --nx-wallpaper: var(--nx-wallpaper-gx-violet);
 }
 
 :root {
+  color-scheme: dark;
+
   /* Shared Text & Surface Glass Tokens */
   --text-main: #f1eff7;
   --text-muted: #9690ab;
@@ -85,6 +144,64 @@ html[data-incognito="true"][data-theme] {
   --nx-swatch-crimson: #fa1e4e;
   --nx-swatch-cyan: #00e5ff;
   --nx-swatch-emerald: #10b981;
+  --nx-swatch-magenta: #e028a8;
+  --nx-swatch-amber: #f59e0b;
+  --nx-swatch-lime: #84cc16;
+  --nx-swatch-ice: #a5d8ff;
+
+  /* Tab Island / Group Color Tokens (8 GX-harmonized hues) */
+  --nx-group-1: #9d4edd;
+  --nx-group-2: #00e5ff;
+  --nx-group-3: #10b981;
+  --nx-group-4: #f59e0b;
+  --nx-group-5: #fa1e4e;
+  --nx-group-6: #e028a8;
+  --nx-group-7: #84cc16;
+  --nx-group-8: #60a5fa;
+
+  /* New Tab Wallpaper Preset Gradients & Scrim Tokens */
+  --nx-wallpaper-overlay: linear-gradient(180deg, rgba(8, 7, 14, 0.38) 0%, rgba(8, 7, 14, 0.52) 55%, rgba(8, 7, 14, 0.72) 100%);
+  --nx-wallpaper-blur: 0px;
+  --nx-wallpaper-gx-violet:
+    radial-gradient(ellipse 78% 58% at 16% 12%, rgba(157, 78, 221, 0.44), transparent 62%),
+    radial-gradient(ellipse 62% 52% at 86% 20%, rgba(199, 125, 255, 0.24), transparent 58%),
+    radial-gradient(ellipse 76% 60% at 52% 100%, rgba(88, 28, 164, 0.34), transparent 66%),
+    linear-gradient(155deg, #1b1332 0%, #12101b 48%, #0b0913 100%);
+  --nx-wallpaper-crimson:
+    radial-gradient(ellipse 78% 58% at 18% 12%, rgba(250, 30, 78, 0.42), transparent 62%),
+    radial-gradient(ellipse 60% 50% at 86% 22%, rgba(255, 77, 115, 0.22), transparent 58%),
+    radial-gradient(ellipse 74% 58% at 48% 100%, rgba(145, 14, 54, 0.34), transparent 66%),
+    linear-gradient(155deg, #220e19 0%, #0f0b12 48%, #0b070d 100%);
+  --nx-wallpaper-cyan:
+    radial-gradient(ellipse 78% 58% at 16% 12%, rgba(0, 229, 255, 0.34), transparent 62%),
+    radial-gradient(ellipse 62% 52% at 86% 18%, rgba(102, 240, 255, 0.2), transparent 58%),
+    radial-gradient(ellipse 74% 60% at 52% 100%, rgba(12, 92, 134, 0.36), transparent 66%),
+    linear-gradient(155deg, #0d1d2b 0%, #0b1017 48%, #070b11 100%);
+  --nx-wallpaper-emerald:
+    radial-gradient(ellipse 78% 58% at 16% 12%, rgba(16, 185, 129, 0.36), transparent 62%),
+    radial-gradient(ellipse 62% 52% at 86% 20%, rgba(52, 211, 153, 0.2), transparent 58%),
+    radial-gradient(ellipse 74% 60% at 50% 100%, rgba(8, 102, 74, 0.34), transparent 66%),
+    linear-gradient(155deg, #0c221b 0%, #0a1210 48%, #060c0a 100%);
+  --nx-wallpaper-magenta:
+    radial-gradient(ellipse 78% 58% at 16% 12%, rgba(224, 40, 168, 0.42), transparent 62%),
+    radial-gradient(ellipse 62% 52% at 86% 20%, rgba(255, 102, 208, 0.24), transparent 58%),
+    radial-gradient(ellipse 74% 60% at 50% 100%, rgba(132, 22, 114, 0.36), transparent 66%),
+    linear-gradient(155deg, #250f28 0%, #130b14 48%, #0c060e 100%);
+  --nx-wallpaper-amber:
+    radial-gradient(ellipse 78% 58% at 16% 12%, rgba(245, 158, 11, 0.36), transparent 62%),
+    radial-gradient(ellipse 62% 52% at 86% 20%, rgba(251, 191, 36, 0.22), transparent 58%),
+    radial-gradient(ellipse 74% 60% at 50% 100%, rgba(146, 78, 12, 0.34), transparent 66%),
+    linear-gradient(155deg, #24190c 0%, #120f0a 48%, #0c0906 100%);
+  --nx-wallpaper-lime:
+    radial-gradient(ellipse 78% 58% at 16% 12%, rgba(132, 204, 22, 0.34), transparent 62%),
+    radial-gradient(ellipse 62% 52% at 86% 20%, rgba(163, 230, 53, 0.2), transparent 58%),
+    radial-gradient(ellipse 74% 60% at 50% 100%, rgba(68, 118, 14, 0.34), transparent 66%),
+    linear-gradient(155deg, #16230d 0%, #0c120a 48%, #080c06 100%);
+  --nx-wallpaper-ice:
+    radial-gradient(ellipse 78% 58% at 16% 12%, rgba(165, 216, 255, 0.32), transparent 62%),
+    radial-gradient(ellipse 62% 52% at 86% 20%, rgba(224, 242, 254, 0.2), transparent 58%),
+    radial-gradient(ellipse 74% 60% at 50% 100%, rgba(56, 98, 140, 0.36), transparent 66%),
+    linear-gradient(155deg, #152130 0%, #0c1118 48%, #080c12 100%);
 
   /* Semantic Status Colors (Non-thematic) */
   --danger: #e11d48;
@@ -109,12 +226,23 @@ html[data-incognito="true"][data-theme] {
   --nx-radius-lg: 12px;
   --nx-radius-pill: 999px;
 
-  /* Gaming (GX-Style) Display Typography (System Fonts Only) */
+  /* Gaming (GX-Style) Typography (System Fonts Only) */
   --nx-font-sans: 'Inter', 'Segoe UI', Ubuntu, Cantarell, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   --nx-font-display: 'Rajdhani', 'Orbitron', 'Segoe UI', 'Inter', Ubuntu, Cantarell, system-ui, sans-serif;
+  --nx-font-mono: 'JetBrains Mono', 'Cascadia Code', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --nx-heading-transform: uppercase;
   --nx-heading-tracking: 0.08em;
   --nx-heading-weight: 700;
+
+  /* Gaming (GX-Style) Motion Tokens */
+  --nx-motion-fast: 150ms;
+  --nx-motion-base: 180ms;
+  --nx-motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* Global Scrollbar Tokens */
+  --nx-scrollbar-track: transparent;
+  --nx-scrollbar-thumb: color-mix(in srgb, var(--nx-accent) 40%, var(--bg-elevated));
+  --nx-scrollbar-thumb-hover: color-mix(in srgb, var(--nx-accent-bright) 64%, var(--bg-elevated));
 
   /* Sub-page Local Token Aliases */
   --accent: var(--nx-accent);
@@ -139,4 +267,84 @@ html[data-incognito="true"][data-theme] {
   text-transform: var(--nx-heading-transform);
   letter-spacing: var(--nx-heading-tracking);
   font-weight: var(--nx-heading-weight);
+}
+
+.nx-mono {
+  font-family: var(--nx-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Global Themed Scrollbars (prevents harsh native Windows scrollbars across all UI pages) */
+:root,
+html,
+body {
+  color-scheme: dark;
+}
+
+:where(html, body, *) {
+  scrollbar-width: thin;
+  scrollbar-color: var(--nx-scrollbar-thumb) var(--nx-scrollbar-track);
+}
+
+::-webkit-scrollbar,
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-track-piece,
+html::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track,
+*::-webkit-scrollbar-track {
+  background: var(--nx-scrollbar-track);
+}
+
+::-webkit-scrollbar-thumb,
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb,
+*::-webkit-scrollbar-thumb {
+  background: var(--nx-scrollbar-thumb);
+  border-radius: var(--nx-radius-pill);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover,
+::-webkit-scrollbar-thumb:active,
+html::-webkit-scrollbar-thumb:hover,
+body::-webkit-scrollbar-thumb:hover,
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--nx-scrollbar-thumb-hover);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner,
+html::-webkit-scrollbar-corner,
+body::-webkit-scrollbar-corner,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-button,
+html::-webkit-scrollbar-button,
+body::-webkit-scrollbar-button,
+*::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* Respect User Reduced-Motion Preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
 }

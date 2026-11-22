@@ -1,0 +1,357 @@
+const { BrowserWindow } = require('electron');
+const { windowContexts, webContentsToWinId, state } = require('./core');
+const {
+  isNewTabUrl,
+  isCornerUrl,
+  isWebUiUrl,
+  isErrorPageUrl,
+  isPlayerPanelUrl,
+  getOriginForUrl
+} = require('./utils');
+const { formatDisplayUrl } = require('./navigation');
+const playerMod = () => require('./player');
+const splitViewMod = () => require('./splitview');
+
+function getCtxFromSender(sender) {
+  if (sender && webContentsToWinId.has(sender.id)) {
+    const winId = webContentsToWinId.get(sender.id);
+    if (windowContexts.has(winId)) return windowContexts.get(winId);
+  }
+  const bw = sender ? BrowserWindow.fromWebContents(sender) : null;
+  if (bw && windowContexts.has(bw.id)) return windowContexts.get(bw.id);
+  const focused = BrowserWindow.getFocusedWindow();
+  if (focused && windowContexts.has(focused.id)) return windowContexts.get(focused.id);
+  return Array.from(windowContexts.values())[0] || null;
+}
+
+function serializeTabs(ctx) {
+  const activeWorkspaceId = ctx.incognito ? 'default' : ctx.activeWorkspaceId || 'default';
+  const workspaces = ctx.incognito
+    ? [{ id: 'default', name: 'Default', icon: '', color: '', createdAt: 0 }]
+    : state.storage
+    ? state.storage.getWorkspaces()
+    : [{ id: 'default', name: 'Default', icon: '', color: '', createdAt: 0 }];
+  const groups = ctx.incognito
+    ? Array.isArray(ctx.privateGroups)
+      ? ctx.privateGroups.map((g) => ({ ...g }))
+      : []
+    : state.storage
+    ? state.storage.getTabGroups()
+    : [];
+
+  const ordered = ctx.tabOrder
+    .map((id) => ctx.tabs.get(id))
+    .filter(Boolean)
+    .map((t) => {
+      const displayUrl = formatDisplayUrl(t.url);
+      const origin = getOriginForUrl(t.url);
+      const pinned = Boolean(t.pinned);
+      const videoState = playerMod().getTabVideoState(t);
+      return {
+        id: t.id,
+        title: t.title || (ctx.incognito ? 'Private Start' : 'Start Page'),
+        url: displayUrl,
+        origin,
+        isSecure: t.url.startsWith('https://') || displayUrl.startsWith('nextgx://'),
+        isHttpInsecure: t.url.startsWith('http://'),
+        favicon: t.favicon || '',
+        isLoading: Boolean(t.isLoading),
+        canGoBack: Boolean(t.canGoBack),
+        canGoForward: Boolean(t.canGoForward),
+        pinned,
+        workspaceId: ctx.incognito ? 'default' : t.workspaceId || 'default',
+        groupId: pinned ? null : t.groupId || null,
+        incognito: Boolean(t.incognito || ctx.incognito),
+        sleeping: Boolean(t.sleeping),
+        audible: Boolean(t.audible),
+        hasPlayingVideo: Boolean(videoState.hasPlayingVideo),
+        pipActive: Boolean(videoState.pipActive),
+        videoTitle: videoState.videoTitle || '',
+        readerMode: Boolean(t.readerMode),
+        zoomPercent: Math.round((t.zoomFactor || 1) * 100),
+        isBookmarked: state.storage.isBookmarked(displayUrl, ctx.profileId),
+        adblockSiteEnabled: state.adBlocker
+          ? origin
+            ? state.adBlocker.isSiteBlockingActive(origin)
+            : state.adBlocker.isEnabled()
+          : true
+      };
+    });
+
+  return {
+    windowIncognito: ctx.incognito,
+    profileId: ctx.profileId || 'default',
+    activeWorkspaceId,
+    workspaces,
+    groups,
+    tabs: ordered,
+    activeTabId: ctx.activeTabId,
+    activeTab: ordered.find((t) => t.id === ctx.activeTabId) || null,
+    split: splitViewMod().serializeSplitState(ctx),
+    sidebarPanel: ctx.sidebarPanel
+      ? {
+          open: Boolean(ctx.sidebarPanel.open && ctx.sidebarPanel.activeKey),
+          activeKey: ctx.sidebarPanel.activeKey || null,
+          pinned: Boolean(ctx.sidebarPanel.pinned),
+          width: Number(ctx.sidebarPanel.width) || 380
+        }
+      : null
+  };
+}
+
+function broadcastState(ctx) {
+  if (!ctx || !ctx.win || ctx.win.isDestroyed()) return;
+  const serialized = serializeTabs(ctx);
+  ctx.win.webContents.send('state:update', serialized);
+  if (
+    ctx.popoverOpenKind === 'menu' &&
+    ctx.popoverView &&
+    ctx.popoverView.webContents &&
+    !ctx.popoverView.webContents.isDestroyed()
+  ) {
+    if (ctx.popoverPayload && ctx.popoverPayload.payload && serialized.activeTab) {
+      ctx.popoverPayload.payload.zoomPercent = serialized.activeTab.zoomPercent;
+    }
+    ctx.popoverView.webContents.send('state:update', serialized);
+  }
+}
+
+function sendToWebUiTabs(channel, payload, { profileId = null } = {}) {
+  for (const ctx of windowContexts.values()) {
+    if (profileId && (ctx.profileId || 'default') !== profileId) continue;
+    for (const tab of ctx.tabs.values()) {
+      if (!tab || !tab.view || !tab.view.webContents || tab.view.webContents.isDestroyed()) continue;
+      const wcUrl = tab.view.webContents.getURL();
+      if (isWebUiUrl(tab.url) || isWebUiUrl(wcUrl)) {
+        tab.view.webContents.send(channel, payload);
+      }
+    }
+  }
+}
+
+function sendToCornerTabs(channel, payload) {
+  for (const ctx of windowContexts.values()) {
+    for (const tab of ctx.tabs.values()) {
+      if (!tab || tab.sleeping || !tab.view || !tab.view.webContents || tab.view.webContents.isDestroyed()) continue;
+      const wcUrl = tab.view.webContents.getURL();
+      if (isCornerUrl(tab.url) || isCornerUrl(wcUrl)) {
+        tab.view.webContents.send(channel, payload);
+      }
+    }
+  }
+}
+
+function notifyActiveWebUiTabShown(ctx) {
+  if (!ctx || !ctx.activeTabId) return;
+  const tab = ctx.tabs.get(ctx.activeTabId);
+  if (!tab || tab.sleeping || !tab.view || !tab.view.webContents || tab.view.webContents.isDestroyed()) return;
+  const wcUrl = tab.view.webContents.getURL();
+  if (isWebUiUrl(tab.url) || isWebUiUrl(wcUrl)) {
+    tab.view.webContents.send('webui:shown');
+  }
+}
+
+function broadcastAdblockUpdate(stats) {
+  const payload = stats || (state.adBlocker ? state.adBlocker.getStats() : null);
+  if (!payload) return;
+  for (const ctx of windowContexts.values()) {
+    if (ctx.win && !ctx.win.isDestroyed()) {
+      ctx.win.webContents.send('adblock:update', payload);
+    }
+    if (ctx.popoverView && ctx.popoverView.webContents && !ctx.popoverView.webContents.isDestroyed()) {
+      ctx.popoverView.webContents.send('adblock:update', payload);
+    }
+  }
+  sendToWebUiTabs('adblock:update', payload);
+}
+
+function broadcastHistoryUpdate({ profileId = null } = {}) {
+  sendToWebUiTabs('history:update', undefined, { profileId });
+}
+
+function broadcastPasswordsUpdate({ profileId = null } = {}) {
+  sendToWebUiTabs('passwords:update', undefined, { profileId });
+}
+
+function broadcastPermissionsUpdate({ profileId = null } = {}) {
+  sendToWebUiTabs('permissions:update', undefined, { profileId });
+}
+
+function broadcastProfilesUpdate() {
+  if (!state.storage) return;
+  const store = state.storage.getProfilesStore();
+  const activeProfile =
+    store.profiles.find((p) => p.id === store.activeId) || store.profiles[0] || null;
+  for (const ctx of windowContexts.values()) {
+    const windowProfileId = ctx.profileId || 'default';
+    const windowProfile =
+      store.profiles.find((p) => p.id === windowProfileId) || activeProfile;
+    const payload = {
+      version: 1,
+      activeId: store.activeId,
+      profiles: store.profiles,
+      activeProfile,
+      windowProfileId,
+      windowProfile
+    };
+    if (ctx.win && !ctx.win.isDestroyed()) {
+      ctx.win.webContents.send('profiles:update', payload);
+    }
+    if (ctx.popoverView && ctx.popoverView.webContents && !ctx.popoverView.webContents.isDestroyed()) {
+      ctx.popoverView.webContents.send('profiles:update', payload);
+    }
+    for (const tab of ctx.tabs.values()) {
+      if (!tab || !tab.view || !tab.view.webContents || tab.view.webContents.isDestroyed()) continue;
+      const wcUrl = tab.view.webContents.getURL();
+      if (isWebUiUrl(tab.url) || isWebUiUrl(wcUrl)) {
+        tab.view.webContents.send('profiles:update', payload);
+      }
+    }
+  }
+}
+
+function broadcastDownloadsUpdate(downloads, { profileId = null } = {}) {
+  for (const ctx of windowContexts.values()) {
+    const ctxPid = ctx.profileId || 'default';
+    if (profileId && ctxPid !== profileId) continue;
+    const payload =
+      profileId && Array.isArray(downloads)
+        ? downloads
+        : state.storage
+        ? state.storage.getDownloads(ctxPid)
+        : downloads || [];
+    if (ctx.win && !ctx.win.isDestroyed()) {
+      ctx.win.webContents.send('downloads:update', payload);
+    }
+    if (ctx.popoverView && ctx.popoverView.webContents && !ctx.popoverView.webContents.isDestroyed()) {
+      ctx.popoverView.webContents.send('downloads:update', payload);
+    }
+    for (const tab of ctx.tabs.values()) {
+      if (!tab || !tab.view || !tab.view.webContents || tab.view.webContents.isDestroyed()) continue;
+      const wcUrl = tab.view.webContents.getURL();
+      if (isWebUiUrl(tab.url) || isWebUiUrl(wcUrl)) {
+        tab.view.webContents.send('downloads:update', payload);
+      }
+    }
+  }
+}
+
+function broadcastSettingsUpdate(settings, { profileId = null } = {}) {
+  for (const ctx of windowContexts.values()) {
+    const ctxPid = ctx.profileId || 'default';
+    const payload = state.storage
+      ? state.storage.getSettings(ctxPid)
+      : settings || null;
+    if (!payload) continue;
+    if (ctx.win && !ctx.win.isDestroyed()) {
+      ctx.win.webContents.send('settings:update', payload);
+    }
+    if (ctx.popoverView && ctx.popoverView.webContents && !ctx.popoverView.webContents.isDestroyed()) {
+      ctx.popoverView.webContents.send('settings:update', payload);
+    }
+    if (
+      ctx.sidebarPanelFrameView &&
+      ctx.sidebarPanelFrameView.webContents &&
+      !ctx.sidebarPanelFrameView.webContents.isDestroyed()
+    ) {
+      ctx.sidebarPanelFrameView.webContents.send('settings:update', payload);
+    }
+    if (ctx.screenshotView && ctx.screenshotView.webContents && !ctx.screenshotView.webContents.isDestroyed()) {
+      ctx.screenshotView.webContents.send('settings:update', payload);
+    }
+    for (const tab of ctx.tabs.values()) {
+      if (!tab || !tab.view || !tab.view.webContents || tab.view.webContents.isDestroyed()) continue;
+      const wcUrl = tab.view.webContents.getURL();
+      if (
+        isNewTabUrl(tab.url) ||
+        isCornerUrl(tab.url) ||
+        isWebUiUrl(tab.url) ||
+        isErrorPageUrl(tab.url) ||
+        isNewTabUrl(wcUrl) ||
+        isCornerUrl(wcUrl) ||
+        isWebUiUrl(wcUrl) ||
+        isErrorPageUrl(wcUrl)
+      ) {
+        tab.view.webContents.send('settings:update', payload);
+      }
+    }
+    if (ctx.sidebarPanel && ctx.sidebarPanel.views instanceof Map) {
+      for (const view of ctx.sidebarPanel.views.values()) {
+        if (!view || !view.webContents || view.webContents.isDestroyed()) continue;
+        const wcUrl = view.webContents.getURL();
+        if (isErrorPageUrl(wcUrl) || isPlayerPanelUrl(wcUrl)) {
+          view.webContents.send('settings:update', payload);
+        }
+      }
+    }
+  }
+}
+
+function broadcastBookmarksUpdate(bookmarks, { profileId = null } = {}) {
+  for (const ctx of windowContexts.values()) {
+    const ctxPid = ctx.profileId || 'default';
+    if (profileId && ctxPid !== profileId) continue;
+    const payload =
+      profileId && Array.isArray(bookmarks)
+        ? bookmarks
+        : state.storage
+        ? state.storage.getBookmarks(ctxPid)
+        : bookmarks || [];
+    if (ctx.win && !ctx.win.isDestroyed()) {
+      ctx.win.webContents.send('bookmarks:update', payload);
+    }
+    if (ctx.popoverView && ctx.popoverView.webContents && !ctx.popoverView.webContents.isDestroyed()) {
+      ctx.popoverView.webContents.send('bookmarks:update', payload);
+    }
+    for (const tab of ctx.tabs.values()) {
+      if (!tab || !tab.view || !tab.view.webContents || tab.view.webContents.isDestroyed()) continue;
+      const wcUrl = tab.view.webContents.getURL();
+      if (isWebUiUrl(tab.url) || isWebUiUrl(wcUrl)) {
+        tab.view.webContents.send('bookmarks:update', payload);
+      }
+    }
+  }
+}
+
+function getAllTabWebContents() {
+  const list = [];
+  for (const ctx of windowContexts.values()) {
+    for (const tab of ctx.tabs.values()) {
+      if (tab && tab.view && tab.view.webContents && !tab.view.webContents.isDestroyed()) {
+        list.push(tab.view.webContents);
+      }
+    }
+    if (ctx.sidebarPanel && ctx.sidebarPanel.views instanceof Map) {
+      for (const view of ctx.sidebarPanel.views.values()) {
+        if (view && view.webContents && !view.webContents.isDestroyed()) {
+          list.push(view.webContents);
+        }
+      }
+    }
+  }
+  return list;
+}
+
+async function syncAdblockCosmeticFilters(targetOrigin = '') {
+  if (!state.adBlocker) return;
+  await state.adBlocker.syncCosmeticFilters(getAllTabWebContents(), targetOrigin);
+}
+
+module.exports = {
+  getCtxFromSender,
+  serializeTabs,
+  broadcastState,
+  sendToWebUiTabs,
+  sendToCornerTabs,
+  notifyActiveWebUiTabShown,
+  broadcastAdblockUpdate,
+  broadcastHistoryUpdate,
+  broadcastPasswordsUpdate,
+  broadcastPermissionsUpdate,
+  broadcastProfilesUpdate,
+  broadcastDownloadsUpdate,
+  broadcastSettingsUpdate,
+  broadcastBookmarksUpdate,
+  getAllTabWebContents,
+  syncAdblockCosmeticFilters
+};

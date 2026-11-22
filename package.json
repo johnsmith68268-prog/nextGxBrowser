@@ -1,7 +1,7 @@
 {
   "name": "nextgx-browser",
   "productName": "nextGx Browser",
-  "version": "2.5.0",
+  "version": "3.0.0",
   "description": "nextGx Browser — Modern Apple-Crafted Chromium Desktop Browser with Built-in Privacy Shield, Media Dock, Pro Download Manager, and 8 GB Memory Saver",
   "main": "src/main.js",
   "scripts": {

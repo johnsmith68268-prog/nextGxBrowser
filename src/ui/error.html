@@ -102,7 +102,7 @@
     }
 
     .error-code-pill {
-      font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+      font-family: var(--nx-font-mono);
       font-size: 11px;
       font-weight: 600;
       color: var(--danger);
@@ -143,7 +143,7 @@
     }
 
     .error-url-value {
-      font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+      font-family: var(--nx-font-mono);
       font-size: 12.5px;
       line-height: 1.45;
       color: var(--text-main);
@@ -208,7 +208,7 @@
       justify-content: center;
       gap: 8px;
       cursor: pointer;
-      transition: 0.15s;
+      transition: border-color var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease), background var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
     }
 
     .btn:hover:not(:disabled) {

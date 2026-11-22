@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="gx-violet">
 <head>
   <meta charset="UTF-8" />
   <title>Popover</title>
@@ -12,6 +12,19 @@
       user-select: none;
     }
 
+    input,
+    textarea {
+      user-select: text;
+    }
+
+    html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+      color-scheme: dark;
+    }
+
     body {
       width: 100vw;
       height: 100vh;
@@ -19,16 +32,125 @@
       color: var(--text);
       font-family: var(--nx-font-sans);
       border: 1px solid var(--accent);
-      box-shadow: inset 0 0 12px var(--nx-accent-soft);
-      border-radius: var(--nx-radius-lg);
-      overflow-y: auto;
-      padding: 8px;
+      box-shadow: var(--specular-top), inset 0 0 10px var(--nx-accent-soft);
+      border-radius: var(--nx-radius-md);
+      overflow: hidden;
+      padding: 6px;
       display: flex;
       flex-direction: column;
-      gap: 6px;
+    }
+
+    html,
+    body,
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--nx-scrollbar-thumb) var(--nx-scrollbar-track);
+    }
+
+    html::-webkit-scrollbar,
+    body::-webkit-scrollbar,
+    *::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    html::-webkit-scrollbar-track,
+    body::-webkit-scrollbar-track,
+    *::-webkit-scrollbar-track,
+    *::-webkit-scrollbar-track-piece {
+      background: var(--nx-scrollbar-track);
+    }
+
+    html::-webkit-scrollbar-thumb,
+    body::-webkit-scrollbar-thumb,
+    *::-webkit-scrollbar-thumb {
+      background: var(--nx-scrollbar-thumb);
+      border-radius: var(--nx-radius-pill);
+      border: 2px solid transparent;
+      background-clip: padding-box;
+    }
+
+    html::-webkit-scrollbar-thumb:hover,
+    body::-webkit-scrollbar-thumb:hover,
+    *::-webkit-scrollbar-thumb:hover,
+    *::-webkit-scrollbar-thumb:active {
+      background: var(--nx-scrollbar-thumb-hover);
+      border: 2px solid transparent;
+      background-clip: padding-box;
+    }
+
+    html::-webkit-scrollbar-corner,
+    body::-webkit-scrollbar-corner,
+    *::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+
+    html::-webkit-scrollbar-button,
+    body::-webkit-scrollbar-button,
+    *::-webkit-scrollbar-button {
+      display: none;
+      width: 0;
+      height: 0;
     }
 
     .hidden { display: none !important; }
+
+    #view-menu,
+    #view-permissions,
+    #view-screenshot,
+    #view-downloads,
+    #view-shield,
+    #view-tab-context,
+    #view-group-context,
+    #view-workspace-context,
+    #view-bookmark-folder,
+    #view-extensions-dropdown,
+    #view-profiles {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      max-height: 100%;
+      overflow-x: hidden;
+      overflow-y: auto;
+    }
+
+    #view-menu,
+    #view-tab-context {
+      gap: 0;
+    }
+
+    #view-group-context,
+    #view-workspace-context {
+      gap: 6px;
+    }
+
+    #view-screenshot {
+      gap: 4px;
+    }
+
+    #view-permissions,
+    #view-shield {
+      gap: 8px;
+    }
+
+    #view-downloads {
+      gap: 8px;
+      overflow: hidden;
+    }
+
+    #view-bookmark-folder,
+    #view-extensions-dropdown,
+    #view-profiles {
+      gap: 0;
+      overflow: hidden;
+    }
+
+    .pop-scroll-list {
+      overflow-x: hidden;
+      overflow-y: auto;
+      flex: 1 1 auto;
+      min-height: 0;
+    }
 
     /* Pill Toggle Switch */
     .nx-switch {
@@ -46,7 +168,7 @@
       background: var(--nx-glass-strong);
       border: 1px solid var(--border);
       border-radius: var(--nx-radius-pill);
-      transition: 0.2s;
+      transition: background-color var(--nx-motion-base) var(--nx-motion-ease), border-color var(--nx-motion-base) var(--nx-motion-ease), box-shadow var(--nx-motion-base) var(--nx-motion-ease);
     }
     .nx-slider::before {
       position: absolute;
@@ -57,7 +179,7 @@
       bottom: 2px;
       background: var(--nx-white);
       border-radius: 50%;
-      transition: 0.2s;
+      transition: transform var(--nx-motion-base) var(--nx-motion-ease);
     }
     .nx-switch input:checked + .nx-slider {
       background: var(--accent);
@@ -80,11 +202,12 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 10px;
+      gap: 14px;
       cursor: pointer;
       width: 100%;
+      flex-shrink: 0;
       text-align: left;
-      transition: background 0.14s, box-shadow 0.14s, color 0.14s;
+      transition: background var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease);
     }
 
     .menu-item:hover {
@@ -110,18 +233,22 @@
       display: flex;
       align-items: center;
       gap: 9px;
+      white-space: nowrap;
     }
 
     .menu-item kbd {
       font-size: 10.5px;
       color: var(--muted);
       font-family: inherit;
+      white-space: nowrap;
+      flex-shrink: 0;
     }
 
     .sep {
       height: 1px;
       background: var(--border);
       margin: 4px 2px;
+      flex-shrink: 0;
     }
 
     .zoom-row {
@@ -130,25 +257,28 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 10px;
       font-size: 12.5px;
+      flex-shrink: 0;
+      white-space: nowrap;
     }
 
     .zoom-controls {
       display: flex;
       align-items: center;
       gap: 5px;
+      flex-shrink: 0;
     }
 
     .zbtn {
       width: 24px;
       height: 22px;
       border-radius: var(--nx-radius-xs);
-      clip-path: var(--nx-chamfer-sm);
       border: 1px solid var(--border);
       background: var(--bg-input);
       color: var(--text);
       cursor: pointer;
-      transition: 0.14s;
+      transition: border-color var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
     }
 
     .zbtn:hover {
@@ -160,6 +290,7 @@
     .zoom-pct {
       min-width: 36px;
       text-align: center;
+      font-family: var(--nx-font-mono);
       font-variant-numeric: tabular-nums;
     }
 
@@ -180,6 +311,7 @@
       display: flex;
       align-items: center;
       gap: 10px;
+      flex-shrink: 0;
     }
 
     .sec-status { font-size: 13px; font-weight: 700; }
@@ -189,6 +321,7 @@
       font-size: 11px;
       color: var(--accent-bright);
       padding: 0 4px;
+      flex-shrink: 0;
     }
 
     .perm-row {
@@ -199,7 +332,9 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 10px;
       font-size: 12px;
+      flex-shrink: 0;
     }
 
     .perm-select {
@@ -210,6 +345,7 @@
       padding: 3px 6px;
       font-size: 11px;
       outline: none;
+      flex-shrink: 0;
     }
 
     .perm-select:focus {
@@ -225,6 +361,7 @@
       flex-direction: column;
       gap: 4px;
       font-size: 12px;
+      flex-shrink: 0;
     }
 
     .dl-mini-top {
@@ -245,14 +382,15 @@
     .mini-btn {
       padding: 4px 8px;
       border-radius: var(--nx-radius-xs);
-      clip-path: var(--nx-chamfer-sm);
       border: 1px solid var(--border);
       background: var(--bg-input);
       color: var(--text);
       font-size: 11px;
       font-weight: 600;
+      white-space: nowrap;
+      flex-shrink: 0;
       cursor: pointer;
-      transition: 0.14s;
+      transition: border-color var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
     }
     .mini-btn:hover {
       border-color: var(--accent);
@@ -295,6 +433,7 @@
     }
 
     .shield-stat-val {
+      font-family: var(--nx-font-mono);
       font-size: 18px;
       font-weight: 700;
       color: var(--text);
@@ -332,6 +471,7 @@
       justify-content: space-between;
       gap: 8px;
       padding: 2px 6px 4px;
+      flex-shrink: 0;
     }
 
     .bm-folder-hdr-title {
@@ -350,6 +490,10 @@
       display: flex;
       flex-direction: column;
       gap: 2px;
+      overflow-x: hidden;
+      overflow-y: auto;
+      flex: 1 1 auto;
+      min-height: 0;
     }
 
     .bm-folder-item {
@@ -379,6 +523,663 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    /* Extensions Toolbar Dropdown Popover */
+    .ext-dd-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 2px 6px 4px;
+      flex-shrink: 0;
+    }
+
+    .ext-dd-title {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11.5px;
+      color: var(--accent-bright);
+    }
+
+    .ext-dd-count {
+      font-family: var(--nx-font-mono);
+      font-size: 10.5px;
+      color: var(--muted);
+    }
+
+    .ext-dd-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      overflow-x: hidden;
+      overflow-y: auto;
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+
+    .ext-dd-empty {
+      padding: 16px 10px;
+      text-align: center;
+      font-size: 12px;
+      color: var(--muted);
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--nx-radius-sm);
+      flex-shrink: 0;
+    }
+
+    .ext-dd-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px;
+      border-radius: var(--nx-radius-sm);
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      flex-shrink: 0;
+      transition: border-color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease), background var(--nx-motion-fast) var(--nx-motion-ease);
+    }
+
+    .ext-dd-row:hover:not(.disabled) {
+      border-color: var(--accent);
+      box-shadow: var(--nx-glow-sm);
+    }
+
+    .ext-dd-row.disabled {
+      opacity: 0.6;
+    }
+
+    .ext-dd-main {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 4px 6px;
+      border: none;
+      border-radius: var(--nx-radius-xs);
+      background: transparent;
+      color: var(--text);
+      text-align: left;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .ext-dd-main:disabled {
+      cursor: default;
+    }
+
+    .ext-dd-main:focus-visible {
+      outline: none;
+      background: var(--bg-input);
+      color: var(--accent-bright);
+      box-shadow: inset 2px 0 0 var(--accent);
+    }
+
+    .ext-dd-row:hover:not(.disabled) .ext-dd-name {
+      color: var(--accent-bright);
+    }
+
+    .ext-dd-icon {
+      width: 24px;
+      height: 24px;
+      border-radius: var(--nx-radius-xs);
+      background: var(--nx-accent-soft);
+      border: 1px solid var(--accent);
+      color: var(--accent-bright);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+
+    .ext-dd-row.disabled .ext-dd-icon {
+      background: var(--bg-input);
+      border-color: var(--border);
+      color: var(--muted);
+    }
+
+    .ext-dd-icon-img {
+      width: 18px;
+      height: 18px;
+      object-fit: contain;
+      display: block;
+    }
+
+    .ext-dd-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .ext-dd-name-row {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .ext-dd-name {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: color var(--nx-motion-fast) var(--nx-motion-ease);
+    }
+
+    .ext-dd-version {
+      font-family: var(--nx-font-mono);
+      font-size: 10px;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+
+    .ext-dd-meta {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .ext-dd-pill {
+      font-size: 9.5px;
+      font-weight: 600;
+      padding: 1px 5px;
+      border-radius: var(--nx-radius-xs);
+      border: 1px solid var(--border);
+      background: var(--bg-input);
+      color: var(--muted);
+    }
+
+    .ext-dd-pill.popup {
+      border-color: var(--accent);
+      color: var(--accent-bright);
+    }
+
+    .ext-dd-pin-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: var(--nx-radius-xs);
+      border: 1px solid var(--border);
+      background: var(--bg-input);
+      color: var(--muted);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      cursor: pointer;
+      transition: background var(--nx-motion-fast) var(--nx-motion-ease), border-color var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+    }
+
+    .ext-dd-pin-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent-bright);
+      box-shadow: var(--nx-glow-sm);
+    }
+
+    .ext-dd-pin-btn.pinned {
+      background: var(--nx-accent-soft);
+      border-color: var(--accent);
+      color: var(--accent-bright);
+      box-shadow: var(--nx-glow-sm);
+    }
+
+    .ext-dd-pin-btn:disabled {
+      opacity: 0.4;
+      cursor: default;
+      pointer-events: none;
+    }
+
+    .ext-dd-footer {
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+
+    /* Workspaces & Tab Island Context Menus / Editors */
+    [data-group-color="group-1"] { --group-color: var(--nx-group-1); }
+    [data-group-color="group-2"] { --group-color: var(--nx-group-2); }
+    [data-group-color="group-3"] { --group-color: var(--nx-group-3); }
+    [data-group-color="group-4"] { --group-color: var(--nx-group-4); }
+    [data-group-color="group-5"] { --group-color: var(--nx-group-5); }
+    [data-group-color="group-6"] { --group-color: var(--nx-group-6); }
+    [data-group-color="group-7"] { --group-color: var(--nx-group-7); }
+    [data-group-color="group-8"] { --group-color: var(--nx-group-8); }
+
+    .ctx-dyn-section {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      flex-shrink: 0;
+    }
+
+    .ctx-section-label {
+      font-family: var(--nx-font-display);
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      padding: 5px 10px 2px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .ctx-color-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--group-color, var(--accent));
+      flex-shrink: 0;
+    }
+
+    .menu-item.danger {
+      color: var(--danger);
+    }
+
+    .menu-item.danger:hover,
+    .menu-item.danger:focus-visible {
+      background: color-mix(in srgb, var(--danger) 14%, var(--bg-card));
+      color: var(--danger);
+      box-shadow: inset 2px 0 0 var(--danger);
+    }
+
+    .ctx-editor-hdr {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 2px 6px 0;
+      flex-shrink: 0;
+    }
+
+    .ctx-editor-title {
+      font-size: 11px;
+      color: var(--accent-bright);
+      white-space: nowrap;
+    }
+
+    .ctx-editor-badge {
+      font-family: var(--nx-font-mono);
+      font-size: 10px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .ctx-input-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 4px;
+      flex-shrink: 0;
+    }
+
+    .ctx-input {
+      width: 164px;
+      flex: 1 1 auto;
+      min-width: 120px;
+      height: 28px;
+      padding: 0 8px;
+      border-radius: var(--nx-radius-xs);
+      border: 1px solid var(--border);
+      background: var(--bg-input);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 12px;
+      outline: none;
+      transition: border-color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+    }
+
+    .ctx-input:focus {
+      border-color: var(--accent);
+      box-shadow: var(--nx-glow-sm);
+    }
+
+    .ctx-submit-btn {
+      height: 28px;
+      padding: 0 10px;
+      border-radius: var(--nx-radius-xs);
+      border: 1px solid var(--accent);
+      background: var(--nx-accent-soft);
+      color: var(--accent-bright);
+      font-family: inherit;
+      font-size: 11.5px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: background var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+    }
+
+    .ctx-submit-btn:hover {
+      background: var(--accent);
+      color: var(--nx-on-accent);
+      box-shadow: var(--nx-glow-sm);
+    }
+
+    .ctx-error {
+      font-size: 11px;
+      color: var(--danger);
+      padding: 0 6px;
+      flex-shrink: 0;
+    }
+
+    .ctx-swatches {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      gap: 5px;
+      padding: 2px 6px;
+      flex-shrink: 0;
+    }
+
+    .ctx-swatch {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      background: var(--group-color, var(--accent));
+      cursor: pointer;
+      transition: transform var(--nx-motion-fast) var(--nx-motion-ease), border-color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+    }
+
+    .ctx-swatch:hover {
+      transform: scale(1.12);
+    }
+
+    .ctx-swatch.active {
+      border-color: var(--nx-white);
+      box-shadow: 0 0 8px var(--group-color, var(--accent));
+    }
+
+    .ctx-hint {
+      font-size: 10px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    /* Profiles Popover */
+    [data-profile-color="gx-violet"] { --profile-color: var(--nx-swatch-violet); }
+    [data-profile-color="crimson"] { --profile-color: var(--nx-swatch-crimson); }
+    [data-profile-color="cyan"] { --profile-color: var(--nx-swatch-cyan); }
+    [data-profile-color="emerald"] { --profile-color: var(--nx-swatch-emerald); }
+    [data-profile-color="magenta"] { --profile-color: var(--nx-swatch-magenta); }
+    [data-profile-color="amber"] { --profile-color: var(--nx-swatch-amber); }
+    [data-profile-color="lime"] { --profile-color: var(--nx-swatch-lime); }
+    [data-profile-color="ice"] { --profile-color: var(--nx-swatch-ice); }
+
+    .prof-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 2px 6px 4px;
+      flex-shrink: 0;
+    }
+
+    .prof-title {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11.5px;
+      color: var(--accent-bright);
+    }
+
+    .prof-notice {
+      font-size: 10.5px;
+      color: var(--muted);
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-left: 2px solid var(--accent);
+      border-radius: var(--nx-radius-xs);
+      padding: 5px 8px;
+      margin: 0 2px 5px;
+      line-height: 1.35;
+      flex-shrink: 0;
+    }
+
+    .prof-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      overflow-x: hidden;
+      overflow-y: auto;
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+
+    .prof-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px;
+      border-radius: var(--nx-radius-sm);
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      flex-shrink: 0;
+      transition: border-color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+    }
+
+    .prof-row.is-active {
+      border-color: var(--accent);
+      box-shadow: var(--nx-glow-sm);
+    }
+
+    .prof-row:hover {
+      border-color: var(--accent);
+    }
+
+    .prof-main-btn {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 3px 5px;
+      border: none;
+      border-radius: var(--nx-radius-xs);
+      background: transparent;
+      color: var(--text);
+      text-align: left;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .prof-main-btn:focus-visible {
+      outline: none;
+      background: var(--bg-input);
+      box-shadow: inset 2px 0 0 var(--accent);
+    }
+
+    .prof-avatar {
+      width: 24px;
+      height: 24px;
+      border-radius: var(--nx-radius-pill);
+      border: 1.5px solid var(--profile-color, var(--accent));
+      background: color-mix(in srgb, var(--profile-color, var(--accent)) 28%, var(--bg-input));
+      color: var(--text);
+      font-family: var(--nx-font-display);
+      font-size: 11.5px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .prof-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+
+    .prof-name-line {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      min-width: 0;
+    }
+
+    .prof-name {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .prof-check {
+      color: var(--success);
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .prof-meta {
+      font-size: 10px;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .prof-row-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      flex-shrink: 0;
+    }
+
+    .prof-icon-btn {
+      width: 24px;
+      height: 24px;
+      border-radius: var(--nx-radius-xs);
+      border: 1px solid var(--border);
+      background: var(--bg-input);
+      color: var(--muted);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: border-color var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+    }
+
+    .prof-icon-btn:hover:not(:disabled) {
+      border-color: var(--accent);
+      color: var(--accent-bright);
+      box-shadow: var(--nx-glow-sm);
+    }
+
+    .prof-icon-btn.danger:hover:not(:disabled) {
+      border-color: var(--danger);
+      color: var(--danger);
+      box-shadow: none;
+    }
+
+    .prof-icon-btn:disabled {
+      opacity: 0.3;
+      cursor: default;
+      pointer-events: none;
+    }
+
+    .prof-inline-box {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 7px 6px;
+      margin-top: 4px;
+      border-radius: var(--nx-radius-sm);
+      background: var(--bg-card);
+      border: 1px solid var(--accent);
+      flex-shrink: 0;
+    }
+
+    .prof-inline-box.danger {
+      border-color: var(--danger);
+    }
+
+    .prof-inline-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--accent-bright);
+      padding: 0 2px;
+    }
+
+    .prof-inline-box.danger .prof-inline-title {
+      color: var(--danger);
+    }
+
+    .prof-inline-copy {
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.35;
+      padding: 0 2px;
+    }
+
+    .prof-swatches {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      gap: 5px;
+      padding: 2px;
+    }
+
+    .prof-swatch {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      background: var(--profile-color, var(--accent));
+      cursor: pointer;
+      transition: transform var(--nx-motion-fast) var(--nx-motion-ease), border-color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+    }
+
+    .prof-swatch:hover {
+      transform: scale(1.1);
+    }
+
+    .prof-swatch.active {
+      border-color: var(--nx-white);
+      box-shadow: 0 0 8px var(--profile-color, var(--accent));
+    }
+
+    .prof-inline-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 5px;
+      padding: 0 2px;
+    }
+
+    .prof-danger-btn {
+      padding: 4px 9px;
+      border-radius: var(--nx-radius-xs);
+      border: 1px solid var(--danger);
+      background: var(--danger);
+      color: var(--nx-white);
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .prof-footer {
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+
+    .prof-footnote {
+      font-size: 10px;
+      color: var(--muted);
+      padding: 4px 8px 2px;
+      text-align: center;
+      flex-shrink: 0;
     }
   </style>
 </head>
@@ -444,6 +1245,13 @@
       </span>
       <span></span>
     </button>
+    <button class="menu-item" data-act="privacy">
+      <span class="menu-left">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Privacy &amp; Security
+      </span>
+      <span></span>
+    </button>
     <button class="menu-item" data-act="extensions">
       <span class="menu-left">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5a2.5 2.5 0 0 0-5 0V5H4c-1.1 0-2 .9-2 2v3.8h1.5c1.5 0 2.7 1.2 2.7 2.7S5 16.2 3.5 16.2H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.5 1.2-2.7 2.7-2.7s2.7 1.2 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5a2.5 2.5 0 0 0 0-5z"/></svg>
@@ -459,7 +1267,7 @@
       <div class="zoom-controls">
         <button class="zbtn" id="btnZoomOut" title="Zoom Out (Ctrl+-)">−</button>
         <span id="zoomPct" class="zoom-pct">100%</span>
-        <button class="zbtn" id="btnZoomIn" title="Zoom In (Ctrl+=)">+</button>
+        <button class="zbtn" id="btnZoomIn" title="Zoom In (Ctrl+= / Ctrl++)">+</button>
         <button class="zbtn zbtn-reset" id="btnZoomReset" title="Reset Zoom (Ctrl+0)">Reset</button>
         <button class="zbtn" id="btnFs" title="Fullscreen (F11)">
           <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
@@ -585,11 +1393,11 @@
 
   <!-- 4. QUICK DOWNLOADS POPOVER -->
   <div id="view-downloads" class="hidden" style="display:flex;flex-direction:column;gap:8px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:2px 4px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:2px 4px;flex-shrink:0;">
       <strong class="nx-heading" style="font-size:12px;color:var(--accent-bright);">Recent Downloads</strong>
       <button class="mini-btn" id="btnOpenDlPage">Full Manager</button>
     </div>
-    <div id="popDlList" style="display:flex;flex-direction:column;gap:6px;"></div>
+    <div id="popDlList" class="pop-scroll-list" style="display:flex;flex-direction:column;gap:6px;"></div>
   </div>
 
   <!-- 5. PRIVACY SHIELD PER-SITE POPOVER -->
@@ -665,12 +1473,27 @@
         <span id="tabCtxPinLabel">Pin Tab</span>
       </span>
     </button>
+    <button class="menu-item" data-tab-act="split" id="btnTabCtxSplit" role="menuitem">
+      <span class="menu-left">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+        <span id="tabCtxSplitLabel">Split with this tab</span>
+      </span>
+    </button>
     <button class="menu-item" data-tab-act="hibernate" id="btnTabCtxHibernate" role="menuitem">
       <span class="menu-left">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
         Hibernate Tab
       </span>
     </button>
+    <button class="menu-item" data-tab-act="pop-out-video" id="btnTabCtxPopOutVideo" role="menuitem">
+      <span class="menu-left">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="15" rx="2"/><rect x="11.5" y="10.5" width="8.5" height="6.5" rx="1" fill="currentColor" stroke="none"/></svg>
+        <span id="tabCtxPopOutLabel">Pop out video</span>
+      </span>
+    </button>
+
+    <div id="tabCtxGroupSection" class="ctx-dyn-section hidden"></div>
+    <div id="tabCtxWorkspaceSection" class="ctx-dyn-section hidden"></div>
 
     <div class="sep"></div>
 
@@ -688,6 +1511,77 @@
     </button>
   </div>
 
+  <!-- 6b. TAB ISLAND / GROUP CONTEXT MENU & EDITOR -->
+  <div id="view-group-context" class="hidden" role="menu" aria-label="Tab group options">
+    <div class="ctx-editor-hdr">
+      <span class="ctx-editor-title nx-heading">Tab Island</span>
+      <span class="ctx-editor-badge" id="grpCtxCount"></span>
+    </div>
+    <form id="grpCtxRenameForm" class="ctx-input-row">
+      <input type="text" id="grpCtxNameInput" class="ctx-input" maxlength="40" placeholder="Group name" autocomplete="off" />
+      <button type="submit" class="ctx-submit-btn">Save</button>
+    </form>
+    <div id="grpCtxError" class="ctx-error hidden"></div>
+    <div class="ctx-swatches" id="grpCtxSwatches" aria-label="Group color">
+      <button type="button" class="ctx-swatch" data-group-color="group-1" title="Violet" aria-label="Violet"></button>
+      <button type="button" class="ctx-swatch" data-group-color="group-2" title="Cyan" aria-label="Cyan"></button>
+      <button type="button" class="ctx-swatch" data-group-color="group-3" title="Emerald" aria-label="Emerald"></button>
+      <button type="button" class="ctx-swatch" data-group-color="group-4" title="Amber" aria-label="Amber"></button>
+      <button type="button" class="ctx-swatch" data-group-color="group-5" title="Crimson" aria-label="Crimson"></button>
+      <button type="button" class="ctx-swatch" data-group-color="group-6" title="Magenta" aria-label="Magenta"></button>
+      <button type="button" class="ctx-swatch" data-group-color="group-7" title="Lime" aria-label="Lime"></button>
+      <button type="button" class="ctx-swatch" data-group-color="group-8" title="Azure" aria-label="Azure"></button>
+    </div>
+    <div class="sep"></div>
+    <button type="button" class="menu-item" id="btnGrpCtxToggleCollapse" role="menuitem">
+      <span class="menu-left">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        <span id="grpCtxCollapseLabel">Collapse Group</span>
+      </span>
+    </button>
+    <button type="button" class="menu-item" id="btnGrpCtxNewTab" role="menuitem">
+      <span class="menu-left">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        New Tab in Group
+      </span>
+    </button>
+    <button type="button" class="menu-item danger" id="btnGrpCtxUngroup" role="menuitem">
+      <span class="menu-left">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        Ungroup
+      </span>
+    </button>
+  </div>
+
+  <!-- 6c. WORKSPACE CONTEXT MENU / CREATE PROMPT -->
+  <div id="view-workspace-context" class="hidden" role="menu" aria-label="Workspace options">
+    <div class="ctx-editor-hdr">
+      <span class="ctx-editor-title nx-heading" id="wsCtxTitle">Workspace</span>
+      <span class="ctx-editor-badge" id="wsCtxCount"></span>
+    </div>
+    <form id="wsCtxForm" class="ctx-input-row">
+      <input type="text" id="wsCtxNameInput" class="ctx-input" maxlength="40" placeholder="Workspace name" autocomplete="off" />
+      <button type="submit" class="ctx-submit-btn" id="wsCtxSubmitBtn">Save</button>
+    </form>
+    <div id="wsCtxError" class="ctx-error hidden"></div>
+    <div id="wsCtxManageActions" class="ctx-dyn-section">
+      <div class="sep"></div>
+      <button type="button" class="menu-item" id="btnWsCtxSwitch" role="menuitem">
+        <span class="menu-left">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          Switch to Workspace
+        </span>
+      </button>
+      <button type="button" class="menu-item danger" id="btnWsCtxDelete" role="menuitem">
+        <span class="menu-left">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+          Delete Workspace
+        </span>
+        <span class="ctx-hint" id="wsCtxDeleteHint">Tabs to Default</span>
+      </button>
+    </div>
+  </div>
+
   <!-- 7. BOOKMARK FOLDER MENU POPOVER -->
   <div id="view-bookmark-folder" class="hidden" role="menu" aria-label="Bookmark folder">
     <div class="bm-folder-hdr">
@@ -697,7 +1591,62 @@
       </span>
     </div>
     <div class="sep"></div>
-    <div id="bmFolderPopList" class="bm-folder-list"></div>
+    <div id="bmFolderPopList" class="bm-folder-list pop-scroll-list"></div>
+  </div>
+
+  <!-- 8. EXTENSIONS DROPDOWN POPOVER -->
+  <div id="view-extensions-dropdown" class="hidden" role="region" aria-label="Extensions">
+    <div class="ext-dd-header">
+      <span class="ext-dd-title nx-heading">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5a2.5 2.5 0 0 0-5 0V5H4c-1.1 0-2 .9-2 2v3.8h1.5c1.5 0 2.7 1.2 2.7 2.7S5 16.2 3.5 16.2H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.5 1.2-2.7 2.7-2.7s2.7 1.2 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5a2.5 2.5 0 0 0 0-5z"/></svg>
+        Extensions
+      </span>
+      <span class="ext-dd-count" id="extDropdownCount"></span>
+    </div>
+    <div class="sep"></div>
+    <div id="extDropdownList" class="ext-dd-list pop-scroll-list"></div>
+    <div class="sep"></div>
+    <div class="ext-dd-footer">
+      <button type="button" class="menu-item ext-dd-manage-btn" id="btnManageExtensions">
+        <span class="menu-left">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          Manage Extensions
+        </span>
+        <span style="color:var(--muted);font-size:11px;">↗</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- 9. PROFILES MENU POPOVER -->
+  <div id="view-profiles" class="hidden" role="region" aria-label="Profiles">
+    <div class="prof-header">
+      <span class="prof-title nx-heading">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        Profiles
+      </span>
+      <span class="ext-dd-count" id="profCount"></span>
+    </div>
+    <div id="profWindowNotice" class="prof-notice hidden"></div>
+    <div class="sep"></div>
+    <div id="profList" class="prof-list pop-scroll-list"></div>
+    <div id="profInlineArea"></div>
+    <div class="sep"></div>
+    <div class="prof-footer">
+      <button type="button" class="menu-item" id="btnProfAdd">
+        <span class="menu-left">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          Add profile
+        </span>
+      </button>
+      <button type="button" class="menu-item" id="btnProfManageSettings">
+        <span class="menu-left">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          Manage Profiles in Settings
+        </span>
+        <span style="color:var(--muted);font-size:11px;">↗</span>
+      </button>
+      <div class="prof-footnote">Switching opens a new window in that profile</div>
+    </div>
   </div>
 
   <script>
@@ -723,7 +1672,22 @@
     let currentShieldUrl = '';
     let lastShieldSiteInfo = null;
     let currentTabCtx = null;
+    let currentGroupCtx = null;
+    let currentWorkspaceCtx = null;
+    let currentWorkspaceMode = null;
     let currentBmFolderName = '';
+    let currentProfilesData = null;
+    let profInlineMode = null; // null | { type: 'add', color } | { type: 'rename', profile, color } | { type: 'delete', profile }
+    const PROFILE_COLOR_CHOICES = [
+      { id: 'gx-violet', label: 'Violet' },
+      { id: 'cyan', label: 'Cyan' },
+      { id: 'emerald', label: 'Emerald' },
+      { id: 'crimson', label: 'Crimson' },
+      { id: 'magenta', label: 'Magenta' },
+      { id: 'amber', label: 'Amber' },
+      { id: 'lime', label: 'Lime' },
+      { id: 'ice', label: 'Ice' }
+    ];
 
     function escapeHtml(str) {
       return String(str || '')
@@ -734,29 +1698,227 @@
         .replace(/'/g, '&#39;');
     }
 
+    const MENU_STYLE_KINDS = new Set([
+      'menu',
+      'tab-context',
+      'bookmark-folder',
+      'extensions-dropdown',
+      'screenshot'
+    ]);
+
+    let activePopoverKind = null;
+    let activeViewId = null;
+    let popoverOpenSeq = 0;
+    let lastReportedSize = { kind: null, width: 0, height: 0 };
+    let settleTimer = null;
+    let viewMutationObserver = null;
+    let isMeasuringPopover = false;
+
+    function resetPopoverOnClose() {
+      popoverOpenSeq += 1;
+      activePopoverKind = null;
+      activeViewId = null;
+      currentOrigin = '';
+      currentShieldOrigin = '';
+      currentShieldUrl = '';
+      lastShieldSiteInfo = null;
+      currentTabCtx = null;
+      currentGroupCtx = null;
+      currentWorkspaceCtx = null;
+      currentWorkspaceMode = null;
+      currentBmFolderName = '';
+      currentProfilesData = null;
+      profInlineMode = null;
+      lastReportedSize = { kind: null, width: 0, height: 0 };
+      clearTimeout(settleTimer);
+      settleTimer = null;
+      if (viewMutationObserver) {
+        viewMutationObserver.disconnect();
+        viewMutationObserver = null;
+      }
+      document.body.removeAttribute('data-popover-kind');
+      showOnly(null);
+    }
+
     function showOnly(viewId) {
-      ['view-menu', 'view-permissions', 'view-screenshot', 'view-downloads', 'view-shield', 'view-tab-context', 'view-bookmark-folder'].forEach((id) => {
+      [
+        'view-menu',
+        'view-permissions',
+        'view-screenshot',
+        'view-downloads',
+        'view-shield',
+        'view-tab-context',
+        'view-group-context',
+        'view-workspace-context',
+        'view-bookmark-folder',
+        'view-extensions-dropdown',
+        'view-profiles'
+      ].forEach((id) => {
         document.getElementById(id).classList.toggle('hidden', id !== viewId);
       });
     }
 
-    function fitPopoverToView(kind, viewId) {
-      if (!window.gxAPI?.resizePopover) return;
-      requestAnimationFrame(() => {
-        const viewEl = document.getElementById(viewId);
-        if (!viewEl || viewEl.classList.contains('hidden')) return;
+    function measureAndResizePopover(kind, viewId, { force = false } = {}) {
+      if (!window.gxAPI?.resizePopover || isMeasuringPopover) return;
+      if (!kind || !viewId) return;
+      const viewEl = document.getElementById(viewId);
+      if (!viewEl || viewEl.classList.contains('hidden')) return;
+
+      isMeasuringPopover = true;
+      try {
         const bodyStyle = window.getComputedStyle(document.body);
+        const padX =
+          (parseFloat(bodyStyle.paddingLeft) || 0) +
+          (parseFloat(bodyStyle.paddingRight) || 0) +
+          (parseFloat(bodyStyle.borderLeftWidth) || 0) +
+          (parseFloat(bodyStyle.borderRightWidth) || 0);
         const padY =
           (parseFloat(bodyStyle.paddingTop) || 0) +
           (parseFloat(bodyStyle.paddingBottom) || 0) +
           (parseFloat(bodyStyle.borderTopWidth) || 0) +
           (parseFloat(bodyStyle.borderBottomWidth) || 0);
-        const viewHeight = Math.max(viewEl.scrollHeight, viewEl.getBoundingClientRect().height);
-        const contentH = Math.ceil(viewHeight + padY + 4);
-        if (contentH > 0) {
-          window.gxAPI.resizePopover({ kind, height: contentH });
+
+        const innerLists = Array.from(viewEl.querySelectorAll('.pop-scroll-list'));
+        const prevViewMaxH = viewEl.style.maxHeight;
+        const prevViewOverflowY = viewEl.style.overflowY;
+        const prevViewWidth = viewEl.style.width;
+        const prevListStyles = innerLists.map((el) => ({
+          el,
+          maxHeight: el.style.maxHeight,
+          overflowY: el.style.overflowY,
+          flex: el.style.flex
+        }));
+
+        viewEl.style.maxHeight = 'none';
+        viewEl.style.overflowY = 'visible';
+        for (const item of prevListStyles) {
+          item.el.style.maxHeight = 'none';
+          item.el.style.overflowY = 'visible';
+          item.el.style.flex = '0 0 auto';
         }
+
+        const isMenuStyle = MENU_STYLE_KINDS.has(kind);
+        let targetW = null;
+        if (isMenuStyle) {
+          viewEl.style.width = 'max-content';
+          const rectW = viewEl.getBoundingClientRect().width;
+          const naturalViewW = Math.max(viewEl.scrollWidth, Math.ceil(rectW));
+          viewEl.style.width = prevViewWidth;
+          targetW = Math.ceil(naturalViewW + padX + 4);
+        } else {
+          let overflowW = Math.max(0, viewEl.scrollWidth - viewEl.clientWidth);
+          for (const row of viewEl.querySelectorAll('.perm-row, .shield-actions, .dl-mini-top')) {
+            overflowW = Math.max(overflowW, row.scrollWidth - row.clientWidth);
+          }
+          if (overflowW > 1) {
+            const currentW = window.innerWidth || Math.ceil(viewEl.getBoundingClientRect().width + padX);
+            targetW = Math.ceil(currentW + overflowW);
+          }
+        }
+
+        const rectH = viewEl.getBoundingClientRect().height;
+        const naturalViewH = Math.max(viewEl.scrollHeight, Math.ceil(rectH));
+
+        viewEl.style.maxHeight = prevViewMaxH;
+        viewEl.style.overflowY = prevViewOverflowY;
+        for (const item of prevListStyles) {
+          item.el.style.maxHeight = item.maxHeight;
+          item.el.style.overflowY = item.overflowY;
+          item.el.style.flex = item.flex;
+        }
+
+        const contentH = Math.ceil(naturalViewH + padY + 4);
+
+        if (contentH > 0 && (!isMenuStyle || (targetW && targetW > 0))) {
+          const sameWidth =
+            targetW === null
+              ? true
+              : typeof lastReportedSize.width === 'number' &&
+                Math.abs(lastReportedSize.width - targetW) <= 1;
+          const sameAsLast =
+            !force &&
+            lastReportedSize.kind === kind &&
+            sameWidth &&
+            Math.abs(lastReportedSize.height - contentH) <= 1;
+          if (!sameAsLast) {
+            const nextPayload =
+              targetW !== null ? { kind, width: targetW, height: contentH } : { kind, height: contentH };
+            lastReportedSize = {
+              kind,
+              width:
+                targetW !== null
+                  ? targetW
+                  : lastReportedSize.kind === kind
+                  ? lastReportedSize.width
+                  : null,
+              height: contentH
+            };
+            window.gxAPI.resizePopover(nextPayload);
+          }
+        }
+      } finally {
+        isMeasuringPopover = false;
+      }
+    }
+
+    function observeActiveView(kind, viewId) {
+      if (viewMutationObserver) {
+        viewMutationObserver.disconnect();
+        viewMutationObserver = null;
+      }
+      const viewEl = document.getElementById(viewId);
+      if (!viewEl || typeof MutationObserver !== 'function') return;
+      viewMutationObserver = new MutationObserver(() => {
+        if (isMeasuringPopover || activePopoverKind !== kind || activeViewId !== viewId) return;
+        requestAnimationFrame(() => {
+          if (activePopoverKind === kind && activeViewId === viewId) {
+            measureAndResizePopover(kind, viewId);
+          }
+        });
       });
+      viewMutationObserver.observe(viewEl, {
+        childList: true,
+        subtree: true,
+        characterData: true
+      });
+    }
+
+    function fitPopoverToView(kind, viewId, { reset = false } = {}) {
+      if (!window.gxAPI?.resizePopover) return;
+      activePopoverKind = kind;
+      activeViewId = viewId;
+      document.body.setAttribute('data-popover-kind', kind || '');
+      if (reset) {
+        lastReportedSize = { kind: null, width: 0, height: 0 };
+        observeActiveView(kind, viewId);
+      }
+
+      requestAnimationFrame(() => {
+        if (activePopoverKind !== kind || activeViewId !== viewId) return;
+        measureAndResizePopover(kind, viewId, { force: reset });
+        requestAnimationFrame(() => {
+          if (activePopoverKind === kind && activeViewId === viewId) {
+            measureAndResizePopover(kind, viewId);
+          }
+        });
+      });
+
+      if (document.fonts && document.fonts.ready) {
+        document.fonts.ready
+          .then(() => {
+            if (activePopoverKind === kind && activeViewId === viewId) {
+              measureAndResizePopover(kind, viewId);
+            }
+          })
+          .catch(() => {});
+      }
+
+      clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => {
+        if (activePopoverKind === kind && activeViewId === viewId) {
+          measureAndResizePopover(kind, viewId);
+        }
+      }, 45);
     }
 
     function getBookmarkFaviconUrl(bm) {
@@ -905,12 +2067,17 @@
     }
 
     window.gxAPI.onPopoverData(async (data) => {
-      if (!data || data.closed) return;
+      if (!data || data.closed) {
+        resetPopoverOnClose();
+        return;
+      }
+      const openSeq = ++popoverOpenSeq;
       const { kind, payload } = data;
 
       if (kind === 'menu') {
         showOnly('view-menu');
         document.getElementById('zoomPct').textContent = `${payload?.zoomPercent || 100}%`;
+        fitPopoverToView('menu', 'view-menu', { reset: true });
       } else if (kind === 'permissions') {
         showOnly('view-permissions');
         currentOrigin = payload?.origin || '';
@@ -923,10 +2090,11 @@
           ? 'Connection is secure'
           : 'nextGx Internal Page';
         document.getElementById('secIcon').style.color = isHttp ? 'var(--warning)' : 'var(--success)';
-        fitPopoverToView('permissions', 'view-permissions');
+        fitPopoverToView('permissions', 'view-permissions', { reset: true });
 
         if (currentOrigin) {
           const perms = await window.gxAPI.getSitePermissions(currentOrigin);
+          if (openSeq !== popoverOpenSeq || activePopoverKind !== 'permissions') return;
           document.querySelectorAll('[data-perm]').forEach((sel) => {
             sel.disabled = false;
             sel.value = perms[sel.dataset.perm] || 'ask';
@@ -936,48 +2104,871 @@
             sel.disabled = true;
           });
         }
-        await refreshSiteCookies(currentOrigin);
+        await refreshSiteCookies(currentOrigin, openSeq);
+        if (openSeq !== popoverOpenSeq || activePopoverKind !== 'permissions') return;
         fitPopoverToView('permissions', 'view-permissions');
       } else if (kind === 'screenshot') {
         showOnly('view-screenshot');
+        fitPopoverToView('screenshot', 'view-screenshot', { reset: true });
       } else if (kind === 'downloads') {
         showOnly('view-downloads');
+        fitPopoverToView('downloads', 'view-downloads', { reset: true });
         const list = await window.gxAPI.getDownloads();
+        if (openSeq !== popoverOpenSeq || activePopoverKind !== 'downloads') return;
         renderMiniDownloads(list);
+        fitPopoverToView('downloads', 'view-downloads');
       } else if (kind === 'shield') {
         showOnly('view-shield');
         currentShieldOrigin = payload?.origin || '';
         currentShieldUrl = payload?.url || '';
+        fitPopoverToView('shield', 'view-shield', { reset: true });
         const [siteInfo, stats] = await Promise.all([
           window.gxAPI.getAdblockSite(currentShieldOrigin),
           window.gxAPI.getAdblockStats()
         ]);
+        if (openSeq !== popoverOpenSeq || activePopoverKind !== 'shield') return;
         renderShieldPopover(siteInfo, stats);
+        fitPopoverToView('shield', 'view-shield');
       } else if (kind === 'tab-context') {
-        showOnly('view-tab-context');
-        currentTabCtx = payload || null;
-        const pinLabel = document.getElementById('tabCtxPinLabel');
-        const hibernateBtn = document.getElementById('btnTabCtxHibernate');
-        const closeOthersBtn = document.getElementById('btnTabCtxCloseOthers');
-        if (pinLabel) {
-          pinLabel.textContent = currentTabCtx?.pinned ? 'Unpin Tab' : 'Pin Tab';
-        }
-        if (hibernateBtn) {
-          const cannotHibernate = Boolean(currentTabCtx?.isActive || currentTabCtx?.sleeping);
-          hibernateBtn.disabled = cannotHibernate;
-          hibernateBtn.title = currentTabCtx?.sleeping
-            ? 'Tab is already hibernated'
-            : currentTabCtx?.isActive
-            ? 'Active tab cannot be hibernated'
-            : 'Suspend tab to save memory';
-        }
-        if (closeOthersBtn) {
-          closeOthersBtn.disabled = Number(currentTabCtx?.totalTabs || 1) <= 1;
+        const ctxType = payload?.contextType || 'tab';
+        if (ctxType === 'group') {
+          showOnly('view-group-context');
+          currentGroupCtx = payload || null;
+          renderGroupContextMenu(currentGroupCtx);
+          fitPopoverToView('tab-context', 'view-group-context', { reset: true });
+        } else if (ctxType === 'workspace' || ctxType === 'workspace-create') {
+          showOnly('view-workspace-context');
+          currentWorkspaceMode = ctxType;
+          currentWorkspaceCtx = payload || null;
+          renderWorkspaceContextMenu(ctxType, currentWorkspaceCtx);
+          fitPopoverToView('tab-context', 'view-workspace-context', { reset: true });
+          if (ctxType === 'workspace-create') {
+            const wsInput = document.getElementById('wsCtxNameInput');
+            if (wsInput) {
+              requestAnimationFrame(() => wsInput.focus());
+            }
+          }
+        } else {
+          showOnly('view-tab-context');
+          currentTabCtx = payload || null;
+          const pinLabel = document.getElementById('tabCtxPinLabel');
+          const splitBtn = document.getElementById('btnTabCtxSplit');
+          const splitLabel = document.getElementById('tabCtxSplitLabel');
+          const hibernateBtn = document.getElementById('btnTabCtxHibernate');
+          const popOutBtn = document.getElementById('btnTabCtxPopOutVideo');
+          const popOutLabel = document.getElementById('tabCtxPopOutLabel');
+          const closeOthersBtn = document.getElementById('btnTabCtxCloseOthers');
+          if (pinLabel) {
+            pinLabel.textContent = currentTabCtx?.pinned ? 'Unpin Tab' : 'Pin Tab';
+          }
+          if (splitBtn && splitLabel) {
+            if (currentTabCtx?.isSplitPane) {
+              splitLabel.textContent = 'Exit split view';
+              splitBtn.title = 'Exit split view and restore both tabs';
+            } else if (currentTabCtx?.splitVisible) {
+              splitLabel.textContent = 'Split with this tab';
+              splitBtn.title =
+                currentTabCtx.splitFocusedPane === 'left'
+                  ? 'Replace the right split pane with this tab'
+                  : 'Replace the left split pane with this tab';
+            } else if (currentTabCtx?.isActive) {
+              splitLabel.textContent = 'Open in split view';
+              splitBtn.title = 'Split this tab side by side with a new tab';
+            } else {
+              splitLabel.textContent = 'Split with this tab';
+              splitBtn.title = 'Open active tab and this tab side by side';
+            }
+          }
+          if (hibernateBtn) {
+            const isVisibleSplitPane = Boolean(currentTabCtx?.isSplitPane && currentTabCtx?.splitVisible);
+            const cannotHibernate = Boolean(currentTabCtx?.isActive || currentTabCtx?.sleeping || isVisibleSplitPane);
+            hibernateBtn.disabled = cannotHibernate;
+            hibernateBtn.title = currentTabCtx?.sleeping
+              ? 'Tab is already hibernated'
+              : currentTabCtx?.isActive
+              ? 'Active tab cannot be hibernated'
+              : isVisibleSplitPane
+              ? 'Split view pane cannot be hibernated'
+              : 'Suspend tab to save memory';
+          }
+          if (popOutBtn) {
+            const canPopOut = Boolean((currentTabCtx?.hasPlayingVideo || currentTabCtx?.pipActive) && !currentTabCtx?.sleeping);
+            popOutBtn.disabled = !canPopOut;
+            if (popOutLabel) {
+              popOutLabel.textContent = currentTabCtx?.pipActive && canPopOut ? 'Exit Pop-out Video' : 'Pop out video';
+            }
+            popOutBtn.title = !canPopOut
+              ? 'Play a video in this tab to pop out'
+              : currentTabCtx?.pipActive
+              ? 'Return popped-out video to this tab'
+              : currentTabCtx?.videoTitle
+              ? `Pop out "${currentTabCtx.videoTitle}" (Picture-in-Picture)`
+              : 'Pop out video (Picture-in-Picture)';
+          }
+          if (closeOthersBtn) {
+            closeOthersBtn.disabled =
+              typeof currentTabCtx?.canCloseOthers === 'boolean'
+                ? !currentTabCtx.canCloseOthers
+                : Number(currentTabCtx?.totalTabs || 1) <= 1;
+          }
+          renderTabContextGroupAndWorkspaceSections(currentTabCtx);
+          fitPopoverToView('tab-context', 'view-tab-context', { reset: true });
         }
       } else if (kind === 'bookmark-folder') {
         showOnly('view-bookmark-folder');
         renderBookmarkFolderItems(payload?.folder || '', payload?.items || []);
+        fitPopoverToView('bookmark-folder', 'view-bookmark-folder', { reset: true });
+      } else if (kind === 'extensions-dropdown') {
+        showOnly('view-extensions-dropdown');
+        renderExtensionsDropdown(payload?.rows || payload?.extensions || []);
+        fitPopoverToView('extensions-dropdown', 'view-extensions-dropdown', { reset: true });
+      } else if (kind === 'profiles') {
+        showOnly('view-profiles');
+        profInlineMode = null;
+        if (payload && Array.isArray(payload.profiles)) {
+          renderProfilesPopover(payload);
+        }
+        fitPopoverToView('profiles', 'view-profiles', { reset: true });
+        if (window.gxAPI?.listProfiles) {
+          const fresh = await window.gxAPI.listProfiles();
+          if (openSeq !== popoverOpenSeq || activePopoverKind !== 'profiles') return;
+          renderProfilesPopover(fresh);
+          fitPopoverToView('profiles', 'view-profiles');
+        }
       }
+    });
+
+    const PUZZLE_FALLBACK_SVG = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5a2.5 2.5 0 0 0-5 0V5H4c-1.1 0-2 .9-2 2v3.8h1.5c1.5 0 2.7 1.2 2.7 2.7S5 16.2 3.5 16.2H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.5 1.2-2.7 2.7-2.7s2.7 1.2 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5a2.5 2.5 0 0 0 0-5z"/></svg>`;
+
+    function renderExtensionsDropdown(items) {
+      const listEl = document.getElementById('extDropdownList');
+      const countEl = document.getElementById('extDropdownCount');
+      if (!listEl) return;
+      listEl.innerHTML = '';
+
+      const rows = Array.isArray(items) ? items : [];
+      if (countEl) {
+        countEl.textContent = rows.length ? `${rows.length}` : '';
+      }
+
+      if (!rows.length) {
+        listEl.innerHTML = `<div class="ext-dd-empty" id="extDropdownEmpty">No extensions installed</div>`;
+        return;
+      }
+
+      for (const ext of rows) {
+        if (!ext || !ext.id) continue;
+        const isEnabled = ext.enabled !== false;
+        const isPinned = Boolean(ext.pinned);
+        const hasPopup = Boolean(ext.hasPopup);
+
+        const rowEl = document.createElement('div');
+        rowEl.className = `ext-dd-row${isEnabled ? '' : ' disabled'}`;
+        rowEl.dataset.extId = ext.id;
+
+        const mainBtn = document.createElement('button');
+        mainBtn.type = 'button';
+        mainBtn.className = 'ext-dd-main';
+        mainBtn.disabled = !isEnabled;
+        mainBtn.title = !isEnabled
+          ? `${ext.name || 'Extension'} (Disabled)`
+          : hasPopup
+          ? `Open ${ext.name || 'Extension'}`
+          : `${ext.name || 'Extension'} — No popup`;
+
+        const iconWrap = document.createElement('span');
+        iconWrap.className = 'ext-dd-icon';
+        if (ext.iconDataUrl) {
+          const img = document.createElement('img');
+          img.className = 'ext-dd-icon-img';
+          img.alt = '';
+          img.src = ext.iconDataUrl;
+          img.addEventListener('error', () => {
+            iconWrap.innerHTML = PUZZLE_FALLBACK_SVG;
+          });
+          iconWrap.appendChild(img);
+        } else {
+          iconWrap.innerHTML = PUZZLE_FALLBACK_SVG;
+        }
+
+        const infoEl = document.createElement('div');
+        infoEl.className = 'ext-dd-info';
+
+        const nameRow = document.createElement('div');
+        nameRow.className = 'ext-dd-name-row';
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'ext-dd-name';
+        nameSpan.textContent = ext.name || 'Unnamed Extension';
+        nameRow.appendChild(nameSpan);
+
+        if (ext.version) {
+          const verSpan = document.createElement('span');
+          verSpan.className = 'ext-dd-version';
+          verSpan.textContent = ext.version;
+          nameRow.appendChild(verSpan);
+        }
+
+        infoEl.appendChild(nameRow);
+
+        if (!isEnabled) {
+          const metaRow = document.createElement('div');
+          metaRow.className = 'ext-dd-meta';
+          const pill = document.createElement('span');
+          pill.className = 'ext-dd-pill disabled';
+          pill.textContent = 'Disabled';
+          metaRow.appendChild(pill);
+          infoEl.appendChild(metaRow);
+        }
+
+        mainBtn.appendChild(iconWrap);
+        mainBtn.appendChild(infoEl);
+
+        if (isEnabled) {
+          mainBtn.addEventListener('click', () => {
+            window.gxAPI.triggerMenuAction(`extension-popup:${ext.id}`);
+          });
+        }
+
+        const pinBtn = document.createElement('button');
+        pinBtn.type = 'button';
+        pinBtn.className = `ext-dd-pin-btn${isPinned && isEnabled ? ' pinned' : ''}`;
+        pinBtn.dataset.pinId = ext.id;
+        pinBtn.disabled = !isEnabled;
+        pinBtn.title = !isEnabled
+          ? 'Enable extension to pin'
+          : isPinned
+          ? 'Unpin from toolbar'
+          : 'Pin to toolbar';
+        pinBtn.setAttribute('aria-label', pinBtn.title);
+        pinBtn.setAttribute('aria-pressed', isPinned && isEnabled ? 'true' : 'false');
+        pinBtn.innerHTML = `<svg viewBox="0 0 24 24" width="13" height="13" fill="${isPinned && isEnabled ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>`;
+
+        if (isEnabled) {
+          pinBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const act = isPinned ? `extension-unpin:${ext.id}` : `extension-pin:${ext.id}`;
+            window.gxAPI.triggerMenuAction(act);
+          });
+        }
+
+        rowEl.appendChild(mainBtn);
+        rowEl.appendChild(pinBtn);
+        listEl.appendChild(rowEl);
+      }
+    }
+
+    document.getElementById('btnManageExtensions').addEventListener('click', () => {
+      window.gxAPI.triggerMenuAction('extensions');
+    });
+
+    function buildProfileSwatchesHtml(selectedColor) {
+      return PROFILE_COLOR_CHOICES.map(
+        (c) =>
+          `<button type="button" class="prof-swatch${c.id === selectedColor ? ' active' : ''}" data-profile-color="${c.id}" data-swatch-color="${c.id}" title="${c.label}" aria-label="${c.label}"></button>`
+      ).join('');
+    }
+
+    function renderProfileInlineArea() {
+      const area = document.getElementById('profInlineArea');
+      if (!area) return;
+      area.innerHTML = '';
+      if (!profInlineMode) return;
+
+      if (profInlineMode.type === 'add' || profInlineMode.type === 'rename') {
+        const isAdd = profInlineMode.type === 'add';
+        const target = profInlineMode.profile || null;
+        const selectedColor = profInlineMode.color || target?.color || 'cyan';
+        const box = document.createElement('div');
+        box.className = 'prof-inline-box';
+        box.innerHTML = `
+          <div class="prof-inline-title nx-heading">${isAdd ? 'New Profile' : 'Rename Profile'}</div>
+          <form id="profInlineForm" class="ctx-input-row" style="padding:0;">
+            <input type="text" id="profInlineNameInput" class="ctx-input" maxlength="40" placeholder="Profile name..." value="${escapeHtml(isAdd ? '' : target?.name || '')}" autocomplete="off" />
+            <button type="submit" class="ctx-submit-btn">${isAdd ? 'Create' : 'Save'}</button>
+          </form>
+          <div class="prof-swatches" id="profInlineSwatches">${buildProfileSwatchesHtml(selectedColor)}</div>
+          <div id="profInlineError" class="ctx-error hidden"></div>
+          <div class="prof-inline-actions">
+            <button type="button" class="mini-btn" id="btnProfInlineCancel">Cancel</button>
+          </div>
+        `;
+        area.appendChild(box);
+
+        box.querySelectorAll('.prof-swatch').forEach((sw) => {
+          sw.addEventListener('click', () => {
+            profInlineMode.color = sw.dataset.swatchColor;
+            box.querySelectorAll('.prof-swatch').forEach((b) => {
+              b.classList.toggle('active', b.dataset.swatchColor === profInlineMode.color);
+            });
+          });
+        });
+
+        box.querySelector('#btnProfInlineCancel').addEventListener('click', () => {
+          profInlineMode = null;
+          renderProfileInlineArea();
+          fitPopoverToView('profiles', 'view-profiles');
+        });
+
+        box.querySelector('#profInlineForm').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const inp = box.querySelector('#profInlineNameInput');
+          const errEl = box.querySelector('#profInlineError');
+          const name = inp ? inp.value.trim() : '';
+          if (!name) {
+            if (errEl) {
+              errEl.textContent = 'Profile name cannot be empty.';
+              errEl.classList.remove('hidden');
+              fitPopoverToView('profiles', 'view-profiles');
+            }
+            return;
+          }
+          const res = isAdd
+            ? await window.gxAPI.createProfile({ name, color: profInlineMode.color })
+            : await window.gxAPI.renameProfile(target.id, { name, color: profInlineMode.color });
+          if (!res || !res.ok) {
+            if (errEl) {
+              errEl.textContent = res?.error || 'Action failed.';
+              errEl.classList.remove('hidden');
+              fitPopoverToView('profiles', 'view-profiles');
+            }
+            return;
+          }
+          profInlineMode = null;
+          const fresh = await window.gxAPI.listProfiles();
+          renderProfilesPopover(fresh);
+          fitPopoverToView('profiles', 'view-profiles');
+        });
+
+        const inp = box.querySelector('#profInlineNameInput');
+        if (inp) requestAnimationFrame(() => inp.focus());
+      } else if (profInlineMode.type === 'delete') {
+        const target = profInlineMode.profile;
+        if (!target || target.id === 'default') {
+          profInlineMode = null;
+          return;
+        }
+        const box = document.createElement('div');
+        box.className = 'prof-inline-box danger';
+        box.innerHTML = `
+          <div class="prof-inline-title nx-heading">Delete "${escapeHtml(target.name)}"?</div>
+          <div class="prof-inline-copy">This permanently deletes this profile's local cookies, cache, history, bookmarks, passwords, and settings.</div>
+          <div id="profInlineError" class="ctx-error hidden"></div>
+          <div class="prof-inline-actions">
+            <button type="button" class="mini-btn" id="btnProfDeleteCancel">Cancel</button>
+            <button type="button" class="prof-danger-btn" id="btnProfDeleteConfirm">Confirm Delete</button>
+          </div>
+        `;
+        area.appendChild(box);
+
+        box.querySelector('#btnProfDeleteCancel').addEventListener('click', () => {
+          profInlineMode = null;
+          renderProfileInlineArea();
+          fitPopoverToView('profiles', 'view-profiles');
+        });
+
+        box.querySelector('#btnProfDeleteConfirm').addEventListener('click', async () => {
+          const btn = box.querySelector('#btnProfDeleteConfirm');
+          btn.disabled = true;
+          const res = await window.gxAPI.deleteProfile(target.id);
+          if (!res || !res.ok) {
+            btn.disabled = false;
+            const errEl = box.querySelector('#profInlineError');
+            if (errEl) {
+              errEl.textContent = res?.error || 'Could not delete profile.';
+              errEl.classList.remove('hidden');
+              fitPopoverToView('profiles', 'view-profiles');
+            }
+            return;
+          }
+          profInlineMode = null;
+          const fresh = await window.gxAPI.listProfiles();
+          renderProfilesPopover(fresh);
+          fitPopoverToView('profiles', 'view-profiles');
+        });
+      }
+    }
+
+    function renderProfilesPopover(data) {
+      currentProfilesData = data || null;
+      const listEl = document.getElementById('profList');
+      const countEl = document.getElementById('profCount');
+      const noticeEl = document.getElementById('profWindowNotice');
+      if (!listEl) return;
+      listEl.innerHTML = '';
+
+      const profiles = Array.isArray(data?.profiles) ? data.profiles : [];
+      const activeId = data?.activeId || 'default';
+      const windowProfileId = data?.windowProfileId || activeId;
+
+      if (countEl) countEl.textContent = profiles.length ? `${profiles.length}` : '';
+
+      if (noticeEl) {
+        if (windowProfileId !== activeId) {
+          const winProf = profiles.find((p) => p.id === windowProfileId);
+          const actProf = profiles.find((p) => p.id === activeId);
+          noticeEl.textContent = `This window uses ${winProf?.name || 'Default'}. Active profile for new windows: ${actProf?.name || 'Default'}.`;
+          noticeEl.classList.remove('hidden');
+        } else {
+          noticeEl.classList.add('hidden');
+        }
+      }
+
+      for (const prof of profiles) {
+        if (!prof || !prof.id) continue;
+        const isActive = prof.id === activeId;
+        const isThisWindow = prof.id === windowProfileId;
+        const isDefault = prof.id === 'default';
+
+        const row = document.createElement('div');
+        row.className = `prof-row${isActive ? ' is-active' : ''}`;
+        row.dataset.profileId = prof.id;
+
+        const mainBtn = document.createElement('button');
+        mainBtn.type = 'button';
+        mainBtn.className = 'prof-main-btn';
+        mainBtn.title = isActive && isThisWindow
+          ? `${prof.name} (Active profile)`
+          : `Switch to ${prof.name} (opens new window)`;
+
+        const metaParts = [];
+        if (isActive) metaParts.push('Active');
+        if (isThisWindow && !isActive) metaParts.push('This window');
+        if (isDefault) metaParts.push('Default');
+
+        mainBtn.innerHTML = `
+          <span class="prof-avatar" data-profile-color="${escapeHtml(prof.color || 'gx-violet')}">${escapeHtml(prof.avatar || prof.name?.charAt(0)?.toUpperCase() || 'P')}</span>
+          <span class="prof-info">
+            <span class="prof-name-line">
+              <span class="prof-name">${escapeHtml(prof.name)}</span>
+              ${
+                isActive
+                  ? `<span class="prof-check" title="Active profile"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>`
+                  : ''
+              }
+            </span>
+            <span class="prof-meta">${escapeHtml(metaParts.join(' • ') || 'Click to open window')}</span>
+          </span>
+        `;
+
+        mainBtn.addEventListener('click', async () => {
+          window.gxAPI.closePopover();
+          if (isActive && isThisWindow) return;
+          await window.gxAPI.switchProfile(prof.id);
+        });
+
+        const actions = document.createElement('div');
+        actions.className = 'prof-row-actions';
+
+        const renameBtn = document.createElement('button');
+        renameBtn.type = 'button';
+        renameBtn.className = 'prof-icon-btn';
+        renameBtn.title = `Rename ${prof.name}`;
+        renameBtn.setAttribute('aria-label', `Rename ${prof.name}`);
+        renameBtn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
+        renameBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          profInlineMode = { type: 'rename', profile: prof, color: prof.color || 'gx-violet' };
+          renderProfileInlineArea();
+          fitPopoverToView('profiles', 'view-profiles');
+        });
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'prof-icon-btn danger';
+        deleteBtn.disabled = isDefault;
+        deleteBtn.title = isDefault ? 'Default profile cannot be deleted' : `Delete ${prof.name}`;
+        deleteBtn.setAttribute('aria-label', deleteBtn.title);
+        deleteBtn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>`;
+        if (!isDefault) {
+          deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            profInlineMode = { type: 'delete', profile: prof };
+            renderProfileInlineArea();
+            fitPopoverToView('profiles', 'view-profiles');
+          });
+        }
+
+        actions.appendChild(renameBtn);
+        actions.appendChild(deleteBtn);
+        row.appendChild(mainBtn);
+        row.appendChild(actions);
+        listEl.appendChild(row);
+      }
+
+      renderProfileInlineArea();
+    }
+
+    document.getElementById('btnProfAdd').addEventListener('click', () => {
+      const profiles = Array.isArray(currentProfilesData?.profiles) ? currentProfilesData.profiles : [];
+      const used = new Set(profiles.map((p) => p.color));
+      const nextColor =
+        PROFILE_COLOR_CHOICES.find((c) => !used.has(c.id))?.id ||
+        PROFILE_COLOR_CHOICES[profiles.length % PROFILE_COLOR_CHOICES.length].id;
+      profInlineMode = { type: 'add', color: nextColor };
+      renderProfileInlineArea();
+      fitPopoverToView('profiles', 'view-profiles');
+    });
+
+    document.getElementById('btnProfManageSettings').addEventListener('click', () => {
+      window.gxAPI.triggerMenuAction('settings');
+    });
+
+    window.gxAPI.onProfilesUpdate?.((data) => {
+      if (
+        activePopoverKind === 'profiles' &&
+        !document.getElementById('view-profiles').classList.contains('hidden')
+      ) {
+        renderProfilesPopover(data);
+        fitPopoverToView('profiles', 'view-profiles');
+      }
+    });
+
+    function renderTabContextGroupAndWorkspaceSections(ctx) {
+      const grpSec = document.getElementById('tabCtxGroupSection');
+      const wsSec = document.getElementById('tabCtxWorkspaceSection');
+      if (grpSec) {
+        grpSec.innerHTML = '';
+        grpSec.classList.add('hidden');
+      }
+      if (wsSec) {
+        wsSec.innerHTML = '';
+        wsSec.classList.add('hidden');
+      }
+      if (!ctx || !ctx.id || ctx.pinned) return;
+
+      const tabId = ctx.id;
+      const groups = (Array.isArray(ctx.groups) ? ctx.groups : []).filter(
+        (g) => g && g.id && (typeof g.tabCount !== 'number' || g.tabCount > 0)
+      );
+      const currentGroupId = ctx.groupId || null;
+
+      if (grpSec) {
+        const sep = document.createElement('div');
+        sep.className = 'sep';
+        grpSec.appendChild(sep);
+
+        if (!currentGroupId) {
+          const newGrpBtn = document.createElement('button');
+          newGrpBtn.type = 'button';
+          newGrpBtn.className = 'menu-item';
+          newGrpBtn.setAttribute('role', 'menuitem');
+          newGrpBtn.innerHTML = `
+            <span class="menu-left">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M12 9v6M9 12h6"/></svg>
+              Add to New Group
+            </span>
+          `;
+          newGrpBtn.addEventListener('click', () => {
+            window.gxAPI.closePopover();
+            window.gxAPI.createTabGroup({ tabIds: [tabId] });
+          });
+          grpSec.appendChild(newGrpBtn);
+
+          if (groups.length > 0) {
+            const lbl = document.createElement('div');
+            lbl.className = 'ctx-section-label';
+            lbl.textContent = 'Add to Group';
+            grpSec.appendChild(lbl);
+
+            for (const g of groups) {
+              const btn = document.createElement('button');
+              btn.type = 'button';
+              btn.className = 'menu-item';
+              btn.setAttribute('role', 'menuitem');
+              btn.innerHTML = `
+                <span class="menu-left">
+                  <span class="ctx-color-dot" data-group-color="${escapeHtml(g.color || 'group-1')}"></span>
+                  ${escapeHtml(g.name || 'Group')}
+                </span>
+              `;
+              btn.addEventListener('click', () => {
+                window.gxAPI.closePopover();
+                window.gxAPI.addTabToGroup(tabId, g.id);
+              });
+              grpSec.appendChild(btn);
+            }
+          }
+        } else {
+          const removeBtn = document.createElement('button');
+          removeBtn.type = 'button';
+          removeBtn.className = 'menu-item';
+          removeBtn.setAttribute('role', 'menuitem');
+          removeBtn.innerHTML = `
+            <span class="menu-left">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+              Remove from Group
+            </span>
+          `;
+          removeBtn.addEventListener('click', () => {
+            window.gxAPI.closePopover();
+            window.gxAPI.removeTabFromGroup(tabId);
+          });
+          grpSec.appendChild(removeBtn);
+
+          const ungroupBtn = document.createElement('button');
+          ungroupBtn.type = 'button';
+          ungroupBtn.className = 'menu-item danger';
+          ungroupBtn.setAttribute('role', 'menuitem');
+          ungroupBtn.title = ctx.groupName ? `Ungroup "${ctx.groupName}" (keeps all tabs)` : 'Ungroup (keeps all tabs)';
+          ungroupBtn.innerHTML = `
+            <span class="menu-left">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M9 12h6"/></svg>
+              Ungroup
+            </span>
+          `;
+          ungroupBtn.addEventListener('click', () => {
+            window.gxAPI.closePopover();
+            window.gxAPI.ungroupTabGroup(currentGroupId);
+          });
+          grpSec.appendChild(ungroupBtn);
+
+          const otherGroups = groups.filter((g) => g && g.id !== currentGroupId);
+          if (otherGroups.length > 0) {
+            const lbl = document.createElement('div');
+            lbl.className = 'ctx-section-label';
+            lbl.textContent = 'Move to Group';
+            grpSec.appendChild(lbl);
+
+            for (const g of otherGroups) {
+              const btn = document.createElement('button');
+              btn.type = 'button';
+              btn.className = 'menu-item';
+              btn.setAttribute('role', 'menuitem');
+              btn.innerHTML = `
+                <span class="menu-left">
+                  <span class="ctx-color-dot" data-group-color="${escapeHtml(g.color || 'group-1')}"></span>
+                  ${escapeHtml(g.name || 'Group')}
+                </span>
+              `;
+              btn.addEventListener('click', () => {
+                window.gxAPI.closePopover();
+                window.gxAPI.addTabToGroup(tabId, g.id);
+              });
+              grpSec.appendChild(btn);
+            }
+          }
+        }
+
+        grpSec.classList.remove('hidden');
+      }
+
+      if (wsSec && !ctx.windowIncognito) {
+        const workspaces = Array.isArray(ctx.workspaces) ? ctx.workspaces : [];
+        const tabWsId = ctx.workspaceId || 'default';
+        const otherWorkspaces = workspaces.filter((w) => w && w.id !== tabWsId);
+        if (otherWorkspaces.length > 0) {
+          const sep = document.createElement('div');
+          sep.className = 'sep';
+          wsSec.appendChild(sep);
+
+          const lbl = document.createElement('div');
+          lbl.className = 'ctx-section-label';
+          lbl.textContent = 'Move to Workspace';
+          wsSec.appendChild(lbl);
+
+          for (const ws of otherWorkspaces) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'menu-item';
+            btn.setAttribute('role', 'menuitem');
+            btn.innerHTML = `
+              <span class="menu-left">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
+                ${escapeHtml(ws.name || 'Workspace')}
+              </span>
+            `;
+            btn.addEventListener('click', () => {
+              window.gxAPI.closePopover();
+              window.gxAPI.moveTabToWorkspace(tabId, ws.id);
+            });
+            wsSec.appendChild(btn);
+          }
+
+          wsSec.classList.remove('hidden');
+        }
+      }
+    }
+
+    function renderGroupContextMenu(payload) {
+      const group = payload?.group || null;
+      const tabCount = Number(payload?.tabCount || 0);
+      const countEl = document.getElementById('grpCtxCount');
+      const inputEl = document.getElementById('grpCtxNameInput');
+      const errEl = document.getElementById('grpCtxError');
+      const collapseLabel = document.getElementById('grpCtxCollapseLabel');
+
+      if (countEl) countEl.textContent = `${tabCount} ${tabCount === 1 ? 'tab' : 'tabs'}`;
+      if (inputEl) inputEl.value = group?.name || '';
+      if (errEl) {
+        errEl.textContent = '';
+        errEl.classList.add('hidden');
+      }
+      if (collapseLabel) {
+        collapseLabel.textContent = group?.collapsed ? 'Expand Group' : 'Collapse Group';
+      }
+      const activeColor = group?.color || 'group-1';
+      document.querySelectorAll('#grpCtxSwatches .ctx-swatch').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.groupColor === activeColor);
+      });
+    }
+
+    function renderWorkspaceContextMenu(mode, payload) {
+      const titleEl = document.getElementById('wsCtxTitle');
+      const countEl = document.getElementById('wsCtxCount');
+      const inputEl = document.getElementById('wsCtxNameInput');
+      const submitBtn = document.getElementById('wsCtxSubmitBtn');
+      const errEl = document.getElementById('wsCtxError');
+      const manageEl = document.getElementById('wsCtxManageActions');
+      const switchBtn = document.getElementById('btnWsCtxSwitch');
+      const deleteBtn = document.getElementById('btnWsCtxDelete');
+      const deleteHint = document.getElementById('wsCtxDeleteHint');
+
+      if (errEl) {
+        errEl.textContent = '';
+        errEl.classList.add('hidden');
+      }
+
+      if (mode === 'workspace-create') {
+        if (titleEl) titleEl.textContent = 'New Workspace';
+        if (countEl) countEl.textContent = '';
+        if (inputEl) {
+          inputEl.value = '';
+          inputEl.placeholder = 'Workspace name...';
+        }
+        if (submitBtn) submitBtn.textContent = 'Create';
+        if (manageEl) manageEl.classList.add('hidden');
+        return;
+      }
+
+      const ws = payload?.workspace || {};
+      const isDefault = Boolean(payload?.isDefault || ws.id === 'default');
+      const isActive = Boolean(payload?.isActive);
+      const tabCount = Number(payload?.tabCount || 0);
+
+      if (titleEl) titleEl.textContent = isDefault ? 'Default Workspace' : 'Workspace';
+      if (countEl) countEl.textContent = `${tabCount} ${tabCount === 1 ? 'tab' : 'tabs'}`;
+      if (inputEl) {
+        inputEl.value = ws.name || '';
+        inputEl.placeholder = 'Workspace name';
+      }
+      if (submitBtn) submitBtn.textContent = 'Save';
+      if (manageEl) manageEl.classList.remove('hidden');
+      if (switchBtn) switchBtn.classList.toggle('hidden', isActive);
+      if (deleteBtn) {
+        deleteBtn.disabled = isDefault;
+        deleteBtn.title = isDefault
+          ? 'Built-in Default workspace cannot be deleted'
+          : 'Delete workspace and move its tabs to Default';
+      }
+      if (deleteHint) {
+        deleteHint.textContent = isDefault ? 'Built-in' : 'Tabs to Default';
+      }
+    }
+
+    document.getElementById('grpCtxRenameForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const groupId = currentGroupCtx?.group?.id;
+      const inputEl = document.getElementById('grpCtxNameInput');
+      const errEl = document.getElementById('grpCtxError');
+      if (!groupId || !inputEl) return;
+      const name = inputEl.value.trim();
+      if (!name) {
+        if (errEl) {
+          errEl.textContent = 'Group name cannot be empty.';
+          errEl.classList.remove('hidden');
+          fitPopoverToView('tab-context', 'view-group-context');
+        }
+        return;
+      }
+      await window.gxAPI.updateTabGroup(groupId, { name });
+      window.gxAPI.closePopover();
+    });
+
+    document.querySelectorAll('#grpCtxSwatches .ctx-swatch').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const groupId = currentGroupCtx?.group?.id;
+        const color = btn.dataset.groupColor;
+        if (!groupId || !color) return;
+        document.querySelectorAll('#grpCtxSwatches .ctx-swatch').forEach((b) => {
+          b.classList.toggle('active', b.dataset.groupColor === color);
+        });
+        if (currentGroupCtx?.group) currentGroupCtx.group.color = color;
+        await window.gxAPI.updateTabGroup(groupId, { color });
+      });
+    });
+
+    document.getElementById('btnGrpCtxToggleCollapse').addEventListener('click', () => {
+      const groupId = currentGroupCtx?.group?.id;
+      if (!groupId) return;
+      window.gxAPI.closePopover();
+      window.gxAPI.toggleTabGroupCollapse(groupId);
+    });
+
+    document.getElementById('btnGrpCtxNewTab').addEventListener('click', () => {
+      const groupId = currentGroupCtx?.group?.id;
+      if (!groupId) return;
+      window.gxAPI.closePopover();
+      window.gxAPI.createTabInGroup(groupId);
+    });
+
+    document.getElementById('btnGrpCtxUngroup').addEventListener('click', () => {
+      const groupId = currentGroupCtx?.group?.id;
+      if (!groupId) return;
+      window.gxAPI.closePopover();
+      window.gxAPI.ungroupTabGroup(groupId);
+    });
+
+    document.getElementById('wsCtxForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const inputEl = document.getElementById('wsCtxNameInput');
+      const errEl = document.getElementById('wsCtxError');
+      if (!inputEl) return;
+      const name = inputEl.value.trim();
+      if (!name) {
+        if (errEl) {
+          errEl.textContent = 'Workspace name cannot be empty.';
+          errEl.classList.remove('hidden');
+          fitPopoverToView('tab-context', 'view-workspace-context');
+        }
+        return;
+      }
+      if (currentWorkspaceMode === 'workspace-create') {
+        const res = await window.gxAPI.createWorkspace({ name, switchTo: true });
+        if (res && res.ok === false && errEl) {
+          errEl.textContent = res.error || 'Could not create workspace.';
+          errEl.classList.remove('hidden');
+          fitPopoverToView('tab-context', 'view-workspace-context');
+          return;
+        }
+        window.gxAPI.closePopover();
+      } else {
+        const wsId = currentWorkspaceCtx?.workspace?.id;
+        if (!wsId) return;
+        const res = await window.gxAPI.renameWorkspace(wsId, name);
+        if (res && res.ok === false && errEl) {
+          errEl.textContent = res.error || 'Could not rename workspace.';
+          errEl.classList.remove('hidden');
+          fitPopoverToView('tab-context', 'view-workspace-context');
+          return;
+        }
+        window.gxAPI.closePopover();
+      }
+    });
+
+    document.getElementById('btnWsCtxSwitch').addEventListener('click', () => {
+      const wsId = currentWorkspaceCtx?.workspace?.id;
+      if (!wsId) return;
+      window.gxAPI.closePopover();
+      window.gxAPI.switchWorkspace(wsId);
+    });
+
+    document.getElementById('btnWsCtxDelete').addEventListener('click', () => {
+      const btn = document.getElementById('btnWsCtxDelete');
+      const wsId = currentWorkspaceCtx?.workspace?.id;
+      if (!wsId || btn.disabled) return;
+      window.gxAPI.closePopover();
+      window.gxAPI.deleteWorkspace(wsId);
     });
 
     document.querySelectorAll('[data-tab-act]').forEach((btn) => {
@@ -992,8 +2983,16 @@
           window.gxAPI.reload(tabId);
         } else if (act === 'pin') {
           window.gxAPI.pinTab(tabId);
+        } else if (act === 'split') {
+          if (currentTabCtx.isSplitPane) {
+            window.gxAPI.exitSplit();
+          } else {
+            window.gxAPI.startSplit({ tabId });
+          }
         } else if (act === 'hibernate') {
           window.gxAPI.sleepTab(tabId);
+        } else if (act === 'pop-out-video') {
+          window.gxAPI.popOutVideo(tabId);
         } else if (act === 'close') {
           window.gxAPI.closeTab(tabId);
         } else if (act === 'close-others') {
@@ -1003,17 +3002,43 @@
     });
 
     document.addEventListener('keydown', (e) => {
+      if (
+        document.activeElement &&
+        (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')
+      ) {
+        return;
+      }
       const tabCtxView = document.getElementById('view-tab-context');
+      const grpCtxView = document.getElementById('view-group-context');
+      const wsCtxView = document.getElementById('view-workspace-context');
       const bmFolderView = document.getElementById('view-bookmark-folder');
+      const mainMenuView = document.getElementById('view-menu');
+      const shotView = document.getElementById('view-screenshot');
+      const extDdView = document.getElementById('view-extensions-dropdown');
+      const profView = document.getElementById('view-profiles');
       const activeMenu =
         tabCtxView && !tabCtxView.classList.contains('hidden')
           ? tabCtxView
+          : grpCtxView && !grpCtxView.classList.contains('hidden')
+          ? grpCtxView
+          : wsCtxView && !wsCtxView.classList.contains('hidden')
+          ? wsCtxView
           : bmFolderView && !bmFolderView.classList.contains('hidden')
           ? bmFolderView
+          : mainMenuView && !mainMenuView.classList.contains('hidden')
+          ? mainMenuView
+          : shotView && !shotView.classList.contains('hidden')
+          ? shotView
+          : extDdView && !extDdView.classList.contains('hidden')
+          ? extDdView
+          : profView && !profView.classList.contains('hidden')
+          ? profView
           : null;
       if (!activeMenu) return;
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-      const items = Array.from(activeMenu.querySelectorAll('.menu-item:not(:disabled)'));
+      const items = Array.from(
+        activeMenu.querySelectorAll('.menu-item:not(:disabled), .ext-dd-main:not(:disabled), .prof-main-btn:not(:disabled)')
+      );
       if (!items.length) return;
       e.preventDefault();
       const idx = items.indexOf(document.activeElement);
@@ -1053,7 +3078,7 @@
     });
 
     window.gxAPI.onStateUpdate?.((state) => {
-      if (state?.activeTab && typeof state.activeTab.zoomPercent === 'number') {
+      if (activePopoverKind === 'menu' && state?.activeTab && typeof state.activeTab.zoomPercent === 'number') {
         const zoomEl = document.getElementById('zoomPct');
         if (zoomEl) zoomEl.textContent = `${state.activeTab.zoomPercent}%`;
       }
@@ -1067,21 +3092,24 @@
       });
     });
 
-    async function refreshSiteCookies(origin) {
+    async function refreshSiteCookies(origin, expectedSeq = popoverOpenSeq) {
       const countEl = document.getElementById('popCookieCountText');
       const clearBtn = document.getElementById('btnClearSiteCookies');
       if (!countEl || !clearBtn) return;
       if (!origin || !/^https?:\/\//i.test(origin) || !window.gxAPI.getCookies) {
+        if (expectedSeq !== popoverOpenSeq || activePopoverKind !== 'permissions') return;
         countEl.textContent = '0 cookies';
         clearBtn.disabled = true;
         return;
       }
       try {
         const list = await window.gxAPI.getCookies({ origin });
+        if (expectedSeq !== popoverOpenSeq || activePopoverKind !== 'permissions') return;
         const count = Array.isArray(list) ? list.length : 0;
         countEl.textContent = `${count} ${count === 1 ? 'cookie' : 'cookies'}`;
         clearBtn.disabled = count === 0;
       } catch (_) {
+        if (expectedSeq !== popoverOpenSeq || activePopoverKind !== 'permissions') return;
         countEl.textContent = '0 cookies';
         clearBtn.disabled = true;
       }
@@ -1089,8 +3117,10 @@
 
     document.getElementById('btnClearSiteCookies').addEventListener('click', async () => {
       if (!currentOrigin || !window.gxAPI.clearSiteCookies) return;
+      const seq = popoverOpenSeq;
       await window.gxAPI.clearSiteCookies(currentOrigin);
-      await refreshSiteCookies(currentOrigin);
+      if (seq !== popoverOpenSeq || activePopoverKind !== 'permissions') return;
+      await refreshSiteCookies(currentOrigin, seq);
     });
 
     document.getElementById('btnShotArea').addEventListener('click', () => window.gxAPI.startAreaScreenshot());
@@ -1127,22 +3157,34 @@
     }
 
     window.gxAPI.onDownloadsUpdate((list) => {
-      if (!document.getElementById('view-downloads').classList.contains('hidden')) {
+      if (
+        activePopoverKind === 'downloads' &&
+        !document.getElementById('view-downloads').classList.contains('hidden')
+      ) {
         renderMiniDownloads(list);
+        fitPopoverToView('downloads', 'view-downloads');
       }
     });
 
     document.getElementById('chkShieldSiteEnabled').addEventListener('change', async (e) => {
       if (!currentShieldOrigin) return;
+      const seq = popoverOpenSeq;
       const siteInfo = await window.gxAPI.setAdblockSite(currentShieldOrigin, e.target.checked);
+      if (seq !== popoverOpenSeq || activePopoverKind !== 'shield') return;
       const stats = await window.gxAPI.getAdblockStats();
+      if (seq !== popoverOpenSeq || activePopoverKind !== 'shield') return;
       renderShieldPopover(siteInfo, stats);
+      fitPopoverToView('shield', 'view-shield');
     });
 
     document.getElementById('chkShieldGlobalEnabled').addEventListener('change', async (e) => {
+      const seq = popoverOpenSeq;
       const stats = await window.gxAPI.toggleAdblock(e.target.checked);
+      if (seq !== popoverOpenSeq || activePopoverKind !== 'shield') return;
       const siteInfo = await window.gxAPI.getAdblockSite(currentShieldOrigin);
+      if (seq !== popoverOpenSeq || activePopoverKind !== 'shield') return;
       renderShieldPopover(siteInfo, stats);
+      fitPopoverToView('shield', 'view-shield');
     });
 
     document.getElementById('btnShieldReload').addEventListener('click', () => {
@@ -1156,14 +3198,23 @@
     });
 
     window.gxAPI.onAdblockUpdate((stats) => {
-      if (!document.getElementById('view-shield').classList.contains('hidden')) {
+      if (
+        activePopoverKind === 'shield' &&
+        !document.getElementById('view-shield').classList.contains('hidden')
+      ) {
         renderShieldPopover(lastShieldSiteInfo, stats);
+        fitPopoverToView('shield', 'view-shield');
       }
     });
 
     window.gxAPI.onBookmarksUpdate?.((list) => {
       const bmView = document.getElementById('view-bookmark-folder');
-      if (bmView && !bmView.classList.contains('hidden') && currentBmFolderName) {
+      if (
+        activePopoverKind === 'bookmark-folder' &&
+        bmView &&
+        !bmView.classList.contains('hidden') &&
+        currentBmFolderName
+      ) {
         const items = (list || []).filter(
           (b) => b && typeof b.folder === 'string' && b.folder.trim() === currentBmFolderName
         );
@@ -1171,6 +3222,7 @@
           window.gxAPI.closePopover();
         } else {
           renderBookmarkFolderItems(currentBmFolderName, items);
+          fitPopoverToView('bookmark-folder', 'view-bookmark-folder');
         }
       }
     });

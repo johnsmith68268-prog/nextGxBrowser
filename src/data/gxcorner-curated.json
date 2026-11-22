@@ -1,0 +1,281 @@
+{
+  "version": 1,
+  "description": "Curated GX Corner gaming storefronts, evergreen news hubs, release calendar picks, and deals/free-games fallback data. Editable JSON.",
+  "storefronts": [
+    {
+      "id": "sf-steam",
+      "name": "Steam",
+      "tagline": "Specials & Weekend Deals",
+      "badge": "PC STORE",
+      "url": "https://store.steampowered.com/specials/"
+    },
+    {
+      "id": "sf-epic",
+      "name": "Epic Games",
+      "tagline": "Weekly Free Games",
+      "badge": "FREE WEEKLY",
+      "url": "https://store.epicgames.com/en-US/free-games"
+    },
+    {
+      "id": "sf-gog",
+      "name": "GOG",
+      "tagline": "DRM-Free Deals & Classics",
+      "badge": "DRM-FREE",
+      "url": "https://www.gog.com/en/games?discounted=true"
+    },
+    {
+      "id": "sf-humble",
+      "name": "Humble Bundle",
+      "tagline": "Game Bundles & Choice",
+      "badge": "BUNDLES",
+      "url": "https://www.humblebundle.com/games"
+    },
+    {
+      "id": "sf-itch",
+      "name": "itch.io",
+      "tagline": "Indie Gems & Free Games",
+      "badge": "INDIE",
+      "url": "https://itch.io/games/on-sale"
+    }
+  ],
+  "news": [
+    {
+      "id": "curated-news-pcgamer",
+      "title": "PC Gamer — Latest PC Gaming News, Reviews & Hardware",
+      "summary": "Curated hub link to PC Gamer's front page covering PC releases, patches, hardware benchmarks, and esports.",
+      "url": "https://www.pcgamer.com/news/",
+      "source": "PC Gamer",
+      "dateLabel": "Curated Hub",
+      "publishedAt": 0,
+      "thumbnail": "",
+      "curated": true
+    },
+    {
+      "id": "curated-news-ign",
+      "title": "IGN — Video Game News, Trailers & Reviews",
+      "summary": "Curated hub link to IGN's gaming news desk featuring major studio announcements, trailers, and reviews.",
+      "url": "https://www.ign.com/news",
+      "source": "IGN",
+      "dateLabel": "Curated Hub",
+      "publishedAt": 0,
+      "thumbnail": "",
+      "curated": true
+    },
+    {
+      "id": "curated-news-eurogamer",
+      "title": "Eurogamer — Gaming News, Features & Digital Foundry",
+      "summary": "Curated hub link to Eurogamer's latest industry coverage, critical reviews, and technical analyses.",
+      "url": "https://www.eurogamer.net/news",
+      "source": "Eurogamer",
+      "dateLabel": "Curated Hub",
+      "publishedAt": 0,
+      "thumbnail": "",
+      "curated": true
+    },
+    {
+      "id": "curated-news-gamesradar",
+      "title": "GamesRadar+ — Gaming News, Guides & Previews",
+      "summary": "Curated hub link to GamesRadar+ for cross-platform game news, walkthroughs, and hardware picks.",
+      "url": "https://www.gamesradar.com/games/",
+      "source": "GamesRadar+",
+      "dateLabel": "Curated Hub",
+      "publishedAt": 0,
+      "thumbnail": "",
+      "curated": true
+    },
+    {
+      "id": "curated-news-rps",
+      "title": "Rock Paper Shotgun — PC Gaming Journalism & Indie Picks",
+      "summary": "Curated hub link to Rock Paper Shotgun covering PC strategy, RPGs, indie standouts, and PC-first news.",
+      "url": "https://www.rockpapershotgun.com/news",
+      "source": "Rock Paper Shotgun",
+      "dateLabel": "Curated Hub",
+      "publishedAt": 0,
+      "thumbnail": "",
+      "curated": true
+    },
+    {
+      "id": "curated-news-steam",
+      "title": "Steam News Hub — Patch Notes & Developer Updates",
+      "summary": "Curated hub link to official developer announcements, patch notes, and seasonal events across Steam.",
+      "url": "https://store.steampowered.com/news/",
+      "source": "Steam",
+      "dateLabel": "Curated Hub",
+      "publishedAt": 0,
+      "thumbnail": "",
+      "curated": true
+    }
+  ],
+  "releases": [
+    {
+      "id": "curated-rel-gta6",
+      "title": "Grand Theft Auto VI",
+      "summary": "Rockstar Games' return to Leonida and Vice City — official release hub and trailers.",
+      "url": "https://www.rockstargames.com/VI",
+      "source": "Rockstar Games",
+      "platforms": ["PS5", "Xbox"],
+      "dateLabel": "Upcoming",
+      "publishedAt": 0,
+      "thumbnail": "",
+      "curated": true
+    },
+    {
+      "id": "curated-rel-silksong",
+      "title": "Hollow Knight: Silksong",
+      "summary": "Team Cherry's sequel starring Hornet in a haunted kingdom of silk and song.",
+      "url": "https://store.steampowered.com/app/1030300/Hollow_Knight_Silksong/",
+      "source": "Steam",
+      "platforms": ["PC", "Console"],
+      "dateLabel": "Featured Release",
+      "publishedAt": 0,
+      "thumbnail": "",
+      "curated": true
+    },
+    {
+      "id": "curated-rel-hades2",
+      "title": "Hades II",
+      "summary": "Supergiant Games' roguelike dungeon crawler following Melinoe, Princess of the Underworld.",
+      "url": "https://store.steampowered.com/app/1145350/Hades_II/",
+      "source": "Steam",
+      "platforms": ["PC", "Switch"],
+      "dateLabel": "Featured Release",
+      "publishedAt": 0,
+      "thumbnail": "",
+      "curated": true
+    },
+    {
+      "id": "curated-rel-doom-dark-ages",
+      "title": "DOOM: The Dark Ages",
+      "summary": "id Software's dark-fantasy prequel chronicling the origin of the DOOM Slayer's rage.",
+      "url": "https://store.steampowered.com/app/3017860/DOOM_The_Dark_Ages/",
+      "source": "Steam",
+      "platforms": ["PC", "PS5", "Xbox"],
+      "dateLabel": "Notable Release",
+      "publishedAt": 0,
+      "thumbnail": "",
+      "curated": true
+    },
+    {
+      "id": "curated-rel-mh-wilds",
+      "title": "Monster Hunter Wilds",
+      "summary": "Capcom's seamless open-ecosystem action RPG across the shifting Forbidden Lands.",
+      "url": "https://store.steampowered.com/app/2246340/Monster_Hunter_Wilds/",
+      "source": "Steam",
+      "platforms": ["PC", "PS5", "Xbox"],
+      "dateLabel": "Notable Release",
+      "publishedAt": 0,
+      "thumbnail": "",
+      "curated": true
+    },
+    {
+      "id": "curated-rel-nightreign",
+      "title": "ELDEN RING NIGHTREIGN",
+      "summary": "FromSoftware's standalone cooperative survival-action adventure set in the Elden Ring universe.",
+      "url": "https://store.steampowered.com/app/2622380/ELDEN_RING_NIGHTREIGN/",
+      "source": "Steam",
+      "platforms": ["PC", "PS5", "Xbox"],
+      "dateLabel": "Notable Release",
+      "publishedAt": 0,
+      "thumbnail": "",
+      "curated": true
+    },
+    {
+      "id": "curated-rel-steam-upcoming",
+      "title": "Steam Popular Upcoming Releases",
+      "summary": "Live calendar of the most-wishlisted upcoming PC titles launching soon on Steam.",
+      "url": "https://store.steampowered.com/explore/upcoming/",
+      "source": "Steam Calendar",
+      "platforms": ["PC"],
+      "dateLabel": "Release Calendar",
+      "publishedAt": 0,
+      "thumbnail": "",
+      "curated": true
+    },
+    {
+      "id": "curated-rel-gog-upcoming",
+      "title": "GOG Upcoming DRM-Free Releases",
+      "summary": "Curated lineup of upcoming DRM-free PC releases and classic restorations on GOG.",
+      "url": "https://www.gog.com/en/games?releaseStatuses=upcoming",
+      "source": "GOG Calendar",
+      "platforms": ["PC"],
+      "dateLabel": "Release Calendar",
+      "publishedAt": 0,
+      "thumbnail": "",
+      "curated": true
+    }
+  ],
+  "deals": [
+    {
+      "id": "curated-deal-epic-free",
+      "title": "Epic Games Store — Weekly Free PC Games",
+      "summary": "Claim new free-to-keep PC games every Thursday directly from the Epic Games Store.",
+      "url": "https://store.epicgames.com/en-US/free-games",
+      "source": "Epic Games Store",
+      "tag": "FREE",
+      "dateLabel": "Updated Weekly",
+      "publishedAt": 0,
+      "thumbnail": "",
+      "curated": true
+    },
+    {
+      "id": "curated-deal-steam-specials",
+      "title": "Steam Specials — Daily, Midweek & Weekend Discounts",
+      "summary": "Browse current Steam price drops, franchise promotions, and top-selling discounted PC games.",
+      "url": "https://store.steampowered.com/specials/",
+      "source": "Steam",
+      "tag": "DEALS",
+      "dateLabel": "Daily Rotation",
+      "publishedAt": 0,
+      "thumbnail": "",
+      "curated": true
+    },
+    {
+      "id": "curated-deal-gog-free",
+      "title": "GOG — Free DRM-Free Games & Current Sales",
+      "summary": "Explore GOG's permanently free classics catalog and seasonal DRM-free discounts.",
+      "url": "https://www.gog.com/en/games?priceRange=0,0&discounted=true",
+      "source": "GOG",
+      "tag": "FREE",
+      "dateLabel": "DRM-Free",
+      "publishedAt": 0,
+      "thumbnail": "",
+      "curated": true
+    },
+    {
+      "id": "curated-deal-humble",
+      "title": "Humble Bundle — Pay-What-You-Want Game Bundles",
+      "summary": "Curated multi-game Steam/DRM-free bundles supporting charities alongside Humble Choice.",
+      "url": "https://www.humblebundle.com/games",
+      "source": "Humble Bundle",
+      "tag": "BUNDLES",
+      "dateLabel": "Curated Pick",
+      "publishedAt": 0,
+      "thumbnail": "",
+      "curated": true
+    },
+    {
+      "id": "curated-deal-itch-free",
+      "title": "itch.io — Top Free & On-Sale Indie Games",
+      "summary": "Discover free indie releases, game jam winners, and creator-run sales on itch.io.",
+      "url": "https://itch.io/games/free",
+      "source": "itch.io",
+      "tag": "FREE",
+      "dateLabel": "Indie Hub",
+      "publishedAt": 0,
+      "thumbnail": "",
+      "curated": true
+    },
+    {
+      "id": "curated-deal-steam-f2p",
+      "title": "Steam Free-to-Play Top Charts",
+      "summary": "Jump into the highest-rated free-to-play shooters, MOBAs, RPGs, and co-op hits on Steam.",
+      "url": "https://store.steampowered.com/genre/Free%20to%20Play/",
+      "source": "Steam",
+      "tag": "FREE TO PLAY",
+      "dateLabel": "Evergreen",
+      "publishedAt": 0,
+      "thumbnail": "",
+      "curated": true
+    }
+  ]
+}

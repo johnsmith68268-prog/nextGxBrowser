@@ -1,0 +1,1395 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="gx-violet">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GX Corner — nextGx Browser</title>
+  <link rel="stylesheet" href="theme.css" />
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      min-height: 100vh;
+      overflow-x: hidden;
+      background-color: var(--bg-deep);
+      background-image:
+        linear-gradient(var(--nx-grid-line) 1px, transparent 1px),
+        linear-gradient(90deg, var(--nx-grid-line) 1px, transparent 1px),
+        radial-gradient(ellipse 80% 38% at 50% 0%, var(--nx-accent-soft), transparent 65%);
+      background-size: 44px 44px, 44px 44px, 100% 100%;
+      background-attachment: fixed;
+      color: var(--text-main);
+      font-family: var(--nx-font-sans);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    /* Sticky GX Corner Topbar */
+    .corner-topbar {
+      position: sticky;
+      top: 0;
+      z-index: 25;
+      background: color-mix(in srgb, var(--bg-chrome) 92%, transparent);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--nx-accent-soft);
+      box-shadow: inset 0 -1px 0 var(--border-glass), var(--nx-shadow-md);
+      padding: 12px 28px;
+    }
+
+    .corner-topbar-inner {
+      max-width: 1240px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .corner-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .corner-brand-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: var(--nx-radius-md);
+      clip-path: var(--nx-chamfer-sm);
+      background: var(--nx-accent-soft);
+      border: 1.5px solid var(--nx-accent);
+      box-shadow: var(--nx-glow-sm);
+      color: var(--nx-accent-bright);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .corner-brand-copy {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .corner-brand-title {
+      font-size: 17px;
+      color: var(--text-main);
+      line-height: 1.1;
+    }
+
+    .corner-brand-title strong {
+      color: var(--nx-accent-bright);
+    }
+
+    .corner-brand-sub {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .corner-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .corner-filter-tabs {
+      display: inline-flex;
+      background: var(--bg-deep);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--nx-radius-md);
+      padding: 3px;
+      gap: 3px;
+    }
+
+    .filter-tab-btn {
+      padding: 5px 11px;
+      border-radius: var(--nx-radius-xs);
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text-muted);
+      font-family: var(--nx-font-display);
+      font-size: 11.5px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: background var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease), border-color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+    }
+
+    .filter-tab-btn:hover {
+      color: var(--text-main);
+    }
+
+    .filter-tab-btn.active {
+      background: var(--nx-accent-soft);
+      border-color: var(--nx-accent);
+      color: var(--nx-accent-bright);
+      box-shadow: var(--nx-glow-sm);
+    }
+
+    .corner-search {
+      height: 34px;
+      width: 220px;
+      background: var(--bg-deep);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--nx-radius-sm);
+      clip-path: var(--nx-chamfer-sm);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 11px;
+      transition: border-color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+    }
+
+    .corner-search:focus-within {
+      border-color: var(--nx-accent);
+      box-shadow: var(--nx-glow-sm);
+    }
+
+    .corner-search svg {
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    .corner-search input {
+      flex: 1;
+      min-width: 0;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text-main);
+      font-family: inherit;
+      font-size: 12.5px;
+    }
+
+    .corner-search input::placeholder {
+      color: var(--text-muted);
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 32px;
+      padding: 0 11px;
+      border-radius: var(--nx-radius-sm);
+      border: 1px solid var(--border-glass);
+      background: var(--bg-surface);
+      color: var(--text-muted);
+      font-size: 11.5px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .status-pill .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: var(--nx-radius-pill);
+      background: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    .status-pill.is-live {
+      border-color: color-mix(in srgb, var(--success) 50%, var(--border-glass));
+      color: var(--text-main);
+    }
+
+    .status-pill.is-live .status-dot {
+      background: var(--success);
+      box-shadow: 0 0 8px var(--success);
+    }
+
+    .status-pill.is-offline {
+      border-color: color-mix(in srgb, var(--warning) 55%, var(--border-glass));
+      color: var(--warning);
+    }
+
+    .status-pill.is-offline .status-dot {
+      background: var(--warning);
+    }
+
+    .status-pill.is-refreshing {
+      border-color: var(--nx-accent);
+      color: var(--nx-accent-bright);
+    }
+
+    .status-pill.is-refreshing .status-dot {
+      background: var(--nx-accent-bright);
+      box-shadow: var(--nx-glow-sm);
+    }
+
+    .btn {
+      height: 34px;
+      padding: 0 13px;
+      border-radius: var(--nx-radius-sm);
+      clip-path: var(--nx-chamfer-sm);
+      border: 1px solid var(--border-glass);
+      background: var(--bg-elevated);
+      box-shadow: var(--specular-top);
+      color: var(--text-main);
+      font-family: var(--nx-font-sans);
+      font-size: 12px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background var(--nx-motion-fast) var(--nx-motion-ease), border-color var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+    }
+
+    .btn:hover:not(:disabled) {
+      border-color: var(--nx-accent-bright);
+      color: var(--nx-accent-bright);
+      box-shadow: var(--nx-glow-sm);
+    }
+
+    .btn.primary {
+      background: var(--nx-accent);
+      border-color: var(--nx-accent-bright);
+      color: var(--nx-on-accent);
+      box-shadow: var(--nx-glow-sm);
+    }
+
+    .btn.primary:hover:not(:disabled) {
+      background: var(--nx-accent-bright);
+      color: var(--nx-on-accent);
+      box-shadow: var(--nx-glow-md);
+    }
+
+    .btn:disabled {
+      opacity: 0.55;
+      cursor: wait;
+    }
+
+    @keyframes cornerSpin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    .btn.is-spinning svg {
+      animation: cornerSpin 0.85s linear infinite;
+    }
+
+    /* Main Content Container */
+    .corner-main {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 24px 28px 48px;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+    }
+
+    /* Honest Offline / Fallback Notice (error.html pattern) */
+    .corner-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      padding: 14px 18px;
+      background: var(--bg-surface);
+      border: 1px solid color-mix(in srgb, var(--warning) 55%, var(--border-glass));
+      border-left: 3px solid var(--warning);
+      border-radius: var(--nx-radius-md);
+      box-shadow: var(--specular-top), var(--nx-shadow-md);
+    }
+
+    .corner-banner-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+      flex: 1;
+    }
+
+    .corner-banner-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: var(--nx-radius-sm);
+      clip-path: var(--nx-chamfer-sm);
+      background: color-mix(in srgb, var(--warning) 16%, var(--bg-chrome));
+      border: 1px solid color-mix(in srgb, var(--warning) 60%, transparent);
+      color: var(--warning);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .corner-banner-copy {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 0;
+    }
+
+    .corner-banner-title {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .corner-banner-sub {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    /* Section Block */
+    .corner-section {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .section-hdr {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border-glass);
+    }
+
+    .section-hdr-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .section-icon {
+      width: 30px;
+      height: 30px;
+      border-radius: var(--nx-radius-xs);
+      clip-path: var(--nx-chamfer-sm);
+      background: var(--nx-accent-soft);
+      border: 1px solid var(--nx-accent);
+      color: var(--nx-accent-bright);
+      box-shadow: var(--nx-glow-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .section-title {
+      font-size: 16px;
+      color: var(--text-main);
+    }
+
+    .section-count {
+      font-family: var(--nx-font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--nx-accent-bright);
+      background: var(--nx-accent-soft);
+      border: 1px solid color-mix(in srgb, var(--nx-accent) 55%, transparent);
+      border-radius: var(--nx-radius-pill);
+      padding: 2px 9px;
+    }
+
+    .section-meta {
+      font-size: 11.5px;
+      color: var(--text-muted);
+    }
+
+    /* Storefronts Quick Strip */
+    .storefronts-strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(205px, 1fr));
+      gap: 12px;
+    }
+
+    .storefront-card {
+      text-decoration: none;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-glass);
+      border-left: 3px solid var(--nx-accent);
+      border-radius: var(--nx-radius-md);
+      clip-path: var(--nx-chamfer-tile);
+      box-shadow: var(--specular-top), var(--nx-shadow-sm);
+      padding: 13px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--text-main);
+      cursor: pointer;
+      transition: transform var(--nx-motion-fast) var(--nx-motion-ease), border-color var(--nx-motion-fast) var(--nx-motion-ease), background var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+    }
+
+    .storefront-card:hover {
+      transform: translateY(-2px);
+      background: var(--bg-elevated);
+      border-color: var(--nx-accent-bright);
+      box-shadow: var(--specular-top), var(--nx-glow-md);
+    }
+
+    .storefront-info {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 0;
+    }
+
+    .storefront-name {
+      font-family: var(--nx-font-display);
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text-main);
+    }
+
+    .storefront-tagline {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .storefront-badge {
+      font-family: var(--nx-font-mono);
+      font-size: 9.5px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      padding: 3px 7px;
+      border-radius: var(--nx-radius-xs);
+      background: var(--nx-accent-soft);
+      border: 1px solid color-mix(in srgb, var(--nx-accent) 60%, transparent);
+      color: var(--nx-accent-bright);
+      flex-shrink: 0;
+    }
+
+    /* Card Grids */
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }
+
+    .cards-grid.compact {
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    }
+
+    .corner-card {
+      text-decoration: none;
+      color: inherit;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-glass);
+      border-top: 2px solid color-mix(in srgb, var(--nx-accent) 70%, var(--border-glass));
+      border-radius: var(--nx-radius-md);
+      clip-path: var(--nx-chamfer-tile);
+      box-shadow: var(--specular-top), var(--nx-shadow-md);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      cursor: pointer;
+      transition: transform var(--nx-motion-fast) var(--nx-motion-ease), border-color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease), background var(--nx-motion-fast) var(--nx-motion-ease);
+    }
+
+    .corner-card:hover {
+      transform: translateY(-2px);
+      background: var(--bg-elevated);
+      border-color: var(--nx-accent);
+      border-top-color: var(--nx-accent-bright);
+      box-shadow: var(--specular-top), var(--nx-glow-md);
+    }
+
+    .corner-card:focus-visible {
+      outline: 2px solid var(--nx-accent-bright);
+      outline-offset: 2px;
+    }
+
+    .card-thumb {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background:
+        radial-gradient(circle at 22% 24%, var(--nx-accent-soft), transparent 62%),
+        linear-gradient(135deg, var(--bg-chrome), var(--bg-deep));
+      position: relative;
+      overflow: hidden;
+      border-bottom: 1px solid var(--border-glass);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .card-thumb.short {
+      aspect-ratio: 16 / 7;
+    }
+
+    .card-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      transition: transform var(--nx-motion-base) var(--nx-motion-ease);
+    }
+
+    .corner-card:hover .card-thumb img {
+      transform: scale(1.03);
+    }
+
+    .thumb-fallback {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      padding: 12px;
+      text-align: center;
+      color: var(--nx-accent-bright);
+    }
+
+    .thumb-fallback-ring {
+      width: 44px;
+      height: 44px;
+      border-radius: var(--nx-radius-sm);
+      clip-path: var(--nx-chamfer-sm);
+      background: var(--nx-accent-soft);
+      border: 1px solid var(--nx-accent);
+      box-shadow: var(--nx-glow-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .thumb-fallback-label {
+      font-family: var(--nx-font-display);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .card-overlay-badges {
+      position: absolute;
+      top: 9px;
+      left: 9px;
+      right: 9px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      pointer-events: none;
+    }
+
+    .card-badge {
+      font-family: var(--nx-font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      padding: 3px 7px;
+      border-radius: var(--nx-radius-xs);
+      background: color-mix(in srgb, var(--bg-deep) 88%, transparent);
+      border: 1px solid var(--nx-accent);
+      color: var(--nx-accent-bright);
+      backdrop-filter: blur(6px);
+    }
+
+    .card-badge.is-free {
+      border-color: var(--success);
+      color: var(--success);
+    }
+
+    .card-badge.is-deal {
+      border-color: var(--warning);
+      color: var(--warning);
+    }
+
+    .card-badge.is-curated {
+      border-color: var(--border-glass);
+      color: var(--text-muted);
+    }
+
+    .card-body {
+      flex: 1;
+      padding: 13px 14px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .card-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .card-source {
+      font-weight: 700;
+      color: var(--nx-accent-bright);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .card-date {
+      font-family: var(--nx-font-mono);
+      font-size: 10.5px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .card-title {
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.38;
+      color: var(--text-main);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      word-break: break-word;
+    }
+
+    .corner-card:hover .card-title {
+      color: var(--nx-accent-bright);
+    }
+
+    .card-summary {
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--text-muted);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      word-break: break-word;
+    }
+
+    .card-footer {
+      margin-top: auto;
+      padding-top: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .platform-list {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+
+    .platform-chip {
+      font-family: var(--nx-font-mono);
+      font-size: 9.5px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: var(--nx-radius-xs);
+      background: var(--bg-deep);
+      border: 1px solid var(--border-glass);
+      color: var(--text-muted);
+    }
+
+    .card-open-hint {
+      margin-left: auto;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .corner-card:hover .card-open-hint {
+      color: var(--nx-accent-bright);
+    }
+
+    /* Search Empty State */
+    .filter-empty {
+      padding: 28px 20px;
+      text-align: center;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-glass);
+      border-left: 3px solid var(--nx-accent);
+      border-radius: var(--nx-radius-md);
+      color: var(--text-muted);
+      font-size: 13px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* Footer */
+    .corner-footer {
+      border-top: 1px solid var(--border-glass);
+      padding-top: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      font-size: 11.5px;
+      color: var(--text-muted);
+    }
+
+    .feed-pills {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .feed-pill {
+      font-family: var(--nx-font-mono);
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: var(--nx-radius-xs);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-glass);
+      color: var(--text-muted);
+    }
+
+    .feed-pill.ok {
+      border-color: color-mix(in srgb, var(--success) 50%, var(--border-glass));
+      color: var(--success);
+    }
+
+    .feed-pill.err {
+      border-color: color-mix(in srgb, var(--warning) 45%, var(--border-glass));
+      color: var(--warning);
+    }
+
+    @media (max-width: 720px) {
+      .corner-topbar {
+        padding: 12px 16px;
+      }
+      .corner-main {
+        padding: 18px 16px 36px;
+      }
+      .corner-search {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="corner-topbar">
+    <div class="corner-topbar-inner">
+      <div class="corner-brand">
+        <div class="corner-brand-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="6" width="20" height="12" rx="4" />
+            <path d="M6 12h4M8 10v4" />
+            <circle cx="15.5" cy="11" r="1" fill="currentColor" stroke="none" />
+            <circle cx="18" cy="13" r="1" fill="currentColor" stroke="none" />
+          </svg>
+        </div>
+        <div class="corner-brand-copy">
+          <h1 class="corner-brand-title nx-heading"><strong>GX</strong> Corner</h1>
+          <div class="corner-brand-sub">Gaming News • New &amp; Upcoming Releases • Deals &amp; Free Games</div>
+        </div>
+      </div>
+
+      <div class="corner-controls">
+        <nav class="corner-filter-tabs" id="sectionFilterTabs" aria-label="Filter GX Corner sections">
+          <button type="button" class="filter-tab-btn active" data-filter="all">All</button>
+          <button type="button" class="filter-tab-btn" data-filter="news">News</button>
+          <button type="button" class="filter-tab-btn" data-filter="releases">Releases</button>
+          <button type="button" class="filter-tab-btn" data-filter="deals">Deals</button>
+        </nav>
+
+        <div class="corner-search">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <circle cx="11" cy="11" r="8" />
+            <path d="M21 21l-4.35-4.35" />
+          </svg>
+          <input type="text" id="cornerSearchInput" placeholder="Filter games, news, deals..." autocomplete="off" spellcheck="false" />
+        </div>
+
+        <div class="status-pill" id="cornerStatusPill" role="status" aria-live="polite">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="cornerStatusText">Loading feeds...</span>
+        </div>
+
+        <button type="button" class="btn primary" id="btnCornerRefresh" title="Refresh gaming RSS feeds">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+            <polyline points="21 3 21 9 15 9" />
+          </svg>
+          <span id="btnCornerRefreshLabel">Refresh</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="corner-main">
+    <!-- Honest Offline / Fallback Notice -->
+    <section class="corner-banner hidden" id="cornerOfflineBanner" role="status" aria-live="polite">
+      <div class="corner-banner-left">
+        <div class="corner-banner-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 1l22 22" />
+            <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55" />
+            <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39" />
+            <path d="M10.71 5.05A16 16 0 0 1 22.58 9" />
+            <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88" />
+            <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+            <line x1="12" y1="20" x2="12.01" y2="20" />
+          </svg>
+        </div>
+        <div class="corner-banner-copy">
+          <div class="corner-banner-title" id="cornerBannerTitle">Offline — showing curated picks</div>
+          <div class="corner-banner-sub" id="cornerBannerSub">Live gaming RSS feeds couldn't be reached right now. Curated storefronts, release picks, and outlet hubs remain available.</div>
+        </div>
+      </div>
+      <button type="button" class="btn primary" id="btnCornerRetry">Retry</button>
+    </section>
+
+    <!-- Section 1: Gaming News -->
+    <section class="corner-section" id="section-news" data-section="news" aria-labelledby="heading-news">
+      <div class="section-hdr">
+        <div class="section-hdr-left">
+          <div class="section-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2" />
+              <path d="M18 14h-8M15 18h-5M10 6h8v4h-8V6Z" />
+            </svg>
+          </div>
+          <h2 class="section-title nx-heading" id="heading-news">Gaming News</h2>
+          <span class="section-count" id="newsCount">0</span>
+        </div>
+        <span class="section-meta" id="newsMeta">Live gaming RSS feeds</span>
+      </div>
+      <div class="cards-grid" id="newsGrid"></div>
+    </section>
+
+    <!-- Section 2: New / Upcoming Releases -->
+    <section class="corner-section" id="section-releases" data-section="releases" aria-labelledby="heading-releases">
+      <div class="section-hdr">
+        <div class="section-hdr-left">
+          <div class="section-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2" />
+              <line x1="16" y1="2" x2="16" y2="6" />
+              <line x1="8" y1="2" x2="8" y2="6" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
+          </div>
+          <h2 class="section-title nx-heading" id="heading-releases">New &amp; Upcoming Releases</h2>
+          <span class="section-count" id="releasesCount">0</span>
+        </div>
+        <span class="section-meta" id="releasesMeta">Release calendar &amp; launch highlights</span>
+      </div>
+      <div class="cards-grid compact" id="releasesGrid"></div>
+    </section>
+
+    <!-- Section 3: Deals / Free Games -->
+    <section class="corner-section" id="section-deals" data-section="deals" aria-labelledby="heading-deals">
+      <div class="section-hdr">
+        <div class="section-hdr-left">
+          <div class="section-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+              <line x1="7" y1="7" x2="7.01" y2="7" />
+            </svg>
+          </div>
+          <h2 class="section-title nx-heading" id="heading-deals">Deals &amp; Free Games</h2>
+          <span class="section-count" id="dealsCount">0</span>
+        </div>
+        <span class="section-meta" id="dealsMeta">Storefronts, weekly freebies &amp; discounts</span>
+      </div>
+
+      <div class="storefronts-strip" id="storefrontsStrip" aria-label="PC Gaming Storefronts"></div>
+      <div class="cards-grid compact" id="dealsGrid"></div>
+    </section>
+
+    <footer class="corner-footer">
+      <div id="cornerUpdatedInfo">Cache refreshes automatically every 30 minutes • Links open in a new tab</div>
+      <div class="feed-pills" id="cornerFeedPills"></div>
+    </footer>
+  </main>
+
+  <script src="sounds.js"></script>
+  <script>
+    const statusPill = document.getElementById('cornerStatusPill');
+    const statusText = document.getElementById('cornerStatusText');
+    const btnRefresh = document.getElementById('btnCornerRefresh');
+    const btnRefreshLabel = document.getElementById('btnCornerRefreshLabel');
+    const offlineBanner = document.getElementById('cornerOfflineBanner');
+    const bannerTitle = document.getElementById('cornerBannerTitle');
+    const bannerSub = document.getElementById('cornerBannerSub');
+    const btnRetry = document.getElementById('btnCornerRetry');
+    const searchInput = document.getElementById('cornerSearchInput');
+
+    const newsSection = document.getElementById('section-news');
+    const releasesSection = document.getElementById('section-releases');
+    const dealsSection = document.getElementById('section-deals');
+
+    const newsGrid = document.getElementById('newsGrid');
+    const releasesGrid = document.getElementById('releasesGrid');
+    const dealsGrid = document.getElementById('dealsGrid');
+    const storefrontsStrip = document.getElementById('storefrontsStrip');
+
+    const newsCountEl = document.getElementById('newsCount');
+    const releasesCountEl = document.getElementById('releasesCount');
+    const dealsCountEl = document.getElementById('dealsCount');
+    const newsMetaEl = document.getElementById('newsMeta');
+    const releasesMetaEl = document.getElementById('releasesMeta');
+    const dealsMetaEl = document.getElementById('dealsMeta');
+    const updatedInfoEl = document.getElementById('cornerUpdatedInfo');
+    const feedPillsEl = document.getElementById('cornerFeedPills');
+
+    let latestPayload = null;
+    let activeFilter = 'all';
+    let searchQuery = '';
+
+    function escapeHtml(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function safeExternalUrl(rawUrl) {
+      if (typeof rawUrl !== 'string') return '';
+      const trimmed = rawUrl.trim();
+      if (!trimmed) return '';
+      try {
+        const u = new URL(trimmed);
+        if (u.protocol === 'http:' || u.protocol === 'https:') {
+          return u.toString();
+        }
+      } catch (_) {}
+      return '';
+    }
+
+    function formatItemDate(item) {
+      const ts = Number(item?.publishedAt);
+      if (Number.isFinite(ts) && ts > 0) {
+        const diffMs = Date.now() - ts;
+        if (diffMs >= 0 && diffMs < 60 * 1000) return 'Just now';
+        if (diffMs >= 0 && diffMs < 60 * 60 * 1000) {
+          return `${Math.max(1, Math.floor(diffMs / 60000))}m ago`;
+        }
+        if (diffMs >= 0 && diffMs < 24 * 60 * 60 * 1000) {
+          return `${Math.floor(diffMs / 3600000)}h ago`;
+        }
+        try {
+          return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        } catch (_) {}
+      }
+      return item?.dateLabel || (item?.curated ? 'Curated' : '');
+    }
+
+    function formatFullTimestamp(ts) {
+      const n = Number(ts);
+      if (!Number.isFinite(n) || n <= 0) return '';
+      try {
+        return new Date(n).toLocaleString(undefined, {
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      } catch (_) {
+        return '';
+      }
+    }
+
+    function openExternalLink(rawUrl) {
+      const safe = safeExternalUrl(rawUrl);
+      if (!safe) return;
+      window.gxSounds?.playTabOpen();
+      if (window.gxCornerAPI && typeof window.gxCornerAPI.openLink === 'function') {
+        window.gxCornerAPI.openLink(safe).catch(() => {});
+      } else {
+        window.open(safe, '_blank', 'noopener,noreferrer');
+      }
+    }
+
+    function getFallbackIconSvg(section) {
+      if (section === 'releases') {
+        return `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`;
+      }
+      if (section === 'deals') {
+        return `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>`;
+      }
+      return `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="4"/><path d="M6 12h4M8 10v4"/><circle cx="15.5" cy="11" r="1" fill="currentColor" stroke="none"/><circle cx="18" cy="13" r="1" fill="currentColor" stroke="none"/></svg>`;
+    }
+
+    function buildThumbFallbackEl(item, section) {
+      const wrap = document.createElement('div');
+      wrap.className = 'thumb-fallback';
+      wrap.innerHTML = `
+        <div class="thumb-fallback-ring" aria-hidden="true">${getFallbackIconSvg(section)}</div>
+        <span class="thumb-fallback-label">${escapeHtml(item.source || 'GX Corner')}</span>
+      `;
+      return wrap;
+    }
+
+    function buildCardElement(item, section) {
+      const safeUrl = safeExternalUrl(item.url);
+      const card = document.createElement('a');
+      card.className = 'corner-card';
+      card.href = safeUrl || '#';
+      card.target = '_blank';
+      card.rel = 'noopener noreferrer';
+      card.dataset.section = section;
+      if (item.curated) card.dataset.curated = 'true';
+
+      card.addEventListener('click', (e) => {
+        e.preventDefault();
+        openExternalLink(safeUrl);
+      });
+
+      const thumb = document.createElement('div');
+      thumb.className = section === 'news' ? 'card-thumb' : 'card-thumb short';
+
+      const safeThumb = safeExternalUrl(item.thumbnail);
+      if (safeThumb) {
+        const img = document.createElement('img');
+        img.src = safeThumb;
+        img.alt = item.title || 'Article thumbnail';
+        img.loading = 'lazy';
+        img.referrerPolicy = 'no-referrer';
+        img.addEventListener('error', () => {
+          img.remove();
+          thumb.insertBefore(buildThumbFallbackEl(item, section), thumb.firstChild);
+        });
+        thumb.appendChild(img);
+      } else {
+        thumb.appendChild(buildThumbFallbackEl(item, section));
+      }
+
+      const badges = document.createElement('div');
+      badges.className = 'card-overlay-badges';
+      let leftBadgeHtml = '';
+      if (item.tag) {
+        const upperTag = String(item.tag).toUpperCase();
+        const tagCls = upperTag.includes('FREE')
+          ? 'is-free'
+          : upperTag.includes('DEAL') || upperTag.includes('BUNDLE')
+          ? 'is-deal'
+          : '';
+        leftBadgeHtml = `<span class="card-badge ${tagCls}">${escapeHtml(item.tag)}</span>`;
+      } else if (section === 'releases') {
+        leftBadgeHtml = `<span class="card-badge">${escapeHtml(item.dateLabel || 'Release')}</span>`;
+      } else {
+        leftBadgeHtml = '<span></span>';
+      }
+      const rightBadgeHtml = item.curated
+        ? `<span class="card-badge is-curated">Curated</span>`
+        : `<span class="card-badge">Live RSS</span>`;
+      badges.innerHTML = `${leftBadgeHtml}${rightBadgeHtml}`;
+      thumb.appendChild(badges);
+      card.appendChild(thumb);
+
+      const body = document.createElement('div');
+      body.className = 'card-body';
+
+      const dateText = formatItemDate(item);
+      const fullDateTitle = formatFullTimestamp(item.publishedAt);
+      const platforms = Array.isArray(item.platforms) ? item.platforms : [];
+      const platformsHtml = platforms.length
+        ? `<div class="platform-list">${platforms
+            .map((p) => `<span class="platform-chip">${escapeHtml(p)}</span>`)
+            .join('')}</div>`
+        : '';
+
+      body.innerHTML = `
+        <div class="card-meta">
+          <span class="card-source">${escapeHtml(item.source || 'Gaming Feed')}</span>
+          <span class="card-date" title="${escapeHtml(fullDateTitle || dateText)}">${escapeHtml(dateText)}</span>
+        </div>
+        <h3 class="card-title">${escapeHtml(item.title)}</h3>
+        ${item.summary ? `<p class="card-summary">${escapeHtml(item.summary)}</p>` : ''}
+        <div class="card-footer">
+          ${platformsHtml}
+          <span class="card-open-hint">Open in new tab ↗</span>
+        </div>
+      `;
+      card.appendChild(body);
+      return card;
+    }
+
+    function matchesSearch(item) {
+      if (!searchQuery) return true;
+      const hay = [
+        item?.title,
+        item?.summary,
+        item?.source,
+        item?.tag,
+        item?.dateLabel,
+        Array.isArray(item?.platforms) ? item.platforms.join(' ') : ''
+      ]
+        .join(' ')
+        .toLowerCase();
+      return hay.includes(searchQuery);
+    }
+
+    function renderGrid(container, items, section) {
+      container.innerHTML = '';
+      const filtered = (Array.isArray(items) ? items : []).filter(matchesSearch);
+      if (filtered.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'filter-empty';
+        empty.innerHTML = `
+          <span>No matching items for "${escapeHtml(searchQuery)}".</span>
+          <button type="button" class="btn" data-clear-search="1">Clear filter</button>
+        `;
+        const clearBtn = empty.querySelector('[data-clear-search]');
+        if (clearBtn) {
+          clearBtn.addEventListener('click', () => {
+            searchQuery = '';
+            if (searchInput) searchInput.value = '';
+            renderPayload(latestPayload);
+          });
+        }
+        container.appendChild(empty);
+        return 0;
+      }
+      for (const item of filtered) {
+        container.appendChild(buildCardElement(item, section));
+      }
+      return filtered.length;
+    }
+
+    function renderStorefronts(storefronts) {
+      storefrontsStrip.innerHTML = '';
+      const list = (Array.isArray(storefronts) ? storefronts : []).filter((sf) => {
+        if (!searchQuery) return true;
+        return `${sf.name} ${sf.tagline} ${sf.badge}`.toLowerCase().includes(searchQuery);
+      });
+      storefrontsStrip.classList.toggle('hidden', list.length === 0);
+      for (const sf of list) {
+        const safeUrl = safeExternalUrl(sf.url);
+        if (!safeUrl) continue;
+        const a = document.createElement('a');
+        a.className = 'storefront-card';
+        a.href = safeUrl;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.innerHTML = `
+          <div class="storefront-info">
+            <span class="storefront-name">${escapeHtml(sf.name)}</span>
+            <span class="storefront-tagline">${escapeHtml(sf.tagline)}</span>
+          </div>
+          <span class="storefront-badge">${escapeHtml(sf.badge || 'STORE')}</span>
+        `;
+        a.addEventListener('click', (e) => {
+          e.preventDefault();
+          openExternalLink(safeUrl);
+        });
+        storefrontsStrip.appendChild(a);
+      }
+    }
+
+    function renderStatus(payload) {
+      const mode = payload?.mode || 'offline';
+      const isRefreshing = Boolean(payload?.isRefreshing);
+      const isOfflineFallback = Boolean(payload?.isOfflineFallback);
+      const lastRefreshFailed = Boolean(payload?.lastRefreshFailed);
+
+      statusPill.classList.remove('is-live', 'is-offline', 'is-refreshing');
+      if (isRefreshing) {
+        statusPill.classList.add('is-refreshing');
+        statusText.textContent = 'Refreshing RSS feeds...';
+      } else if (mode === 'live' || mode === 'cached') {
+        statusPill.classList.add('is-live');
+        const tsLabel = formatFullTimestamp(payload.fetchedAt);
+        statusText.textContent = tsLabel ? `Updated ${tsLabel}` : 'Live RSS active';
+      } else {
+        statusPill.classList.add('is-offline');
+        statusText.textContent = mode === 'offline-cached' ? 'Offline (cached)' : 'Offline — curated picks';
+      }
+
+      btnRefresh.disabled = isRefreshing;
+      btnRefresh.classList.toggle('is-spinning', isRefreshing);
+      btnRefreshLabel.textContent = isRefreshing ? 'Refreshing...' : (isOfflineFallback || lastRefreshFailed ? 'Retry' : 'Refresh');
+
+      if (btnRetry) {
+        btnRetry.disabled = isRefreshing;
+        btnRetry.textContent = isRefreshing ? 'Retrying...' : 'Retry';
+      }
+
+      const showBanner = !isRefreshing && (isOfflineFallback || lastRefreshFailed || mode === 'offline' || mode === 'offline-cached');
+      offlineBanner.classList.toggle('hidden', !showBanner);
+      if (showBanner) {
+        bannerTitle.textContent = payload.statusMessage || 'Offline — showing curated picks';
+        if (mode === 'offline-cached') {
+          const tsLabel = formatFullTimestamp(payload.fetchedAt);
+          bannerSub.textContent = tsLabel
+            ? `Couldn't reach live RSS feeds right now. Displaying your cached headlines from ${tsLabel}.`
+            : "Couldn't reach live RSS feeds right now. Displaying your cached headlines.";
+        } else {
+          bannerSub.textContent =
+            "Live gaming RSS feeds couldn't be reached right now. Showing curated gaming hubs, release calendar picks, and storefronts instead.";
+        }
+      }
+
+      const updatedTs = formatFullTimestamp(payload.fetchedAt);
+      updatedInfoEl.textContent = updatedTs
+        ? `Last live RSS update: ${updatedTs} • Auto-refreshes every 30 min • Links open in new tabs`
+        : 'Curated offline picks active • Auto-refreshes when online • Links open in new tabs';
+
+      feedPillsEl.innerHTML = '';
+      const statuses = Array.isArray(payload.feedStatus) ? payload.feedStatus : [];
+      for (const fs of statuses) {
+        const pill = document.createElement('span');
+        pill.className = `feed-pill ${fs.ok ? 'ok' : 'err'}`;
+        pill.textContent = fs.ok ? `${fs.name} (${fs.count})` : `${fs.name} (offline)`;
+        pill.title = fs.ok ? `Loaded ${fs.count} items from ${fs.name}` : fs.error || 'Feed unreachable';
+        feedPillsEl.appendChild(pill);
+      }
+    }
+
+    function applySectionFilterVisibility() {
+      newsSection.classList.toggle('hidden', activeFilter !== 'all' && activeFilter !== 'news');
+      releasesSection.classList.toggle('hidden', activeFilter !== 'all' && activeFilter !== 'releases');
+      dealsSection.classList.toggle('hidden', activeFilter !== 'all' && activeFilter !== 'deals');
+    }
+
+    function renderPayload(payload) {
+      if (!payload || typeof payload !== 'object') return;
+      latestPayload = payload;
+      renderStatus(payload);
+
+      const sections = payload.sections || { news: [], releases: [], deals: [] };
+      const shownNews = renderGrid(newsGrid, sections.news, 'news');
+      const shownReleases = renderGrid(releasesGrid, sections.releases, 'releases');
+      renderStorefronts(payload.storefronts);
+      const shownDeals = renderGrid(dealsGrid, sections.deals, 'deals');
+
+      newsCountEl.textContent = String(shownNews);
+      releasesCountEl.textContent = String(shownReleases);
+      dealsCountEl.textContent = String(shownDeals);
+
+      const hasLiveNews = Array.isArray(sections.news) && sections.news.some((i) => i && !i.curated);
+      newsMetaEl.textContent = hasLiveNews
+        ? 'Live gaming RSS headlines'
+        : 'Curated gaming news hubs (offline fallback)';
+      const hasLiveReleases = Array.isArray(sections.releases) && sections.releases.some((i) => i && !i.curated);
+      releasesMetaEl.textContent = hasLiveReleases
+        ? 'Live launch coverage + curated release calendar'
+        : 'Curated release calendar picks';
+      const hasLiveDeals = Array.isArray(sections.deals) && sections.deals.some((i) => i && !i.curated);
+      dealsMetaEl.textContent = hasLiveDeals
+        ? 'Live deals + storefront freebies'
+        : 'Storefronts & curated deals / free games';
+
+      applySectionFilterVisibility();
+    }
+
+    async function triggerRefresh() {
+      if (!window.gxCornerAPI || typeof window.gxCornerAPI.refresh !== 'function') return;
+      window.gxSounds?.playClick();
+      try {
+        const updated = await window.gxCornerAPI.refresh();
+        if (updated) renderPayload(updated);
+      } catch (_) {}
+    }
+
+    btnRefresh.addEventListener('click', triggerRefresh);
+    btnRetry.addEventListener('click', triggerRefresh);
+
+    document.querySelectorAll('#sectionFilterTabs .filter-tab-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        window.gxSounds?.playClick();
+        activeFilter = btn.dataset.filter || 'all';
+        document.querySelectorAll('#sectionFilterTabs .filter-tab-btn').forEach((b) => {
+          b.classList.toggle('active', b === btn);
+        });
+        applySectionFilterVisibility();
+      });
+    });
+
+    searchInput.addEventListener('input', (e) => {
+      searchQuery = (e.target.value || '').trim().toLowerCase();
+      if (latestPayload) renderPayload(latestPayload);
+    });
+
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme || 'gx-violet');
+    }
+
+    function syncSoundsConfig(s) {
+      if (!s || typeof s !== 'object') return;
+      window.gxSounds?.setConfig({
+        enabled: s.uiSoundsEnabled !== false,
+        volume: typeof s.uiSoundsVolume === 'number' ? s.uiSoundsVolume : 0.35
+      });
+    }
+
+    async function init() {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('incognito') === '1') {
+        document.documentElement.setAttribute('data-incognito', 'true');
+      }
+      const initialTheme = params.get('theme');
+      if (initialTheme) {
+        applyTheme(initialTheme);
+      }
+
+      if (window.gxCornerAPI?.onSettingsUpdate) {
+        window.gxCornerAPI.onSettingsUpdate((s) => {
+          if (s && s.theme) applyTheme(s.theme);
+          syncSoundsConfig(s);
+        });
+      }
+
+      if (window.gxCornerAPI?.onUpdate) {
+        window.gxCornerAPI.onUpdate((data) => {
+          renderPayload(data);
+        });
+      }
+
+      if (window.gxCornerAPI?.getSettings) {
+        window.gxCornerAPI
+          .getSettings()
+          .then((s) => {
+            if (s && s.theme) applyTheme(s.theme);
+            syncSoundsConfig(s);
+          })
+          .catch(() => {});
+      }
+
+      if (window.gxCornerAPI?.getData) {
+        try {
+          const initialData = await window.gxCornerAPI.getData();
+          renderPayload(initialData);
+        } catch (_) {
+          statusText.textContent = 'Unable to load hub';
+        }
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>
