@@ -1,7 +1,9 @@
 {
   "name": "nextgx-browser",
   "productName": "nextGx Browser",
+  "desktopName": "nextgx-browser.desktop",
   "version": "3.0.0",
+  "homepage": "https://github.com/johnsmith68268-prog/nextGxBrowser",
   "description": "nextGx Browser — Modern Apple-Crafted Chromium Desktop Browser with Built-in Privacy Shield, Media Dock, Pro Download Manager, and 8 GB Memory Saver",
   "main": "src/main.js",
   "scripts": {
@@ -43,11 +45,34 @@
     ],
     "linux": {
       "icon": "build/icon.png",
+      "syncDesktopName": true,
+      "maintainer": "MD ABDULLAH AL MARZAN <johnsmith68268@gmail.com>",
+      "vendor": "Marjan",
+      "synopsis": "Modern Chromium Desktop Browser with Built-in Privacy Shield & 8 GB Memory Saver",
+      "category": "Network;WebBrowser",
       "target": [
-        "AppImage",
-        "deb"
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
-      "category": "Network;WebBrowser"
+      "artifactName": "nextGx-Browser-${version}-${arch}.${ext}",
+      "desktop": {
+        "entry": {
+          "Name": "nextGx Browser",
+          "Comment": "Modern Gaming Chromium Desktop Browser",
+          "Categories": "Network;WebBrowser;",
+          "MimeType": "text/html;text/xml;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;"
+        }
+      }
     },
     "win": {
       "icon": "build/icon.ico",

@@ -1,0 +1,44 @@
+name: Build Windows & Linux Releases
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build:win:all
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nextgx-windows-x64
+          path: |
+            dist/*.exe
+            dist/*.msix
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build:linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nextgx-linux-x64
+          path: |
+            dist/*.AppImage
+            dist/*.deb
