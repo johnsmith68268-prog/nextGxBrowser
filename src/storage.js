@@ -3,6 +3,7 @@ const path = require('path');
 const { app, safeStorage } = require('electron');
 
 const DEFAULT_PROFILE_ID = 'default';
+const HISTORY_CLEAN_INSTALL_MARKER_FILE = '.migration-v3-history-clean';
 const PROFILE_ID_RE = /^[a-z0-9][a-z0-9_-]{0,47}$/;
 const VALID_PROFILE_COLORS = [
   'gx-violet',
@@ -218,6 +219,9 @@ class StorageManager {
 
     this.cache = {};
     this._encryptionWarned = false;
+    if (!this.isProfileChild) {
+      this._migrateCleanInstallHistory();
+    }
     this._initAll();
     if (!this.isProfileChild) {
       this._ensureProfilesStore();
@@ -1764,6 +1768,64 @@ class StorageManager {
     return { ...rest, password: typeof password === 'string' ? password : '' };
   }
 
+  _migrateCleanInstallHistory() {
+    if (this.isProfileChild) return;
+    const markerPath = path.join(this.rootDataDir, HISTORY_CLEAN_INSTALL_MARKER_FILE);
+    try {
+      if (fs.existsSync(markerPath)) {
+        return;
+      }
+    } catch (err) {
+      console.warn('[Storage] Failed checking history migration marker:', err.message);
+      return;
+    }
+
+    const clearIfPresent = (historyPath) => {
+      try {
+        if (!fs.existsSync(historyPath)) return;
+        const stat = fs.statSync(historyPath);
+        if (!stat.isFile()) return;
+        fs.writeFileSync(historyPath, JSON.stringify([], null, 2), 'utf-8');
+      } catch (err) {
+        console.warn(`[Storage] Failed clearing legacy history at ${historyPath}:`, err.message);
+      }
+    };
+
+    clearIfPresent(path.join(this.rootDataDir, 'history.json'));
+
+    try {
+      if (this.profilesDir && fs.existsSync(this.profilesDir)) {
+        const entries = fs.readdirSync(this.profilesDir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (!entry || !entry.isDirectory() || !entry.name) continue;
+          clearIfPresent(path.join(this.profilesDir, entry.name, 'history.json'));
+        }
+      }
+    } catch (err) {
+      console.warn('[Storage] Failed scanning profiles for legacy history migration:', err.message);
+    }
+
+    try {
+      if (!fs.existsSync(this.rootDataDir)) {
+        fs.mkdirSync(this.rootDataDir, { recursive: true });
+      }
+      fs.writeFileSync(
+        markerPath,
+        JSON.stringify(
+          {
+            migration: 'v3.0.0-history-clean-install',
+            migratedAt: Date.now()
+          },
+          null,
+          2
+        ),
+        'utf-8'
+      );
+    } catch (err) {
+      console.warn('[Storage] Failed writing history migration marker:', err.message);
+    }
+  }
+
   _migratePasswords() {
     const rawList = this.cache.passwords;
     if (!Array.isArray(rawList)) {
@@ -2324,6 +2386,7 @@ class StorageManager {
 module.exports = {
   StorageManager,
   DEFAULT_PROFILE_ID,
+  HISTORY_CLEAN_INSTALL_MARKER_FILE,
   PROFILE_ID_RE,
   VALID_PROFILE_COLORS,
   PER_PROFILE_SETTING_KEYS,

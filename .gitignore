@@ -3,6 +3,7 @@ chromium-runtime/
 gx-chromium-profile/
 dist/
 out/
+release/
 *.log
 .DS_Store
 

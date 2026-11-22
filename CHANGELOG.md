@@ -4,6 +4,59 @@ All notable changes on the `muse/browser-upgrade` branch (building on baseline v
 
 ---
 
+## Packaging follow-up — electron-builder packaging (2026-11-22)
+
+Release packaging for v3.0.0: Windows NSIS installer (x64), Linux .deb (x64) and Linux AppImage (x64), built with electron-builder into `release/`.
+
+### Changed
+- **electron-builder 26.18.0** added as a devDependency; `build` config in `package.json` completed:
+  - `directories.output` is now `release/` (artifacts stay local; `release/` added to `.gitignore`, never committed).
+  - `files` allowlist is now exactly `package.json`, `LICENSE`, `src/**/*` — only what the app needs at runtime. `gx-extension/` and `gx-theme/` are excluded (verified unused at runtime: nothing in `src/` references them; the ad blocker lives in `src/adblocker.js` and extensions load only from user-picked folders). Dev files (`scripts/`, `launch-gx-chromium.js`, `CHANGELOG.md`, `README.md`) no longer ride along in the package.
+  - Windows target is NSIS only; the `appx` target and config block were removed (appx needs Windows signing — out of scope).
+  - New `build:all` script (`electron-builder --linux AppImage deb --win nsis`); `build:win` is now NSIS only.
+  - `homepage` set to the project repo (https://github.com/johnsmith68268-prog/nextGxBrowser) and `linux.maintainer` set to the builder identity (`Muse <muse@local>`) so the .deb target can build natively — package.json carries no author email, and none was invented.
+  - `deb.depends` set explicitly from `dpkg-shlibdeps` output (Ubuntu 24.04 `t64` package names). electron-builder's default deb dependencies use pre-`t64` names that do not exist on Ubuntu 24.04, so the override is required for the package to install there.
+
+### Tested
+- `npm run build:linux` builds AppImage + .deb into `release/`; `.deb` installs cleanly (`dpkg -i`, all dependencies satisfied) and the installed app passes the full history-migration verification (12/12); AppImage launches and serves CDP (verified via extract-and-run — this VM has no FUSE).
+- Windows NSIS build requires Wine on Linux (installed separately for the cross-build).
+
+### Known limitations
+- **No app icon**: the repo contains no icon asset, so packages use electron-builder's default Electron icon. No branding was invented.
+- **desktopName not set**: window-to-desktop-entry association may be imperfect on some Linux desktops (electron-builder warning).
+- **.deb targets Ubuntu 24.04+ / Debian trixie-era distros**: the `depends` list uses `t64` package names from the build environment; older releases need the AppImage instead.
+- **Windows build needs Wine**: the NSIS installer is cross-built on Linux with Wine; the installer flow itself must be checked on real Windows.
+
+---
+
+## Packaging follow-up — history clean-install fix (2026-11-22)
+
+Ensures upgrading from a pre-v3.0.0 development install (which shares the OS `userData` directory) starts with a clean browsing history on first v3.0.0 launch without affecting any other user data, while preserving all new browsing history across subsequent restarts.
+
+### Changed
+- **One-time clean-install history migration (`src/storage.js`)**:
+  - Added `_migrateCleanInstallHistory()` (invoked from the root `StorageManager` constructor prior to `_initAll()`) guarded by a persistent marker file `.migration-v3-history-clean` inside `nextgx-data/` (`HISTORY_CLEAN_INSTALL_MARKER_FILE`).
+  - When the marker is absent, resets any existing `nextgx-data/history.json` and any existing per-profile `nextgx-data/profiles/<id>/history.json` to an empty array (`[]`), then records the marker (`{ migration: 'v3.0.0-history-clean-install', migratedAt }`) so the migration executes at most once per `userData` directory.
+  - On fresh installs (where no `history.json` exists yet), writes the marker as a no-op without errors or side effects before normal store initialization.
+  - Never touches bookmarks, passwords, settings, downloads, notes, site permissions, closed tabs, ad-block sites, extensions, session, workspaces, tab groups, GX Corner cache, or profiles metadata.
+  - Handles missing files, corrupt/unparseable `history.json`, missing `profiles/` directories, or filesystem errors gracefully with a warning log so startup never crashes.
+
+### Tested
+- **Syntax & startup smoke checks**: `node --check src/storage.js` passed; `timeout 25 xvfb-run -a npm start` exited `124` (stayed up cleanly with zero crashes).
+- **Unit tests (mocked Electron + isolated temp `userData`)**: Verified corrupt `history.json` recovery, secondary profile `profiles/<id>/history.json` clearing alongside byte-identical profile `bookmarks.json`, single-run marker enforcement across `StorageManager` re-instantiation, and fresh-install no-op marker creation.
+- **Live end-to-end Electron + CDP verification**:
+  - Seeded `/tmp/pkg1-userdata/nextgx-data/` with 3 legacy `history.json` entries (plus a secondary profile `history.json`), a `bookmarks.json` entry, and a `settings.json` with a distinctive key.
+  - First launch cleared root and profile `history.json` to `[]`, wrote `.migration-v3-history-clean`, and left `bookmarks.json` and `settings.json` byte-identical (verified via SHA-256 / buffer comparison).
+  - Second launch navigated a tab to `https://example.com` via CDP and quit cleanly; verified `history.json` persisted the new `https://example.com/` visit.
+  - Third launch with the same `userData` directory honored `.migration-v3-history-clean` and preserved the `https://example.com/` history entry untouched.
+  - Fresh-install launch against an empty `userData` directory started cleanly with zero storage errors, created `.migration-v3-history-clean`, and initialized `history.json` to `[]`.
+
+### Known limitations
+- **Scope restricted to `history.json` by design**: Only `history.json` (root and existing profiles) is cleared by the one-time v3.0.0 migration; other stores (`session.json`, `closed_tabs.json`, Chromium HTTP cache/cookies, etc.) are intentionally preserved per specification.
+- **Marker tied to `nextgx-data/.migration-v3-history-clean`**: Manually deleting `.migration-v3-history-clean` from an active `nextgx-data` directory would re-trigger the one-time history reset on next launch.
+
+---
+
 ## v3.0.0 (2026-11-22)
 
 Phase 2 complete — Opera GX-like enterprise redesign (profiles with isolated data, privacy dashboard + password manager polish, split view, GX Control limiters, workspaces + tab islands, video pop-out + Player, GX Corner live gaming news, sidebar overlay panel, extension popups, fullscreen fixes). Version bumped from `2.5.0` to `3.0.0`.
