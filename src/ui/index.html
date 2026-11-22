@@ -22,11 +22,14 @@
         <span class="nx-brand-text">next<strong>Gx</strong></span>
       </div>
 
-      <!-- Safari / Arc Style Workspace Switcher Pill -->
-      <div class="nx-workspace-pills" id="workspacePills" title="Switch Workspace">
-        <button class="ws-pill active" data-ws="Personal">Personal</button>
-        <button class="ws-pill" data-ws="Work">Work</button>
-        <button class="ws-pill" data-ws="Gaming">Gaming</button>
+      <!-- Real Workspace Switcher (hidden in Private windows) -->
+      <div class="nx-workspace-pills" id="workspacePills" role="tablist" aria-label="Workspaces">
+        <div class="ws-pills-list" id="workspacePillsList"></div>
+        <button type="button" class="ws-add-btn" id="btnAddWorkspace" title="New Workspace" aria-label="New Workspace">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+        </button>
       </div>
 
       <div class="nx-tabs-strip" id="tabsStrip">
@@ -117,6 +120,20 @@
 
       <!-- Right Action Toolbar -->
       <div class="nx-right-toolbar">
+        <button class="toolbar-icon-btn" id="btnSplitView" title="Split View — Open current tab side by side with a new tab" aria-label="Split View" aria-pressed="false">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="16" rx="2" />
+            <line x1="12" y1="4" x2="12" y2="20" />
+          </svg>
+        </button>
+
+        <button class="toolbar-icon-btn" id="btnPopOutVideo" title="Pop out video — play a video in this tab to enable" aria-label="Pop out video" disabled>
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="4" width="20" height="15" rx="2" />
+            <rect x="11.5" y="10.5" width="8.5" height="6.5" rx="1.2" fill="currentColor" stroke="none" />
+          </svg>
+        </button>
+
         <button class="toolbar-icon-btn" id="btnScreenshot" title="Capture Full Page Screenshot">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
         </button>
@@ -126,13 +143,20 @@
           <span class="dl-active-dot hidden" id="dlActiveDot"></span>
         </button>
 
-        <button class="toolbar-icon-btn" id="btnTopExtensions" title="Extensions Manager">
+        <div class="nx-pinned-extensions" id="pinnedExtensions"></div>
+
+        <button class="toolbar-icon-btn" id="btnTopExtensions" title="Extensions">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5a2.5 2.5 0 0 0-5 0V5H4c-1.1 0-2 .9-2 2v3.8h1.5c1.5 0 2.7 1.2 2.7 2.7S5 16.2 3.5 16.2H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.5 1.2-2.7 2.7-2.7s2.7 1.2 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5a2.5 2.5 0 0 0 0-5z"/></svg>
         </button>
 
         <!-- Apple Control Center Button -->
         <button class="toolbar-icon-btn" id="btnEasySetup" title="nextGx Control Center — Theme, Privacy Shield & Memory">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="6" rx="3"/><circle cx="16" cy="7" r="1.5" fill="currentColor"/><rect x="3" y="14" width="18" height="6" rx="3"/><circle cx="8" cy="17" r="1.5" fill="currentColor"/></svg>
+        </button>
+
+        <!-- Local Profile Avatar Button -->
+        <button class="toolbar-icon-btn profile-avatar-btn" id="btnProfileMenu" title="Profile: Default" aria-label="Profiles" data-profile-color="gx-violet">
+          <span class="profile-avatar-circle" id="profileAvatarLetter">D</span>
         </button>
 
         <!-- Main Menu Button (⋮) -->
@@ -188,8 +212,26 @@
 
         <div class="sidebar-divider"></div>
 
-        <!-- System Memory & Performance -->
-        <button class="sidebar-btn" data-left-tool="gxControl" data-sidebar-item="gxControl" title="Memory & CPU Optimizer">
+        <!-- GX Corner Gaming Hub (opens full page in a new tab) -->
+        <button class="sidebar-btn" data-sidebar-tab="nextgx://corner" data-sidebar-item="gxCorner" id="btnSidebarCorner" title="GX Corner — Gaming News, Releases &amp; Deals" aria-label="GX Corner">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="6" width="20" height="12" rx="4" />
+            <path d="M6 12h4M8 10v4" />
+            <circle cx="15.5" cy="11" r="1" fill="currentColor" stroke="none" />
+            <circle cx="18" cy="13" r="1" fill="currentColor" stroke="none" />
+          </svg>
+        </button>
+
+        <!-- Unified Media Player Panel -->
+        <button class="sidebar-btn" data-sidebar-panel="player" data-sidebar-item="player" id="btnSidebarPlayer" title="Player — Unified Media Controls" aria-label="Player">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9" />
+            <polygon points="10 8.5 16 12 10 15.5 10 8.5" fill="currentColor" stroke="none" />
+          </svg>
+        </button>
+
+        <!-- System Memory & Performance (GX Control) -->
+        <button class="sidebar-btn" data-left-tool="gxControl" data-sidebar-item="gxControl" title="GX Control — RAM, CPU & Network Limiters">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>
         </button>
 
@@ -207,6 +249,44 @@
       </div>
     </aside>
 
+    <!-- LEFT SIDEBAR OVERLAY PANEL (Opera GX-Style Service Panel) -->
+    <section class="nx-sidebar-panel hidden" id="sidebarPanel" aria-label="Sidebar Service Panel">
+      <div class="drawer-header sidebar-panel-header" id="sidebarPanelHeader">
+        <div class="sidebar-panel-identity">
+          <span class="sidebar-panel-icon" id="sidebarPanelIcon"></span>
+          <h2 class="nx-heading sidebar-panel-title" id="sidebarPanelTitle">Service</h2>
+        </div>
+        <div class="sidebar-panel-actions">
+          <button type="button" class="panel-hdr-btn" id="btnSidebarPin" title="Pin panel beside tab" aria-label="Pin panel" aria-pressed="false">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 17v5" />
+              <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 1 1 0 0 0 1-1V4a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1 1 1 0 0 1 1 1v3.76z" />
+            </svg>
+          </button>
+          <button type="button" class="panel-hdr-btn" id="btnSidebarReload" title="Reload panel" aria-label="Reload panel">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+              <polyline points="21 3 21 9 15 9" />
+            </svg>
+          </button>
+          <button type="button" class="panel-hdr-btn" id="btnSidebarOpenTab" title="Open in new tab" aria-label="Open in new tab">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+              <polyline points="15 3 21 3 21 9" />
+              <line x1="10" y1="14" x2="21" y2="3" />
+            </svg>
+          </button>
+          <button type="button" class="panel-hdr-btn" id="btnSidebarClose" title="Close panel (Esc)" aria-label="Close panel">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="sidebar-panel-body" id="sidebarPanelBody"></div>
+      <div class="sidebar-panel-resizer" id="sidebarPanelResizer" title="Drag to resize panel"></div>
+    </section>
+
     <!-- LEFT SYSTEM DRAWER (Memory Optimizer, Privacy Cleaner, Customize Dock) -->
     <section class="nx-left-tool-drawer hidden" id="leftToolDrawer">
       <div class="drawer-header">
@@ -214,18 +294,20 @@
         <button class="panel-hdr-btn" id="btnCloseLeftTool">✕</button>
       </div>
 
-      <!-- Tool 1: Memory & CPU Optimizer -->
+      <!-- Tool 1: GX Control (RAM / CPU / Network Limiters & Live Stats) -->
       <div class="tool-body hidden" id="left-tool-gxControl">
         <div class="bento-grid-two">
           <div class="bento-box">
             <span class="bento-label">Browser RAM</span>
             <strong class="bento-val" id="perfBrowserRam">-- MB</strong>
             <div class="nx-meter"><div class="nx-meter-fill" id="perfBrowserRamBar"></div></div>
+            <span class="bento-sub" id="perfBrowserRamSub">Cap: Off</span>
           </div>
           <div class="bento-box">
-            <span class="bento-label">CPU Load</span>
+            <span class="bento-label">System CPU</span>
             <strong class="bento-val" id="perfCpuPercent">0%</strong>
             <div class="nx-meter"><div class="nx-meter-fill cyan" id="perfCpuBar"></div></div>
+            <span class="bento-sub" id="perfBrowserCpuInline">Browser: 0.0%</span>
           </div>
         </div>
 
@@ -235,6 +317,74 @@
           <button class="nx-primary-btn" id="btnSleepBackgroundTabs">
             Hibernate Background Tabs Now
           </button>
+        </div>
+
+        <div class="nx-card gx-limiters-card">
+          <div class="card-title">Resource Limiters</div>
+
+          <!-- RAM Limiter -->
+          <div class="gx-limiter-block" id="gxRamLimiterBlock">
+            <div class="gx-limiter-head">
+              <div class="gx-limiter-title-wrap">
+                <span class="gx-limiter-title">RAM Limiter</span>
+                <span class="gx-status-pill" id="gxRamStatusBadge">OFF</span>
+              </div>
+              <label class="nx-switch" title="Enable RAM Limiter">
+                <input type="checkbox" id="chkGxRamLimiter" />
+                <span class="nx-slider"></span>
+              </label>
+            </div>
+            <div class="gx-slider-row is-disabled" id="gxRamSliderRow">
+              <input type="range" class="nx-range" id="rngGxRamLimit" min="512" max="16384" step="512" value="4096" disabled />
+              <span class="gx-slider-val nx-mono" id="valGxRamLimit">4 GB</span>
+            </div>
+            <div class="gx-limiter-meta" id="gxRamLimiterMeta">Live: -- MB • Cap off • Hibernated by limiter: 0</div>
+          </div>
+
+          <!-- CPU Limiter -->
+          <div class="gx-limiter-block" id="gxCpuLimiterBlock">
+            <div class="gx-limiter-head">
+              <div class="gx-limiter-title-wrap">
+                <span class="gx-limiter-title">CPU Limiter</span>
+                <span class="gx-status-pill" id="gxCpuStatusBadge">OFF</span>
+              </div>
+              <label class="nx-switch" title="Enable CPU Limiter">
+                <input type="checkbox" id="chkGxCpuLimiter" />
+                <span class="nx-slider"></span>
+              </label>
+            </div>
+            <div class="gx-slider-row is-disabled" id="gxCpuSliderRow">
+              <input type="range" class="nx-range" id="rngGxCpuLimit" min="25" max="100" step="5" value="50" disabled />
+              <span class="gx-slider-val nx-mono" id="valGxCpuLimit">50%</span>
+            </div>
+            <div class="gx-limiter-meta" id="gxCpuLimiterMeta">Browser CPU: 0.0% • Limiter off</div>
+          </div>
+
+          <!-- Network Limiter -->
+          <div class="gx-limiter-block" id="gxNetLimiterBlock">
+            <div class="gx-limiter-head">
+              <div class="gx-limiter-title-wrap">
+                <span class="gx-limiter-title">Network Limiter</span>
+                <span class="gx-status-pill" id="gxNetStatusBadge">OFF</span>
+              </div>
+              <label class="nx-switch" title="Enable Network Limiter">
+                <input type="checkbox" id="chkGxNetLimiter" />
+                <span class="nx-slider"></span>
+              </label>
+            </div>
+            <div class="gx-slider-row is-disabled" id="gxNetSliderRow">
+              <input type="range" class="nx-range" id="rngGxNetLimit" min="1" max="100" step="1" value="10" disabled />
+              <span class="gx-slider-val nx-mono" id="valGxNetLimit">10 Mbps</span>
+            </div>
+            <div class="nx-segmented gx-net-presets is-disabled" id="gxNetPresets" aria-disabled="true">
+              <button type="button" class="seg-btn" data-mbps="1" disabled>1M</button>
+              <button type="button" class="seg-btn" data-mbps="5" disabled>5M</button>
+              <button type="button" class="seg-btn active" data-mbps="10" disabled>10M</button>
+              <button type="button" class="seg-btn" data-mbps="50" disabled>50M</button>
+              <button type="button" class="seg-btn" data-mbps="100" disabled>100M</button>
+            </div>
+            <div class="gx-limiter-meta" id="gxNetLimiterMeta">Unlimited • Limiter inactive</div>
+          </div>
         </div>
 
         <div class="nx-card">
@@ -261,7 +411,7 @@
         </div>
 
         <div class="nx-card">
-          <div class="card-title">Open Tabs Memory Control</div>
+          <div class="card-title">Open Tabs Resource Monitor</div>
           <div class="scroll-list" id="perfTabsList"></div>
         </div>
       </div>
@@ -363,7 +513,15 @@
           </div>
           <div class="menu-sep"></div>
           <div class="setting-item">
-            <span>Memory & CPU Optimizer</span>
+            <span>GX Corner</span>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="gxCorner" checked /><span class="nx-slider"></span></label>
+          </div>
+          <div class="setting-item">
+            <span>Media Player</span>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="player" checked /><span class="nx-slider"></span></label>
+          </div>
+          <div class="setting-item">
+            <span>GX Control (Limiters)</span>
             <label class="nx-switch"><input type="checkbox" data-sb-toggle="gxControl" checked /><span class="nx-slider"></span></label>
           </div>
           <div class="setting-item">
@@ -375,7 +533,22 @@
     </section>
 
     <!-- CENTER VIEWPORT PLACEHOLDER -->
-    <main class="nx-viewport-placeholder" id="viewportPlaceholder"></main>
+    <main class="nx-viewport-placeholder" id="viewportPlaceholder">
+      <div
+        class="nx-split-divider hidden"
+        id="splitDivider"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize split view panes"
+        aria-valuemin="20"
+        aria-valuemax="80"
+        aria-valuenow="50"
+        tabindex="0"
+        title="Drag to resize split panes • Double-click to reset 50/50"
+      >
+        <span class="nx-split-divider-grip" aria-hidden="true"></span>
+      </div>
+    </main>
 
     <!-- RIGHT-SIDE MAIN MENU (Chrome / Safari Hybrid Menu) -->
     <section class="nx-menu-panel hidden" id="chromeMenuPanel">
@@ -418,7 +591,7 @@
           <div class="zoom-controls">
             <button class="zoom-btn" id="btnZoomOut" title="Zoom Out (Ctrl+-)">−</button>
             <span id="zoomValueText">100%</span>
-            <button class="zoom-btn" id="btnZoomIn" title="Zoom In (Ctrl+=)">+</button>
+            <button class="zoom-btn" id="btnZoomIn" title="Zoom In (Ctrl+= / Ctrl++)">+</button>
             <button class="zoom-btn zoom-btn-reset" id="btnZoomReset" title="Reset Zoom (Ctrl+0)">Reset</button>
             <button class="zoom-btn" id="btnFullscreen" title="Fullscreen (F11)">⛶</button>
           </div>
@@ -544,6 +717,18 @@
             </button>
             <button class="theme-chip" data-theme-choice="emerald">
               <span class="dot"></span> Matrix Emerald
+            </button>
+            <button class="theme-chip" data-theme-choice="magenta">
+              <span class="dot"></span> Neon Magenta
+            </button>
+            <button class="theme-chip" data-theme-choice="amber">
+              <span class="dot"></span> Solar Amber
+            </button>
+            <button class="theme-chip" data-theme-choice="lime">
+              <span class="dot"></span> Acid Lime
+            </button>
+            <button class="theme-chip" data-theme-choice="ice">
+              <span class="dot"></span> Frost Ice
             </button>
           </div>
         </div>

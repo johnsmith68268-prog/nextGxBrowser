@@ -11,6 +11,8 @@ let lastHistoryRenderKey = '';
 let lastDownloadsRenderKey = '';
 let lastBookmarksRenderKey = '';
 let lastCookiesRenderKey = '';
+let lastPrivacyRenderKey = '';
+let pendingSettingsScrollTarget = '';
 let settingsCookies = [];
 let cookieRefreshSeq = 0;
 
@@ -45,12 +47,29 @@ function switchPage(page) {
   lastDownloadsRenderKey = '';
   lastBookmarksRenderKey = '';
   lastCookiesRenderKey = '';
+  lastPrivacyRenderKey = '';
   if (page !== 'bookmarks') {
     editingBookmarkId = null;
     editingBookmarkError = '';
     renamingFolderName = null;
     renamingFolderError = '';
     addingBookmarkError = '';
+    bookmarksIoBanner = null;
+  }
+  if (page !== 'passwords') {
+    passwordsIoBanner = null;
+    passwordsExportConfirmOpen = false;
+    editingPasswordId = null;
+    editingPasswordError = '';
+    revealedPasswordIds.clear();
+    pwGenState.error = '';
+    pwGenState.feedback = '';
+  }
+  if (page !== 'settings') {
+    settingsProfileCreateOpen = false;
+    settingsProfileRenamingId = null;
+    settingsProfileDeletingId = null;
+    settingsProfileError = '';
   }
 
   document.querySelectorAll('.nav-link').forEach((btn) => {
@@ -62,10 +81,12 @@ function switchPage(page) {
     downloads: 'Pro Download Manager',
     bookmarks: 'Bookmarks',
     passwords: 'Passwords & Autofill',
+    privacy: 'Privacy & Security',
     extensions: 'Extensions',
     settings: 'nextGx Settings'
   };
   pageHeaderTitle.textContent = titles[page] || 'Settings';
+  document.title = titles[page] ? `${titles[page]} — nextGx` : 'nextGx System Settings & Manager';
   globalSearchInput.placeholder = `Search ${titles[page] || ''}...`;
 
   renderCurrentPage();
@@ -88,6 +109,7 @@ async function renderCurrentPage() {
   else if (currentPage === 'downloads') await renderDownloadsPage({ force: true });
   else if (currentPage === 'bookmarks') await renderBookmarksPage({ force: true });
   else if (currentPage === 'passwords') await renderPasswordsPage();
+  else if (currentPage === 'privacy') await renderPrivacyPage({ force: true });
   else if (currentPage === 'extensions') await renderExtensionsPage();
   else if (currentPage === 'settings') await renderSettingsPage();
 }
@@ -392,6 +414,7 @@ let addingBookmarkOpen = false;
 let addingBookmarkError = '';
 let renamingFolderName = null;
 let renamingFolderError = '';
+let bookmarksIoBanner = null;
 
 function getBookmarkFaviconUrl(bm) {
   if (bm && typeof bm.favicon === 'string') {
@@ -491,7 +514,8 @@ async function renderBookmarksPage({ force = true } = {}) {
     renamingFolderName,
     addingBookmarkError,
     editingBookmarkError,
-    renamingFolderError
+    renamingFolderError,
+    bookmarksIoBanner
   });
   if (!force && renderKey === lastBookmarksRenderKey) return;
   lastBookmarksRenderKey = renderKey;
@@ -516,14 +540,68 @@ async function renderBookmarksPage({ force = true } = {}) {
   }
 
   topRightActions.innerHTML = `
+    <button type="button" class="btn" id="btnImportBookmarksHtml">Import HTML</button>
+    <button type="button" class="btn" id="btnExportBookmarksHtml">Export HTML</button>
     <button type="button" class="btn primary" id="btnToggleAddBookmark">${addingBookmarkOpen ? 'Close' : '+ Add Bookmark'}</button>
   `;
+
+  document.getElementById('btnImportBookmarksHtml').addEventListener('click', async () => {
+    if (!window.gxChromePagesAPI.importBookmarksHtml) return;
+    const res = await window.gxChromePagesAPI.importBookmarksHtml();
+    if (!res || res.canceled) return;
+    if (!res.ok) {
+      bookmarksIoBanner = {
+        kind: 'error',
+        title: 'Bookmarks import failed',
+        detail: res.error || 'Could not import bookmarks from HTML file.'
+      };
+    } else {
+      bookmarksIoBanner = {
+        kind: 'success',
+        title: `Imported ${res.added} ${res.added === 1 ? 'bookmark' : 'bookmarks'}`,
+        detail: `${res.skipped || 0} duplicate(s) skipped${res.fileName ? ` from ${res.fileName}` : ''}.`
+      };
+    }
+    renderBookmarksPage({ force: true });
+  });
+
+  document.getElementById('btnExportBookmarksHtml').addEventListener('click', async () => {
+    if (!window.gxChromePagesAPI.exportBookmarksHtml) return;
+    const res = await window.gxChromePagesAPI.exportBookmarksHtml();
+    if (!res || res.canceled) return;
+    if (!res.ok) {
+      bookmarksIoBanner = {
+        kind: 'error',
+        title: 'Bookmarks export failed',
+        detail: res.error || 'Could not export bookmarks.'
+      };
+    } else {
+      bookmarksIoBanner = {
+        kind: 'success',
+        title: `Exported ${res.count} ${res.count === 1 ? 'bookmark' : 'bookmarks'}`,
+        detail: res.fileName ? `Saved Netscape HTML file: ${res.fileName}` : 'Saved Netscape HTML bookmarks file.'
+      };
+    }
+    renderBookmarksPage({ force: true });
+  });
 
   document.getElementById('btnToggleAddBookmark').addEventListener('click', () => {
     addingBookmarkOpen = !addingBookmarkOpen;
     addingBookmarkError = '';
     renderBookmarksPage();
   });
+
+  const bmBannerHtml = bookmarksIoBanner
+    ? `
+      <div class="ext-banner ${escapeHtml(bookmarksIoBanner.kind || 'info')}" id="bookmarksIoBanner" role="status">
+        <div>
+          <div class="ext-banner-title">${escapeHtml(bookmarksIoBanner.title)}</div>
+          ${bookmarksIoBanner.detail ? `<div class="ext-banner-detail">${escapeHtml(bookmarksIoBanner.detail)}</div>` : ''}
+        </div>
+        <button type="button" class="btn" id="btnDismissBookmarksBanner">Dismiss</button>
+      </div>
+    `
+    : '';
 
   const datalistHtml = `
     <datalist id="bmFolderSuggestions">
@@ -631,8 +709,16 @@ async function renderBookmarksPage({ force = true } = {}) {
     }
   }
 
-  mainContainer.innerHTML = datalistHtml + addCardHtml + sectionsHtml;
+  mainContainer.innerHTML = bmBannerHtml + datalistHtml + addCardHtml + sectionsHtml;
   bindBookmarkFavicons(mainContainer);
+
+  const btnDismissBmBanner = document.getElementById('btnDismissBookmarksBanner');
+  if (btnDismissBmBanner) {
+    btnDismissBmBanner.addEventListener('click', () => {
+      bookmarksIoBanner = null;
+      renderBookmarksPage({ force: true });
+    });
+  }
 
   const addForm = document.getElementById('bmAddForm');
   if (addForm) {
@@ -780,42 +866,252 @@ async function renderBookmarksPage({ force = true } = {}) {
 }
 
 // 4. PASSWORDS & AUTOFILL
+let passwordsIoBanner = null;
+let passwordsExportConfirmOpen = false;
+let editingPasswordId = null;
+let editingPasswordError = '';
+const revealedPasswordIds = new Set();
+const pwLookupById = new Map();
+const pwGenState = {
+  length: 16,
+  lowercase: true,
+  uppercase: true,
+  digits: true,
+  symbols: true,
+  value: '',
+  error: '',
+  feedback: ''
+};
+
+const PW_MASK_PLACEHOLDER = '••••••••••••';
+
+function renderPasswordRowHtml(pw) {
+  if (editingPasswordId === pw.id) {
+    return `
+      <div class="card-row bm-editing pw-editing-row" data-id="${escapeHtml(pw.id)}">
+        <form class="bm-edit-form pw-edit-form" data-id="${escapeHtml(pw.id)}">
+          <div class="bm-edit-grid">
+            <label class="bm-edit-field">
+              <span class="bm-field-label">Website</span>
+              <input type="text" class="input-box pw-edit-site" value="${escapeHtml(pw.site)}" placeholder="e.g. github.com" required />
+            </label>
+            <label class="bm-edit-field">
+              <span class="bm-field-label">Username / Email</span>
+              <input type="text" class="input-box pw-edit-username" value="${escapeHtml(pw.username)}" placeholder="Username" required />
+            </label>
+            <label class="bm-edit-field">
+              <span class="bm-field-label">Password</span>
+              <div class="pw-field-wrap">
+                <input type="password" class="input-box pw-edit-password" value="" placeholder="Password" autocomplete="new-password" required />
+                <button type="button" class="btn toggle-edit-pw">Show</button>
+              </div>
+            </label>
+          </div>
+          <div class="bm-edit-footer">
+            <span class="bm-form-error pw-edit-error">${escapeHtml(editingPasswordError)}</span>
+            <div class="bm-actions">
+              <button type="button" class="btn cancel-edit-pw">Cancel</button>
+              <button type="submit" class="btn primary save-edit-pw">Save</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    `;
+  }
+
+  const isRevealed = revealedPasswordIds.has(pw.id);
+  return `
+    <div class="card-row pw-entry-row" data-id="${escapeHtml(pw.id)}">
+      <div class="row-info">
+        <div class="row-title" style="cursor:default;">${escapeHtml(pw.site)}</div>
+        <div class="row-sub">Username: <strong>${escapeHtml(pw.username)}</strong></div>
+      </div>
+      <div class="pw-row-actions">
+        <input
+          type="${isRevealed ? 'text' : 'password'}"
+          value="${isRevealed ? escapeHtml(pw.password) : PW_MASK_PLACEHOLDER}"
+          readonly
+          class="input-box pw-masked-input pw-field"
+          aria-label="Saved password for ${escapeHtml(pw.site)}"
+        />
+        <button type="button" class="btn toggle-pw" aria-pressed="${isRevealed ? 'true' : 'false'}">${isRevealed ? 'Hide' : 'Show'}</button>
+        <button type="button" class="btn copy-pw">Copy</button>
+        <button type="button" class="btn edit-pw">Edit</button>
+        <button type="button" class="btn danger del-pw">Delete</button>
+      </div>
+    </div>
+  `;
+}
+
 async function renderPasswordsPage() {
   const seq = ++renderSeq;
-  const list = await window.gxChromePagesAPI.getPasswords();
+  const list = (await window.gxChromePagesAPI.getPasswords()) || [];
   if (seq !== renderSeq || currentPage !== 'passwords') return;
-  const filtered = (list || []).filter(
+
+  pwLookupById.clear();
+  for (const pw of list) {
+    if (pw && pw.id) pwLookupById.set(pw.id, pw);
+  }
+  if (editingPasswordId && !pwLookupById.has(editingPasswordId)) {
+    editingPasswordId = null;
+    editingPasswordError = '';
+  }
+  for (const id of Array.from(revealedPasswordIds)) {
+    if (!pwLookupById.has(id)) revealedPasswordIds.delete(id);
+  }
+
+  topRightActions.innerHTML = `
+    <button type="button" class="btn" id="btnImportPasswordsCsv">Import CSV</button>
+    <button type="button" class="btn" id="btnExportPasswordsCsv">Export CSV</button>
+  `;
+
+  document.getElementById('btnImportPasswordsCsv').addEventListener('click', async () => {
+    if (!window.gxChromePagesAPI.importPasswordsCsv) return;
+    const res = await window.gxChromePagesAPI.importPasswordsCsv();
+    if (!res || res.canceled) return;
+    if (!res.ok) {
+      passwordsIoBanner = {
+        kind: 'error',
+        title: 'Password import failed',
+        detail: res.error || 'Could not import passwords from CSV file.'
+      };
+    } else {
+      passwordsIoBanner = {
+        kind: 'success',
+        title: `Imported ${res.added} ${res.added === 1 ? 'password' : 'passwords'}`,
+        detail: `${res.skipped || 0} duplicate(s) skipped${res.invalid ? `, ${res.invalid} invalid row(s) ignored` : ''}${res.fileName ? ` from ${res.fileName}` : ''}. Encrypted via OS safeStorage.`
+      };
+    }
+    renderPasswordsPage();
+  });
+
+  document.getElementById('btnExportPasswordsCsv').addEventListener('click', () => {
+    passwordsExportConfirmOpen = true;
+    passwordsIoBanner = null;
+    renderPasswordsPage();
+  });
+
+  const filtered = list.filter(
     (p) =>
       !searchQuery ||
       (p.site && p.site.toLowerCase().includes(searchQuery)) ||
       (p.username && p.username.toLowerCase().includes(searchQuery))
   );
 
-  let rowsHtml = '';
-  for (const pw of filtered) {
-    rowsHtml += `
-      <div class="card-row" data-id="${escapeHtml(pw.id)}">
-        <div class="row-info">
-          <div class="row-title">${escapeHtml(pw.site)}</div>
-          <div class="row-sub">Username: <strong>${escapeHtml(pw.username)}</strong></div>
+  const rowsHtml = filtered.map(renderPasswordRowHtml).join('');
+
+  const exportWarningHtml = passwordsExportConfirmOpen
+    ? `
+      <div class="ext-banner warning" id="pwExportWarningBanner" role="alert">
+        <div>
+          <div class="ext-banner-title">Security Warning — Unencrypted Plaintext Password Export</div>
+          <div class="ext-banner-detail">
+            Exporting passwords to CSV saves all ${list.length} saved ${list.length === 1 ? 'login' : 'logins'} in this profile as <strong>unencrypted plaintext</strong> (<code>url,username,password</code>). Anyone who can read this file will be able to see your passwords. Store it securely and delete it when done.
+          </div>
+          <div class="pw-warning-actions">
+            <button type="button" class="btn danger-solid" id="btnConfirmExportPasswordsCsv">I Understand — Export Plaintext CSV</button>
+            <button type="button" class="btn" id="btnCancelExportPasswordsCsv">Cancel</button>
+          </div>
         </div>
-        <input type="password" value="${escapeHtml(pw.password)}" readonly class="input-box pw-field" style="width:150px;" />
-        <button class="btn toggle-pw">Show</button>
-        <button class="btn copy-pw" data-pw="${escapeHtml(pw.password)}">Copy</button>
-        <button class="btn danger del-pw">Delete</button>
       </div>
-    `;
-  }
+    `
+    : '';
+
+  const pwBannerHtml = passwordsIoBanner
+    ? `
+      <div class="ext-banner ${escapeHtml(passwordsIoBanner.kind || 'info')}" id="passwordsIoBanner" role="status">
+        <div>
+          <div class="ext-banner-title">${escapeHtml(passwordsIoBanner.title)}</div>
+          ${passwordsIoBanner.detail ? `<div class="ext-banner-detail">${escapeHtml(passwordsIoBanner.detail)}</div>` : ''}
+        </div>
+        <button type="button" class="btn" id="btnDismissPasswordsBanner">Dismiss</button>
+      </div>
+    `
+    : '';
+
+  const generatorCardHtml = `
+    <div class="section-card" id="pwGeneratorCard">
+      <div class="card-header">
+        <h2 class="nx-heading">Password Generator</h2>
+        <span class="priv-status-pill accent">crypto.randomBytes</span>
+      </div>
+      <div class="pw-gen-body">
+        <div class="pw-gen-output-row">
+          <input
+            type="text"
+            id="pwGenOutput"
+            class="input-box pw-gen-output"
+            value="${escapeHtml(pwGenState.value)}"
+            placeholder="Click Generate to create a strong password"
+            readonly
+            autocomplete="off"
+            spellcheck="false"
+            aria-label="Generated password"
+          />
+          <button type="button" class="btn primary" id="btnPwGenerate">Generate</button>
+          <button type="button" class="btn" id="btnPwUseGenerated"${pwGenState.value ? '' : ' disabled'}>Use this password</button>
+        </div>
+        <div class="pw-gen-length-row">
+          <label class="pw-gen-length-label" for="pwGenLengthRange">Length</label>
+          <input
+            type="range"
+            id="pwGenLengthRange"
+            class="nx-range"
+            min="8"
+            max="64"
+            step="1"
+            value="${pwGenState.length}"
+            aria-label="Password length slider"
+          />
+          <input
+            type="number"
+            id="pwGenLengthNum"
+            class="input-box pw-gen-length-num"
+            min="8"
+            max="64"
+            value="${pwGenState.length}"
+            aria-label="Password length"
+          />
+        </div>
+        <div class="pw-gen-charsets" role="group" aria-label="Character sets">
+          <label class="pw-charset-opt">
+            <input type="checkbox" id="pwGenLower" ${pwGenState.lowercase ? 'checked' : ''} />
+            <span>Lowercase (a-z)</span>
+          </label>
+          <label class="pw-charset-opt">
+            <input type="checkbox" id="pwGenUpper" ${pwGenState.uppercase ? 'checked' : ''} />
+            <span>Uppercase (A-Z)</span>
+          </label>
+          <label class="pw-charset-opt">
+            <input type="checkbox" id="pwGenDigits" ${pwGenState.digits ? 'checked' : ''} />
+            <span>Digits (0-9)</span>
+          </label>
+          <label class="pw-charset-opt">
+            <input type="checkbox" id="pwGenSymbols" ${pwGenState.symbols ? 'checked' : ''} />
+            <span>Symbols (!@#$...)</span>
+          </label>
+        </div>
+        <div class="bm-form-error${pwGenState.error ? '' : ' hidden'}" id="pwGenError" role="alert">${escapeHtml(pwGenState.error)}</div>
+        <div class="pw-gen-feedback${pwGenState.feedback ? '' : ' hidden'}" id="pwGenFeedback" role="status">${escapeHtml(pwGenState.feedback)}</div>
+      </div>
+    </div>
+  `;
 
   mainContainer.innerHTML = `
+    ${exportWarningHtml}
+    ${pwBannerHtml}
+    ${generatorCardHtml}
     <div class="section-card">
       <div class="card-header">
         <h2 class="nx-heading">Add Website Login (Auto-Fills on Matching Sites)</h2>
       </div>
-      <form id="pwAddForm" class="card-row" style="gap:10px;">
-        <input type="text" id="inpSite" class="input-box" placeholder="Website (e.g. github.com)" required style="flex:1" />
-        <input type="text" id="inpUser" class="input-box" placeholder="Username / Email" required style="flex:1" />
-        <input type="password" id="inpPass" class="input-box" placeholder="Password" required style="flex:1" />
+      <form id="pwAddForm" class="card-row" style="gap:10px;flex-wrap:wrap;">
+        <input type="text" id="inpSite" class="input-box" placeholder="Website (e.g. github.com)" required style="flex:1;min-width:160px;" />
+        <input type="text" id="inpUser" class="input-box" placeholder="Username / Email" required style="flex:1;min-width:160px;" />
+        <div class="pw-field-wrap">
+          <input type="password" id="inpPass" class="input-box" placeholder="Password" autocomplete="new-password" required />
+          <button type="button" class="btn" id="btnToggleAddPass">Show</button>
+        </div>
         <button type="submit" class="btn primary">Save</button>
       </form>
     </div>
@@ -828,38 +1124,831 @@ async function renderPasswordsPage() {
     </div>
   `;
 
+  const btnCancelPwExport = document.getElementById('btnCancelExportPasswordsCsv');
+  if (btnCancelPwExport) {
+    btnCancelPwExport.addEventListener('click', () => {
+      passwordsExportConfirmOpen = false;
+      renderPasswordsPage();
+    });
+  }
+
+  const btnConfirmPwExport = document.getElementById('btnConfirmExportPasswordsCsv');
+  if (btnConfirmPwExport) {
+    btnConfirmPwExport.addEventListener('click', async () => {
+      if (!window.gxChromePagesAPI.exportPasswordsCsv) return;
+      btnConfirmPwExport.disabled = true;
+      const res = await window.gxChromePagesAPI.exportPasswordsCsv();
+      passwordsExportConfirmOpen = false;
+      if (!res || res.canceled) {
+        renderPasswordsPage();
+        return;
+      }
+      if (!res.ok) {
+        passwordsIoBanner = {
+          kind: 'error',
+          title: 'Password export failed',
+          detail: res.error || 'Could not export passwords.'
+        };
+      } else {
+        passwordsIoBanner = {
+          kind: 'warning',
+          title: `Exported ${res.count} ${res.count === 1 ? 'password' : 'passwords'} (plaintext CSV)`,
+          detail: `${res.fileName ? `Saved to ${res.fileName}. ` : ''}Remember to protect or delete this unencrypted file after use.`
+        };
+      }
+      renderPasswordsPage();
+    });
+  }
+
+  const btnDismissPwBanner = document.getElementById('btnDismissPasswordsBanner');
+  if (btnDismissPwBanner) {
+    btnDismissPwBanner.addEventListener('click', () => {
+      passwordsIoBanner = null;
+      renderPasswordsPage();
+    });
+  }
+
+  // Password Generator bindings
+  const genRange = document.getElementById('pwGenLengthRange');
+  const genNum = document.getElementById('pwGenLengthNum');
+  const genLower = document.getElementById('pwGenLower');
+  const genUpper = document.getElementById('pwGenUpper');
+  const genDigits = document.getElementById('pwGenDigits');
+  const genSymbols = document.getElementById('pwGenSymbols');
+  const genOutput = document.getElementById('pwGenOutput');
+  const genErr = document.getElementById('pwGenError');
+  const genFeedback = document.getElementById('pwGenFeedback');
+  const btnPwGenerate = document.getElementById('btnPwGenerate');
+  const btnPwUse = document.getElementById('btnPwUseGenerated');
+
+  const syncGenLength = (rawVal) => {
+    const parsed = Math.round(Number(rawVal));
+    const clamped = Number.isFinite(parsed) ? Math.max(8, Math.min(64, parsed)) : 16;
+    pwGenState.length = clamped;
+    if (genRange) genRange.value = String(clamped);
+    if (genNum) genNum.value = String(clamped);
+  };
+
+  if (genRange) {
+    genRange.addEventListener('input', (e) => syncGenLength(e.target.value));
+  }
+  if (genNum) {
+    genNum.addEventListener('input', (e) => {
+      const n = Number(e.target.value);
+      if (Number.isFinite(n) && n >= 8 && n <= 64) {
+        pwGenState.length = Math.round(n);
+        if (genRange) genRange.value = String(pwGenState.length);
+      }
+    });
+    genNum.addEventListener('change', (e) => syncGenLength(e.target.value));
+  }
+  if (genLower) genLower.addEventListener('change', (e) => { pwGenState.lowercase = e.target.checked; });
+  if (genUpper) genUpper.addEventListener('change', (e) => { pwGenState.uppercase = e.target.checked; });
+  if (genDigits) genDigits.addEventListener('change', (e) => { pwGenState.digits = e.target.checked; });
+  if (genSymbols) genSymbols.addEventListener('change', (e) => { pwGenState.symbols = e.target.checked; });
+
+  if (btnPwGenerate) {
+    btnPwGenerate.addEventListener('click', async () => {
+      if (!window.gxChromePagesAPI.generatePassword) return;
+      syncGenLength(genNum ? genNum.value : pwGenState.length);
+      pwGenState.feedback = '';
+      if (genFeedback) {
+        genFeedback.textContent = '';
+        genFeedback.classList.add('hidden');
+      }
+      const res = await window.gxChromePagesAPI.generatePassword({
+        length: pwGenState.length,
+        lowercase: pwGenState.lowercase,
+        uppercase: pwGenState.uppercase,
+        digits: pwGenState.digits,
+        symbols: pwGenState.symbols
+      });
+      if (!res || !res.ok) {
+        pwGenState.error = res?.error || 'Could not generate password.';
+        pwGenState.value = '';
+        if (genOutput) genOutput.value = '';
+        if (btnPwUse) btnPwUse.disabled = true;
+        if (genErr) {
+          genErr.textContent = pwGenState.error;
+          genErr.classList.remove('hidden');
+        }
+        return;
+      }
+      pwGenState.error = '';
+      pwGenState.value = res.password || '';
+      if (genErr) {
+        genErr.textContent = '';
+        genErr.classList.add('hidden');
+      }
+      if (genOutput) genOutput.value = pwGenState.value;
+      if (btnPwUse) btnPwUse.disabled = !pwGenState.value;
+    });
+  }
+
+  if (btnPwUse) {
+    btnPwUse.addEventListener('click', () => {
+      if (!pwGenState.value) return;
+      const editPassInp = mainContainer.querySelector('.pw-edit-form .pw-edit-password');
+      if (editPassInp) {
+        editPassInp.value = pwGenState.value;
+        editPassInp.type = 'text';
+        const toggleBtn = editPassInp.closest('.pw-field-wrap')?.querySelector('.toggle-edit-pw');
+        if (toggleBtn) toggleBtn.textContent = 'Hide';
+        editPassInp.focus();
+        pwGenState.feedback = 'Filled into the open Edit Login form.';
+      } else {
+        const addPassInp = document.getElementById('inpPass');
+        if (addPassInp) {
+          addPassInp.value = pwGenState.value;
+          addPassInp.type = 'text';
+          const toggleBtn = document.getElementById('btnToggleAddPass');
+          if (toggleBtn) toggleBtn.textContent = 'Hide';
+          addPassInp.focus();
+          pwGenState.feedback = 'Filled into the Add Website Login form.';
+        }
+      }
+      if (genFeedback && pwGenState.feedback) {
+        genFeedback.textContent = pwGenState.feedback;
+        genFeedback.classList.remove('hidden');
+      }
+    });
+  }
+
+  const btnToggleAddPass = document.getElementById('btnToggleAddPass');
+  if (btnToggleAddPass) {
+    btnToggleAddPass.addEventListener('click', () => {
+      const inp = document.getElementById('inpPass');
+      if (!inp) return;
+      const isPw = inp.type === 'password';
+      inp.type = isPw ? 'text' : 'password';
+      btnToggleAddPass.textContent = isPw ? 'Hide' : 'Show';
+    });
+  }
+
   document.getElementById('pwAddForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    await window.gxChromePagesAPI.addPassword({
-      site: document.getElementById('inpSite').value.trim(),
-      username: document.getElementById('inpUser').value.trim(),
-      password: document.getElementById('inpPass').value
-    });
+    const site = document.getElementById('inpSite').value.trim();
+    const username = document.getElementById('inpUser').value.trim();
+    const password = document.getElementById('inpPass').value;
+    if (!site || !username || !password) return;
+    await window.gxChromePagesAPI.addPassword({ site, username, password });
+    pwGenState.feedback = '';
     renderPasswordsPage();
   });
 
+  // Saved entry row controls: Show/Hide, main-process Copy, inline Edit, Delete
   mainContainer.querySelectorAll('.toggle-pw').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      const inp = e.target.closest('.card-row').querySelector('.pw-field');
-      const isPw = inp.type === 'password';
-      inp.type = isPw ? 'text' : 'password';
-      btn.textContent = isPw ? 'Hide' : 'Show';
+    btn.addEventListener('click', () => {
+      const row = btn.closest('.card-row');
+      const id = row?.dataset.id;
+      const inp = row?.querySelector('.pw-field');
+      if (!id || !inp) return;
+      const isHidden = inp.type === 'password';
+      if (isHidden) {
+        const entry = pwLookupById.get(id);
+        inp.type = 'text';
+        inp.value = entry ? entry.password : '';
+        btn.textContent = 'Hide';
+        btn.setAttribute('aria-pressed', 'true');
+        revealedPasswordIds.add(id);
+      } else {
+        inp.type = 'password';
+        inp.value = PW_MASK_PLACEHOLDER;
+        btn.textContent = 'Show';
+        btn.setAttribute('aria-pressed', 'false');
+        revealedPasswordIds.delete(id);
+      }
     });
   });
 
   mainContainer.querySelectorAll('.copy-pw').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.closest('.card-row')?.dataset.id;
+      if (!id || !window.gxChromePagesAPI.copyPassword) return;
+      const res = await window.gxChromePagesAPI.copyPassword(id);
+      if (res && res.ok) {
+        btn.textContent = 'Copied!';
+        clearTimeout(btn._copyResetTimer);
+        btn._copyResetTimer = setTimeout(() => {
+          btn.textContent = 'Copy';
+        }, 1800);
+      }
+    });
+  });
+
+  mainContainer.querySelectorAll('.edit-pw').forEach((btn) => {
     btn.addEventListener('click', () => {
-      navigator.clipboard.writeText(btn.dataset.pw || '');
-      btn.textContent = 'Copied!';
+      const id = btn.closest('.card-row')?.dataset.id;
+      if (!id) return;
+      editingPasswordId = id;
+      editingPasswordError = '';
+      renderPasswordsPage();
     });
   });
 
   mainContainer.querySelectorAll('.del-pw').forEach((btn) => {
-    btn.addEventListener('click', async (e) => {
-      const id = e.target.closest('.card-row').dataset.id;
+    btn.addEventListener('click', async () => {
+      const id = btn.closest('.card-row')?.dataset.id;
+      if (!id) return;
+      revealedPasswordIds.delete(id);
+      if (editingPasswordId === id) {
+        editingPasswordId = null;
+        editingPasswordError = '';
+      }
       await window.gxChromePagesAPI.removePassword(id);
       renderPasswordsPage();
     });
+  });
+
+  const pwEditForm = mainContainer.querySelector('.pw-edit-form[data-id]');
+  if (pwEditForm) {
+    const editId = pwEditForm.dataset.id;
+    const entry = pwLookupById.get(editId);
+    const siteInp = pwEditForm.querySelector('.pw-edit-site');
+    const userInp = pwEditForm.querySelector('.pw-edit-username');
+    const passInp = pwEditForm.querySelector('.pw-edit-password');
+    const toggleEditBtn = pwEditForm.querySelector('.toggle-edit-pw');
+
+    // Populate password value via JS property rather than HTML attribute
+    if (passInp && entry) {
+      passInp.value = entry.password || '';
+    }
+    if (siteInp) {
+      siteInp.focus();
+      siteInp.select();
+    }
+
+    if (toggleEditBtn && passInp) {
+      toggleEditBtn.addEventListener('click', () => {
+        const isPw = passInp.type === 'password';
+        passInp.type = isPw ? 'text' : 'password';
+        toggleEditBtn.textContent = isPw ? 'Hide' : 'Show';
+      });
+    }
+
+    const cancelEdit = () => {
+      editingPasswordId = null;
+      editingPasswordError = '';
+      renderPasswordsPage();
+    };
+
+    pwEditForm.querySelector('.cancel-edit-pw')?.addEventListener('click', cancelEdit);
+    pwEditForm.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') cancelEdit();
+    });
+
+    pwEditForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const site = siteInp ? siteInp.value.trim() : '';
+      const username = userInp ? userInp.value.trim() : '';
+      const password = passInp ? passInp.value : '';
+      const res = await window.gxChromePagesAPI.updatePassword({
+        id: editId,
+        site,
+        username,
+        password
+      });
+      if (!res || !res.ok) {
+        editingPasswordError = res?.error || 'Could not update password.';
+        const errEl = pwEditForm.querySelector('.pw-edit-error');
+        if (errEl) errEl.textContent = editingPasswordError;
+        return;
+      }
+      editingPasswordId = null;
+      editingPasswordError = '';
+      pwGenState.feedback = '';
+      renderPasswordsPage();
+    });
+  }
+}
+
+// 4b. PRIVACY & SECURITY DASHBOARD
+const PRIVACY_PERMISSION_LABELS = {
+  camera: 'Camera',
+  microphone: 'Microphone',
+  geolocation: 'Location',
+  notifications: 'Notifications'
+};
+
+function navigateToSettingsTarget(elementId) {
+  pendingSettingsScrollTarget = elementId || '';
+  switchPage('settings');
+}
+
+async function renderPrivacyPage({ force = true } = {}) {
+  const seq = ++renderSeq;
+  const [dash, cookiesList] = await Promise.all([
+    window.gxChromePagesAPI.getPrivacyDashboard
+      ? window.gxChromePagesAPI.getPrivacyDashboard()
+      : Promise.resolve(null),
+    window.gxChromePagesAPI.getCookies
+      ? window.gxChromePagesAPI.getCookies()
+      : Promise.resolve([])
+  ]);
+  if (seq !== renderSeq || currentPage !== 'privacy' || !dash) return;
+
+  const cookiesCount = Array.isArray(cookiesList) ? cookiesList.length : 0;
+  const renderKey = JSON.stringify({
+    q: searchQuery,
+    dash,
+    cookiesCount
+  });
+  if (!force && renderKey === lastPrivacyRenderKey) return;
+  lastPrivacyRenderKey = renderKey;
+  const prevScrollY = force ? 0 : window.scrollY;
+
+  topRightActions.innerHTML = `
+    <button type="button" class="btn" id="btnRefreshPrivacy">Refresh</button>
+    <button type="button" class="btn primary" id="btnPrivacyOpenSettings">Privacy Settings</button>
+  `;
+
+  document.getElementById('btnRefreshPrivacy').addEventListener('click', () => {
+    renderPrivacyPage({ force: true });
+  });
+  document.getElementById('btnPrivacyOpenSettings').addEventListener('click', () => {
+    switchPage('settings');
+  });
+
+  const profile = dash.profile || { id: 'default', name: 'Default', avatar: 'D', color: 'gx-violet' };
+  const isIncognito = Boolean(dash.isIncognito);
+  const ad = dash.adblock || {
+    enabled: false,
+    trackerBlockEnabled: false,
+    sessionBlocked: 0,
+    totalBlocked: 0,
+    recentBlocked: [],
+    perSite: {}
+  };
+  const adblockSites = dash.adblockSites && typeof dash.adblockSites === 'object' ? dash.adblockSites : {};
+  const sitePermissions = Array.isArray(dash.sitePermissions) ? dash.sitePermissions : [];
+  const trackedKeys = Array.isArray(dash.trackedPermissionKeys) && dash.trackedPermissionKeys.length
+    ? dash.trackedPermissionKeys
+    : ['camera', 'microphone', 'geolocation', 'notifications'];
+  const settings = dash.settings || {};
+  const security = dash.security || {};
+
+  const adblockOn = Boolean(ad.enabled);
+  const trackerOn = Boolean(adblockOn && ad.trackerBlockEnabled);
+  const encryptionAvailable = Boolean(security.passwordEncryptionAvailable);
+  const restoreSessionOn = settings.restoreSession !== false;
+  const autoSleepOn = settings.autoSleepEnabled !== false;
+  const autoSleepMins = Number(settings.autoSleepMinutes || 10);
+  const historyCount = Number(security.historyCount || 0);
+  const savedPasswordsCount = Number(security.savedPasswordsCount || 0);
+
+  // Merge per-site blocked counts (from adblock:stats.perSite) with per-profile allowlist overrides (from adblock:get-sites)
+  const siteMap = new Map();
+  for (const [origin, count] of Object.entries(ad.perSite || {})) {
+    if (!origin) continue;
+    siteMap.set(origin, {
+      origin,
+      count: Number(count) || 0,
+      allowlisted: false
+    });
+  }
+  for (const [origin, entry] of Object.entries(adblockSites)) {
+    if (!origin) continue;
+    const isAllowlisted = typeof entry === 'boolean' ? entry === false : Boolean(entry && entry.enabled === false);
+    const existing = siteMap.get(origin);
+    if (existing) {
+      existing.allowlisted = isAllowlisted;
+    } else if (isAllowlisted) {
+      siteMap.set(origin, {
+        origin,
+        count: 0,
+        allowlisted: true
+      });
+    }
+  }
+
+  const perSiteRows = Array.from(siteMap.values())
+    .filter((item) => !searchQuery || item.origin.toLowerCase().includes(searchQuery))
+    .sort((a, b) => b.count - a.count || a.origin.localeCompare(b.origin));
+
+  let perSiteHtml = '';
+  if (!perSiteRows.length) {
+    perSiteHtml = `
+      <div class="card-row">
+        <div class="nx-empty-inline" style="width:100%;">
+          <div class="nx-empty-inline-left">
+            <div class="nx-empty-icon" aria-hidden="true">${SVG_SHIELD}</div>
+            <span class="nx-empty-copy">${
+              searchQuery
+                ? `No blocked or allowlisted sites match "${escapeHtml(searchQuery)}".`
+                : 'No ads or trackers blocked in this session yet. Blocked sites and allowlist overrides will appear here.'
+            }</span>
+          </div>
+        </div>
+      </div>
+    `;
+  } else {
+    for (const item of perSiteRows) {
+      const statusPill = !adblockOn
+        ? '<span class="priv-status-pill warn">Global Off</span>'
+        : item.allowlisted
+        ? '<span class="priv-status-pill warn">Paused (Allowlisted)</span>'
+        : '<span class="priv-status-pill on">Protected</span>';
+      const toggleBtnLabel = item.allowlisted ? 'Re-enable' : 'Pause on site';
+      const nextEnabled = item.allowlisted ? 'true' : 'false';
+      perSiteHtml += `
+        <div class="card-row priv-adblock-site-row" data-origin="${escapeHtml(item.origin)}">
+          <div class="row-info">
+            <div class="row-title" style="cursor:default;">${escapeHtml(item.origin)}</div>
+            <div class="row-sub">${
+              item.allowlisted
+                ? 'Blocking is paused on this origin for this profile'
+                : 'Ads &amp; trackers filtered on this origin'
+            }</div>
+          </div>
+          <div class="priv-checklist-right">
+            <span class="priv-site-count">${item.count} blocked</span>
+            ${statusPill}
+            <button
+              type="button"
+              class="btn priv-toggle-site-adblock"
+              data-origin="${escapeHtml(item.origin)}"
+              data-next-enabled="${nextEnabled}"
+              ${adblockOn ? '' : 'disabled title="Enable the global Ad Blocker first"'}
+            >${toggleBtnLabel}</button>
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  // Recent blocked requests (real items from adblock:stats.recentBlocked)
+  const recentBlocked = (Array.isArray(ad.recentBlocked) ? ad.recentBlocked : []).filter((r) => {
+    if (!searchQuery) return true;
+    const hay = `${r.host || ''} ${r.origin || ''} ${r.category || ''} ${r.type || ''}`.toLowerCase();
+    return hay.includes(searchQuery);
+  });
+
+  let recentHtml = '';
+  if (!recentBlocked.length) {
+    recentHtml = `<div class="empty-state" style="padding:20px;">${
+      searchQuery
+        ? `No recent blocked requests match "${escapeHtml(searchQuery)}".`
+        : 'No blocked requests recorded in this session yet.'
+    }</div>`;
+  } else {
+    for (const r of recentBlocked) {
+      const timeStr = r.time
+        ? new Date(r.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        : '';
+      const cat = r.category === 'tracker' ? 'Tracker' : 'Ad';
+      const catCls = r.category === 'tracker' ? 'warn' : 'accent';
+      recentHtml += `
+        <div class="priv-recent-row">
+          <div style="min-width:0;flex:1;">
+            <div class="priv-recent-host">${escapeHtml(r.host || 'unknown')}</div>
+            ${r.origin ? `<div class="row-sub" style="margin-top:1px;">From ${escapeHtml(r.origin)}</div>` : ''}
+          </div>
+          <div class="priv-recent-meta">
+            <span class="priv-status-pill ${catCls}">${cat}</span>
+            ${r.type ? `<span>${escapeHtml(r.type)}</span>` : ''}
+            ${timeStr ? `<span class="nx-mono">${escapeHtml(timeStr)}</span>` : ''}
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  // Real Site Permissions Overview (from site_permissions.json for this profile)
+  const filteredPermissions = sitePermissions.filter((entry) => {
+    if (!searchQuery) return true;
+    const permText = trackedKeys
+      .map((k) => `${PRIVACY_PERMISSION_LABELS[k] || k} ${entry.permissions?.[k] || 'ask'}`)
+      .join(' ');
+    return `${entry.origin} ${permText}`.toLowerCase().includes(searchQuery);
+  });
+
+  let permissionsHtml = '';
+  if (!filteredPermissions.length) {
+    permissionsHtml = `
+      <div class="card-row">
+        <div class="nx-empty-inline" style="width:100%;">
+          <div class="nx-empty-inline-left">
+            <div class="nx-empty-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </div>
+            <span class="nx-empty-copy">${
+              searchQuery
+                ? `No site permissions match "${escapeHtml(searchQuery)}".`
+                : 'No site-specific permissions saved for this profile yet. Camera, microphone, location, and notification choices you set from the address bar lock icon appear here.'
+            }</span>
+          </div>
+        </div>
+      </div>
+    `;
+  } else {
+    for (const entry of filteredPermissions) {
+      const perms = entry.permissions || {};
+      const chipsHtml = trackedKeys
+        .map((key) => {
+          const val = perms[key] || 'ask';
+          const chipCls = val === 'allow' ? 'is-allow' : val === 'block' ? 'is-block' : '';
+          const label = PRIVACY_PERMISSION_LABELS[key] || key;
+          return `
+            <label class="priv-perm-chip ${chipCls}">
+              <span>${escapeHtml(label)}</span>
+              <select
+                class="priv-perm-select"
+                data-origin="${escapeHtml(entry.origin)}"
+                data-perm-key="${escapeHtml(key)}"
+                aria-label="${escapeHtml(label)} permission for ${escapeHtml(entry.origin)}"
+              >
+                <option value="ask"${val === 'ask' ? ' selected' : ''}>Ask</option>
+                <option value="allow"${val === 'allow' ? ' selected' : ''}>Allow</option>
+                <option value="block"${val === 'block' ? ' selected' : ''}>Block</option>
+              </select>
+            </label>
+          `;
+        })
+        .join('');
+
+      permissionsHtml += `
+        <div class="card-row priv-perm-row" data-origin="${escapeHtml(entry.origin)}">
+          <div class="priv-perm-top">
+            <div class="row-info">
+              <div class="row-title" style="cursor:default;">${escapeHtml(entry.origin)}</div>
+            </div>
+            <button type="button" class="btn danger priv-reset-site-perms" data-origin="${escapeHtml(entry.origin)}">Reset Site</button>
+          </div>
+          <div class="priv-perm-grid">${chipsHtml}</div>
+        </div>
+      `;
+    }
+  }
+
+  mainContainer.innerHTML = `
+    <div class="priv-profile-bar" id="privProfileBar">
+      <div class="priv-profile-left">
+        <span class="prof-webui-avatar" data-profile-color="${escapeHtml(profile.color || 'gx-violet')}">${escapeHtml(profile.avatar || profile.name?.charAt(0)?.toUpperCase() || 'D')}</span>
+        <div>
+          <div class="priv-profile-title">
+            <span>Profile: ${escapeHtml(profile.name || 'Default')}</span>
+            <span class="prof-webui-badge current-win">Active Window Profile</span>
+            ${isIncognito ? '<span class="prof-webui-badge active">Private Window</span>' : ''}
+          </div>
+          <div class="priv-profile-sub">Permissions, ad-block allowlist, cookies, history, and saved logins reflect this profile. Aggregate blocked counts are browser-wide.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="priv-kpi-grid" id="privKpiGrid">
+      <div class="priv-kpi-card accent">
+        <span class="priv-kpi-label">Blocked Lifetime</span>
+        <strong class="priv-kpi-value" id="privTotalBlocked">${Number(ad.totalBlocked || 0)}</strong>
+        <span class="priv-kpi-sub">Total ads &amp; trackers blocked</span>
+      </div>
+      <div class="priv-kpi-card">
+        <span class="priv-kpi-label">Blocked This Session</span>
+        <strong class="priv-kpi-value" id="privSessionBlocked">${Number(ad.sessionBlocked || 0)}</strong>
+        <span class="priv-kpi-sub">Across ${Object.keys(ad.perSite || {}).length} active ${Object.keys(ad.perSite || {}).length === 1 ? 'origin' : 'origins'}</span>
+      </div>
+      <div class="priv-kpi-card">
+        <span class="priv-kpi-label">Ad Blocker</span>
+        <div class="priv-kpi-toggle-row">
+          <strong class="priv-kpi-value" style="font-size:20px;" id="privAdblockStateText">${adblockOn ? 'On' : 'Off'}</strong>
+          <label class="nx-switch" title="Toggle built-in ad blocker">
+            <input type="checkbox" id="privAdblockToggle" ${adblockOn ? 'checked' : ''} />
+            <span class="nx-slider"></span>
+          </label>
+        </div>
+        <span class="priv-kpi-sub">Network + cosmetic filter rules</span>
+      </div>
+      <div class="priv-kpi-card">
+        <span class="priv-kpi-label">Tracker Blocking</span>
+        <div class="priv-kpi-toggle-row">
+          <strong class="priv-kpi-value" style="font-size:20px;" id="privTrackerStateText">${trackerOn ? 'On' : 'Off'}</strong>
+          <label class="nx-switch" title="Toggle analytics & tracker blocking">
+            <input type="checkbox" id="privTrackerToggle" ${trackerOn ? 'checked' : ''} ${adblockOn ? '' : 'disabled'} />
+            <span class="nx-slider"></span>
+          </label>
+        </div>
+        <span class="priv-kpi-sub">${adblockOn ? 'Analytics, telemetry &amp; pixels' : 'Requires Ad Blocker enabled'}</span>
+      </div>
+    </div>
+
+    <div class="section-card" id="privPerSiteCard">
+      <div class="card-header">
+        <h2 class="nx-heading">Per-Site Ad &amp; Tracker Breakdown (${perSiteRows.length})</h2>
+        <span style="font-size:12px;color:var(--text-secondary);">Top sites this session + allowlist</span>
+      </div>
+      ${perSiteHtml}
+    </div>
+
+    <div class="section-card" id="privPermissionsCard">
+      <div class="card-header">
+        <h2 class="nx-heading">Site Permissions Overview (${filteredPermissions.length})</h2>
+        <span style="font-size:12px;color:var(--text-secondary);">Camera, Microphone, Location &amp; Notifications</span>
+      </div>
+      ${permissionsHtml}
+    </div>
+
+    <div class="section-card" id="privPostureCard">
+      <div class="card-header">
+        <h2 class="nx-heading">Security Posture Checklist</h2>
+        <span style="font-size:12px;color:var(--text-secondary);">Real on/off state — no synthetic scores</span>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title" style="cursor:default;">Built-in Ad Blocker</div>
+          <div class="row-sub">Blocks known ad domains, ad URL patterns, and cosmetic ad containers</div>
+        </div>
+        <div class="priv-checklist-right">
+          <span class="priv-status-pill ${adblockOn ? 'on' : 'warn'}">${adblockOn ? 'On' : 'Off'}</span>
+          <label class="nx-switch">
+            <input type="checkbox" id="privCheckAdblock" ${adblockOn ? 'checked' : ''} />
+            <span class="nx-slider"></span>
+          </label>
+        </div>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title" style="cursor:default;">Analytics &amp; Tracker Blocking</div>
+          <div class="row-sub">Blocks telemetry, session replay, and analytics scripts while Ad Blocker is enabled</div>
+        </div>
+        <div class="priv-checklist-right">
+          <span class="priv-status-pill ${trackerOn ? 'on' : 'warn'}">${trackerOn ? 'On' : 'Off'}</span>
+          <label class="nx-switch">
+            <input type="checkbox" id="privCheckTracker" ${trackerOn ? 'checked' : ''} ${adblockOn ? '' : 'disabled'} />
+            <span class="nx-slider"></span>
+          </label>
+        </div>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title" style="cursor:default;">Password Encryption at Rest (OS Keyring)</div>
+          <div class="row-sub">${
+            encryptionAvailable
+              ? `Electron safeStorage encryption is available and active (${savedPasswordsCount} saved ${savedPasswordsCount === 1 ? 'login' : 'logins'} in this profile).`
+              : `OS keyring encryption is unavailable in this environment (safeStorage returned false; ${savedPasswordsCount} saved ${savedPasswordsCount === 1 ? 'login' : 'logins'} stored without OS encryption).`
+          }</div>
+        </div>
+        <div class="priv-checklist-right">
+          <span class="priv-status-pill ${encryptionAvailable ? 'on' : 'warn'}" id="privEncryptionStatus">${encryptionAvailable ? 'Available' : 'Unavailable'}</span>
+          <button type="button" class="btn" id="btnPrivManagePasswords">Passwords</button>
+        </div>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title" style="cursor:default;">Private Browsing Windows</div>
+          <div class="row-sub">${
+            isIncognito
+              ? 'Currently browsing in an ephemeral Private window (history and session not saved).'
+              : 'Ephemeral, history-isolated Private windows are available (Ctrl+Shift+N).'
+          }</div>
+        </div>
+        <div class="priv-checklist-right">
+          <span class="priv-status-pill ${isIncognito ? 'accent' : 'on'}">${isIncognito ? 'Active' : 'Available'}</span>
+          <button type="button" class="btn" id="btnPrivNewIncognito">Open Private Window</button>
+        </div>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title" style="cursor:default;">Session Restore on Startup</div>
+          <div class="row-sub">${
+            restoreSessionOn
+              ? 'On — previous tabs are saved to disk and restored on launch.'
+              : 'Off — browser starts fresh on nextgx://newtab without restoring prior tabs.'
+          }</div>
+        </div>
+        <div class="priv-checklist-right">
+          <span class="priv-status-pill ${restoreSessionOn ? 'accent' : ''}">${restoreSessionOn ? 'On' : 'Off'}</span>
+          <label class="nx-switch">
+            <input type="checkbox" id="privCheckRestoreSession" ${restoreSessionOn ? 'checked' : ''} />
+            <span class="nx-slider"></span>
+          </label>
+        </div>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title" style="cursor:default;">Automatic Tab Hibernation (Auto-Sleep)</div>
+          <div class="row-sub">${
+            autoSleepOn
+              ? `On — idle background tabs hibernate after ${autoSleepMins} ${autoSleepMins === 1 ? 'minute' : 'minutes'}.`
+              : 'Off — background tabs stay awake until manually hibernated.'
+          }</div>
+        </div>
+        <div class="priv-checklist-right">
+          <span class="priv-status-pill ${autoSleepOn ? 'on' : ''}">${autoSleepOn ? `On (${autoSleepMins}m)` : 'Off'}</span>
+          <label class="nx-switch">
+            <input type="checkbox" id="privCheckAutoSleep" ${autoSleepOn ? 'checked' : ''} />
+            <span class="nx-slider"></span>
+          </label>
+          <button type="button" class="btn" id="btnPrivConfigSleep">Configure</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-card" id="privClearDataCard">
+      <div class="card-header">
+        <h2 class="nx-heading">Clear Browsing Data &amp; Site Storage</h2>
+      </div>
+      <div class="card-row" style="flex-wrap:wrap;">
+        <div class="row-info" style="min-width:220px;">
+          <div class="row-title" style="cursor:default;">Stored Data for ${escapeHtml(profile.name || 'Default')}</div>
+          <div class="row-sub">${cookiesCount} ${cookiesCount === 1 ? 'cookie' : 'cookies'} stored • ${historyCount} history ${historyCount === 1 ? 'entry' : 'entries'}</div>
+        </div>
+        <div class="io-actions-group">
+          <button type="button" class="btn danger" id="btnPrivGoClearData">Clear Browsing Data</button>
+          <button type="button" class="btn" id="btnPrivGoCookies">Manage Cookies</button>
+          <button type="button" class="btn" id="btnPrivGoHistory">History</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-card" id="privRecentBlockedCard">
+      <div class="card-header">
+        <h2 class="nx-heading">Recent Blocked Requests (${recentBlocked.length})</h2>
+        <span style="font-size:12px;color:var(--text-secondary);">Last 25 blocked requests this session</span>
+      </div>
+      ${recentHtml}
+    </div>
+  `;
+
+  if (!force && prevScrollY > 0) window.scrollTo(0, prevScrollY);
+
+  const handleAdblockToggle = async (checked) => {
+    await window.gxChromePagesAPI.toggleAdblock(Boolean(checked));
+    renderPrivacyPage({ force: true });
+  };
+  const handleTrackerToggle = async (checked) => {
+    if (window.gxChromePagesAPI.toggleTrackerBlock) {
+      await window.gxChromePagesAPI.toggleTrackerBlock(Boolean(checked));
+    } else {
+      await window.gxChromePagesAPI.updateSettings({ trackerBlockEnabled: Boolean(checked) });
+    }
+    renderPrivacyPage({ force: true });
+  };
+
+  document.getElementById('privAdblockToggle')?.addEventListener('change', (e) => handleAdblockToggle(e.target.checked));
+  document.getElementById('privCheckAdblock')?.addEventListener('change', (e) => handleAdblockToggle(e.target.checked));
+  document.getElementById('privTrackerToggle')?.addEventListener('change', (e) => handleTrackerToggle(e.target.checked));
+  document.getElementById('privCheckTracker')?.addEventListener('change', (e) => handleTrackerToggle(e.target.checked));
+
+  mainContainer.querySelectorAll('.priv-toggle-site-adblock').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const origin = btn.dataset.origin;
+      const nextEnabled = btn.dataset.nextEnabled === 'true';
+      if (!origin || !window.gxChromePagesAPI.setAdblockSite) return;
+      await window.gxChromePagesAPI.setAdblockSite(origin, nextEnabled);
+      renderPrivacyPage({ force: true });
+    });
+  });
+
+  mainContainer.querySelectorAll('.priv-perm-select').forEach((sel) => {
+    sel.addEventListener('change', async () => {
+      const origin = sel.dataset.origin;
+      const key = sel.dataset.permKey;
+      if (!origin || !key || !window.gxChromePagesAPI.setSitePermission) return;
+      await window.gxChromePagesAPI.setSitePermission(origin, key, sel.value);
+      renderPrivacyPage({ force: true });
+    });
+  });
+
+  mainContainer.querySelectorAll('.priv-reset-site-perms').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const origin = btn.dataset.origin;
+      if (!origin || !window.gxChromePagesAPI.clearSitePermission) return;
+      await window.gxChromePagesAPI.clearSitePermission(origin);
+      renderPrivacyPage({ force: true });
+    });
+  });
+
+  document.getElementById('privCheckRestoreSession')?.addEventListener('change', async (e) => {
+    await window.gxChromePagesAPI.updateSettings({ restoreSession: e.target.checked });
+    renderPrivacyPage({ force: true });
+  });
+
+  document.getElementById('privCheckAutoSleep')?.addEventListener('change', async (e) => {
+    await window.gxChromePagesAPI.updateSettings({ autoSleepEnabled: e.target.checked });
+    renderPrivacyPage({ force: true });
+  });
+
+  document.getElementById('btnPrivManagePasswords')?.addEventListener('click', () => {
+    switchPage('passwords');
+  });
+
+  document.getElementById('btnPrivNewIncognito')?.addEventListener('click', () => {
+    window.gxChromePagesAPI.createTab({ incognito: true });
+  });
+
+  document.getElementById('btnPrivConfigSleep')?.addEventListener('click', () => {
+    navigateToSettingsTarget('setAutoSleepChk');
+  });
+
+  document.getElementById('btnPrivGoClearData')?.addEventListener('click', () => {
+    navigateToSettingsTarget('settingsClearDataRow');
+  });
+
+  document.getElementById('btnPrivGoCookies')?.addEventListener('click', () => {
+    navigateToSettingsTarget('cookiesSettingsCard');
+  });
+
+  document.getElementById('btnPrivGoHistory')?.addEventListener('click', () => {
+    switchPage('history');
   });
 }
 
@@ -958,6 +2047,17 @@ async function renderExtensionsPage() {
       </div>
     `;
   }
+  bannersHtml += `
+    <div class="ext-banner info" id="extCompatibilityNotice">
+      <div>
+        <div class="ext-banner-title">What Works &amp; Electron Extension Limits</div>
+        <div class="ext-banner-detail">
+          <strong>Supported:</strong> Unpacked MV2/MV3 extensions, toolbar action popups (open from the Extensions toolbar dropdown or pin directly to the toolbar), content scripts, background service workers, and storage.<br />
+          <strong>Electron Limits:</strong> Unsupported Chrome permission APIs (<code>contextMenus</code>, <code>sidePanel</code>, <code>webNavigation</code>, <code>notifications</code>, <code>privacy</code>) log non-fatal warnings and are unavailable in Electron; theme extensions do not restyle nextGx's custom UI; extensions do not load in Private windows.
+        </div>
+      </div>
+    </div>
+  `;
   if (extStatusBanner) {
     const itemsHtml =
       Array.isArray(extStatusBanner.items) && extStatusBanner.items.length
@@ -985,7 +2085,7 @@ async function renderExtensionsPage() {
           <div class="ext-top">
             <div class="ext-icon">${SVG_SHIELD}</div>
             <div class="row-info">
-              <div style="font-weight:600;font-size:14.5px;">nextGx Privacy Shield <span style="font-size:11px;color:var(--text-secondary);">2.5.0</span></div>
+              <div style="font-weight:600;font-size:14.5px;">nextGx Privacy Shield <span style="font-size:11px;color:var(--text-secondary);">3.0.0</span></div>
               <div class="row-sub" style="white-space:normal;margin-top:4px;">Blocks intrusive ads, popups & analytics trackers at the Chromium network layer (${adStats?.totalBlocked || 0} blocked).</div>
             </div>
           </div>
@@ -1006,7 +2106,7 @@ async function renderExtensionsPage() {
           <div class="ext-top">
             <div class="ext-icon">${SVG_MUSIC}</div>
             <div class="row-info">
-              <div style="font-weight:600;font-size:14.5px;">nextGx Media & AI Overlay <span style="font-size:11px;color:var(--text-secondary);">2.5.0</span></div>
+              <div style="font-weight:600;font-size:14.5px;">nextGx Media & AI Overlay <span style="font-size:11px;color:var(--text-secondary);">3.0.0</span></div>
               <div class="row-sub" style="white-space:normal;margin-top:4px;">Floating overlay dock with dropdown switcher for YouTube Music, Spotify, Apple Music, SoundCloud & ChatGPT.</div>
             </div>
           </div>
@@ -1190,6 +2290,330 @@ async function renderExtensionsPage() {
 
 // 6. SETTINGS
 let cookieFilterText = '';
+let settingsProfilesData = null;
+let settingsProfileBanner = null;
+let settingsProfileCreateOpen = false;
+let settingsProfileCreateColor = 'cyan';
+let settingsProfileRenamingId = null;
+let settingsProfileRenameColor = 'gx-violet';
+let settingsProfileDeletingId = null;
+let settingsProfileError = '';
+let settingsIoBanner = null;
+
+const WEBUI_PROFILE_COLORS = [
+  { id: 'gx-violet', label: 'Violet' },
+  { id: 'cyan', label: 'Cyan' },
+  { id: 'emerald', label: 'Emerald' },
+  { id: 'crimson', label: 'Crimson' },
+  { id: 'magenta', label: 'Magenta' },
+  { id: 'amber', label: 'Amber' },
+  { id: 'lime', label: 'Lime' },
+  { id: 'ice', label: 'Ice' }
+];
+
+function buildWebuiProfileSwatchesHtml(selectedColor, attrName) {
+  return WEBUI_PROFILE_COLORS.map(
+    (c) =>
+      `<button type="button" class="prof-webui-swatch${c.id === selectedColor ? ' active' : ''}" data-profile-color="${c.id}" data-${attrName}="${c.id}" title="${c.label}" aria-label="${c.label}"></button>`
+  ).join('');
+}
+
+function renderSettingsProfilesSection() {
+  const container = document.getElementById('profilesSettingsBody');
+  if (!container) return;
+
+  const data = settingsProfilesData || { activeId: 'default', windowProfileId: 'default', profiles: [] };
+  const profiles = Array.isArray(data.profiles) ? data.profiles : [];
+  const activeId = data.activeId || 'default';
+  const windowProfileId = data.windowProfileId || activeId;
+
+  const bannerHtml = settingsProfileBanner
+    ? `
+      <div class="card-row">
+        <div class="ext-banner ${escapeHtml(settingsProfileBanner.kind || 'info')}" style="margin-bottom:0;width:100%;" role="status">
+          <div>
+            <div class="ext-banner-title">${escapeHtml(settingsProfileBanner.title)}</div>
+            ${settingsProfileBanner.detail ? `<div class="ext-banner-detail">${escapeHtml(settingsProfileBanner.detail)}</div>` : ''}
+          </div>
+          <button type="button" class="btn" id="btnDismissProfileBanner">Dismiss</button>
+        </div>
+      </div>
+    `
+    : '';
+
+  const createFormHtml = settingsProfileCreateOpen
+    ? `
+      <div class="card-row bm-editing">
+        <form id="settingsCreateProfileForm" class="prof-webui-form">
+          <div class="prof-webui-form-row">
+            <input type="text" id="inpNewProfileName" class="input-box" placeholder="Profile name (e.g. Work, Gaming)" maxlength="40" required style="min-width:220px;flex:1;" />
+            <div class="prof-webui-swatches" id="newProfileSwatches">${buildWebuiProfileSwatchesHtml(settingsProfileCreateColor, 'new-prof-color')}</div>
+            <button type="submit" class="btn primary">Create Profile</button>
+            <button type="button" class="btn" id="btnCancelNewProfile">Cancel</button>
+          </div>
+          ${settingsProfileError ? `<div class="bm-form-error">${escapeHtml(settingsProfileError)}</div>` : ''}
+        </form>
+      </div>
+    `
+    : '';
+
+  let rowsHtml = '';
+  for (const prof of profiles) {
+    if (!prof || !prof.id) continue;
+    const isDefault = prof.id === 'default';
+    const isActive = prof.id === activeId;
+    const isThisWindow = prof.id === windowProfileId;
+
+    if (settingsProfileRenamingId === prof.id) {
+      rowsHtml += `
+        <div class="card-row bm-editing" data-profile-id="${escapeHtml(prof.id)}">
+          <form class="prof-webui-form settings-rename-profile-form" data-profile-id="${escapeHtml(prof.id)}">
+            <div class="prof-webui-form-row">
+              <input type="text" class="input-box settings-rename-profile-input" value="${escapeHtml(prof.name)}" maxlength="40" required style="min-width:200px;flex:1;" />
+              <div class="prof-webui-swatches">${buildWebuiProfileSwatchesHtml(settingsProfileRenameColor, 'rename-prof-color')}</div>
+              <button type="submit" class="btn primary">Save</button>
+              <button type="button" class="btn cancel-rename-profile">Cancel</button>
+            </div>
+            ${settingsProfileError ? `<div class="bm-form-error">${escapeHtml(settingsProfileError)}</div>` : ''}
+          </form>
+        </div>
+      `;
+      continue;
+    }
+
+    if (settingsProfileDeletingId === prof.id && !isDefault) {
+      rowsHtml += `
+        <div class="card-row" data-profile-id="${escapeHtml(prof.id)}">
+          <div class="prof-webui-confirm">
+            <div class="prof-webui-confirm-copy">
+              <strong>Delete "${escapeHtml(prof.name)}"?</strong> Permanently removes its local cookies, cache, history, bookmarks, passwords, and settings.
+            </div>
+            <div class="io-actions-group">
+              <button type="button" class="btn cancel-delete-profile">Cancel</button>
+              <button type="button" class="btn danger-solid confirm-delete-profile" data-profile-id="${escapeHtml(prof.id)}">Confirm Delete</button>
+            </div>
+          </div>
+        </div>
+      `;
+      continue;
+    }
+
+    const badges = [];
+    if (isActive) badges.push('<span class="prof-webui-badge active">Active</span>');
+    if (isThisWindow) badges.push('<span class="prof-webui-badge current-win">This Window</span>');
+    if (isDefault) badges.push('<span class="prof-webui-badge">Built-in</span>');
+
+    rowsHtml += `
+      <div class="card-row settings-profile-row" data-profile-id="${escapeHtml(prof.id)}">
+        <span class="prof-webui-avatar" data-profile-color="${escapeHtml(prof.color || 'gx-violet')}">${escapeHtml(prof.avatar || prof.name?.charAt(0)?.toUpperCase() || 'P')}</span>
+        <div class="row-info">
+          <div class="row-title" style="cursor:default;">
+            ${escapeHtml(prof.name)}
+            <span class="prof-webui-badges">${badges.join('')}</span>
+          </div>
+          <div class="row-sub">${isDefault ? 'Default profile — uses main browser data directory' : `Isolated local storage & session partition (persist:profile-${escapeHtml(prof.id)})`}</div>
+        </div>
+        <div class="io-actions-group">
+          <button type="button" class="btn ${isActive ? '' : 'primary'} switch-profile-btn" data-profile-id="${escapeHtml(prof.id)}">${isActive ? 'Open Window' : 'Switch'}</button>
+          <button type="button" class="btn rename-profile-btn" data-profile-id="${escapeHtml(prof.id)}">Rename</button>
+          <button type="button" class="btn danger delete-profile-btn" data-profile-id="${escapeHtml(prof.id)}"${isDefault ? ' disabled title="Default profile cannot be deleted"' : ''}>Delete</button>
+        </div>
+      </div>
+    `;
+  }
+
+  container.innerHTML = `
+    <div class="card-row">
+      <div class="row-info">
+        <div class="row-sub" style="margin-top:0;">Local-only profiles with isolated cookies, history, bookmarks, passwords, theme, and sidebar layout. Switching opens a new window in the selected profile.</div>
+      </div>
+    </div>
+    ${bannerHtml}
+    ${createFormHtml}
+    ${rowsHtml || '<div class="empty-state" style="padding:20px;">No profiles found.</div>'}
+  `;
+
+  const btnDismiss = document.getElementById('btnDismissProfileBanner');
+  if (btnDismiss) {
+    btnDismiss.addEventListener('click', () => {
+      settingsProfileBanner = null;
+      renderSettingsProfilesSection();
+    });
+  }
+
+  const createForm = document.getElementById('settingsCreateProfileForm');
+  if (createForm) {
+    const inp = document.getElementById('inpNewProfileName');
+    if (inp) inp.focus();
+
+    createForm.querySelectorAll('[data-new-prof-color]').forEach((sw) => {
+      sw.addEventListener('click', () => {
+        settingsProfileCreateColor = sw.dataset.newProfColor;
+        createForm.querySelectorAll('[data-new-prof-color]').forEach((b) => {
+          b.classList.toggle('active', b.dataset.newProfColor === settingsProfileCreateColor);
+        });
+      });
+    });
+
+    document.getElementById('btnCancelNewProfile')?.addEventListener('click', () => {
+      settingsProfileCreateOpen = false;
+      settingsProfileError = '';
+      renderSettingsProfilesSection();
+    });
+
+    createForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = inp ? inp.value.trim() : '';
+      if (!name) {
+        settingsProfileError = 'Profile name cannot be empty.';
+        renderSettingsProfilesSection();
+        return;
+      }
+      const res = await window.gxChromePagesAPI.createProfile({
+        name,
+        color: settingsProfileCreateColor
+      });
+      if (!res || !res.ok) {
+        settingsProfileError = res?.error || 'Could not create profile.';
+        renderSettingsProfilesSection();
+        return;
+      }
+      settingsProfileCreateOpen = false;
+      settingsProfileError = '';
+      settingsProfileBanner = {
+        kind: 'success',
+        title: `Created profile "${res.profile?.name || name}"`,
+        detail: 'Click Switch to open a window in this profile.'
+      };
+      settingsProfilesData = await window.gxChromePagesAPI.listProfiles();
+      renderSettingsProfilesSection();
+    });
+  }
+
+  const renameForm = container.querySelector('.settings-rename-profile-form');
+  if (renameForm) {
+    const inp = renameForm.querySelector('.settings-rename-profile-input');
+    if (inp) {
+      inp.focus();
+      inp.select();
+    }
+    renameForm.querySelectorAll('[data-rename-prof-color]').forEach((sw) => {
+      sw.addEventListener('click', () => {
+        settingsProfileRenameColor = sw.dataset.renameProfColor;
+        renameForm.querySelectorAll('[data-rename-prof-color]').forEach((b) => {
+          b.classList.toggle('active', b.dataset.renameProfColor === settingsProfileRenameColor);
+        });
+      });
+    });
+    renameForm.querySelector('.cancel-rename-profile')?.addEventListener('click', () => {
+      settingsProfileRenamingId = null;
+      settingsProfileError = '';
+      renderSettingsProfilesSection();
+    });
+    renameForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = renameForm.dataset.profileId;
+      const name = inp ? inp.value.trim() : '';
+      if (!name) {
+        settingsProfileError = 'Profile name cannot be empty.';
+        renderSettingsProfilesSection();
+        return;
+      }
+      const res = await window.gxChromePagesAPI.renameProfile(id, {
+        name,
+        color: settingsProfileRenameColor
+      });
+      if (!res || !res.ok) {
+        settingsProfileError = res?.error || 'Could not rename profile.';
+        renderSettingsProfilesSection();
+        return;
+      }
+      settingsProfileRenamingId = null;
+      settingsProfileError = '';
+      settingsProfileBanner = {
+        kind: 'success',
+        title: `Updated profile "${res.profile?.name || name}"`
+      };
+      settingsProfilesData = await window.gxChromePagesAPI.listProfiles();
+      renderSettingsProfilesSection();
+    });
+  }
+
+  container.querySelectorAll('.switch-profile-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.profileId;
+      if (!id) return;
+      const res = await window.gxChromePagesAPI.switchProfile(id);
+      if (res && res.ok) {
+        settingsProfileBanner = {
+          kind: 'info',
+          title: `Switched active profile to "${res.profile?.name || id}"`,
+          detail: 'Opened a new browser window in this profile. Existing tabs remain in their current window.'
+        };
+        settingsProfilesData = await window.gxChromePagesAPI.listProfiles();
+        renderSettingsProfilesSection();
+      }
+    });
+  });
+
+  container.querySelectorAll('.rename-profile-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.profileId;
+      const target = profiles.find((p) => p.id === id);
+      if (!target) return;
+      settingsProfileCreateOpen = false;
+      settingsProfileDeletingId = null;
+      settingsProfileRenamingId = id;
+      settingsProfileRenameColor = target.color || 'gx-violet';
+      settingsProfileError = '';
+      renderSettingsProfilesSection();
+    });
+  });
+
+  container.querySelectorAll('.delete-profile-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.profileId;
+      if (!id || id === 'default') return;
+      settingsProfileCreateOpen = false;
+      settingsProfileRenamingId = null;
+      settingsProfileDeletingId = id;
+      settingsProfileError = '';
+      renderSettingsProfilesSection();
+    });
+  });
+
+  container.querySelectorAll('.cancel-delete-profile').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      settingsProfileDeletingId = null;
+      renderSettingsProfilesSection();
+    });
+  });
+
+  container.querySelectorAll('.confirm-delete-profile').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.profileId;
+      if (!id || id === 'default') return;
+      btn.disabled = true;
+      const res = await window.gxChromePagesAPI.deleteProfile(id);
+      settingsProfileDeletingId = null;
+      if (!res || !res.ok) {
+        settingsProfileBanner = {
+          kind: 'error',
+          title: 'Could not delete profile',
+          detail: res?.error || 'Unknown error.'
+        };
+      } else {
+        settingsProfileBanner = {
+          kind: 'success',
+          title: 'Profile deleted',
+          detail: 'Profile data directory and isolated session storage were removed.'
+        };
+      }
+      settingsProfilesData = await window.gxChromePagesAPI.listProfiles();
+      renderSettingsProfilesSection();
+    });
+  });
+}
 
 function validateHomepageInput(raw) {
   const trimmed = String(raw || '').trim();
@@ -1293,14 +2717,16 @@ async function refreshSettingsCookies({ force = false } = {}) {
 
 async function renderSettingsPage() {
   const seq = ++renderSeq;
-  const [s, sys, ad, allCookies, adblockSites] = await Promise.all([
+  const [s, sys, ad, allCookies, adblockSites, profData] = await Promise.all([
     window.gxChromePagesAPI.getSettings(),
     window.gxChromePagesAPI.getSystemStats(),
     window.gxChromePagesAPI.getAdblockStats(),
     window.gxChromePagesAPI.getCookies ? window.gxChromePagesAPI.getCookies() : Promise.resolve([]),
-    window.gxChromePagesAPI.getAdblockSites ? window.gxChromePagesAPI.getAdblockSites() : Promise.resolve({})
+    window.gxChromePagesAPI.getAdblockSites ? window.gxChromePagesAPI.getAdblockSites() : Promise.resolve({}),
+    window.gxChromePagesAPI.listProfiles ? window.gxChromePagesAPI.listProfiles() : Promise.resolve(null)
   ]);
   if (seq !== renderSeq || currentPage !== 'settings') return;
+  settingsProfilesData = profData;
 
   settingsCookies = Array.isArray(allCookies) ? allCookies : [];
   const masterAdblockOn = ad ? ad.enabled !== false : s.adblockEnabled !== false;
@@ -1338,19 +2764,52 @@ async function renderSettingsPage() {
     `
     : '';
 
+  const soundsEnabled = s.uiSoundsEnabled !== false;
+  const soundsVolPct = Math.round(
+    Math.max(0, Math.min(1, typeof s.uiSoundsVolume === 'number' ? s.uiSoundsVolume : 0.35)) * 100
+  );
+  const autoSleepEnabled = s.autoSleepEnabled !== false;
+  const autoSleepMins = Number(s.autoSleepMinutes || 10);
+
+  const settingsIoBannerHtml = settingsIoBanner
+    ? `
+      <div class="card-row">
+        <div class="ext-banner ${escapeHtml(settingsIoBanner.kind || 'info')}" id="settingsIoBanner" style="margin-bottom:0;width:100%;" role="status">
+          <div>
+            <div class="ext-banner-title">${escapeHtml(settingsIoBanner.title)}</div>
+            ${settingsIoBanner.detail ? `<div class="ext-banner-detail">${escapeHtml(settingsIoBanner.detail)}</div>` : ''}
+          </div>
+          <button type="button" class="btn" id="btnDismissSettingsIoBanner">Dismiss</button>
+        </div>
+      </div>
+    `
+    : '';
+
   mainContainer.innerHTML = `
+    <div class="section-card" id="profilesSettingsCard">
+      <div class="card-header">
+        <h2 class="nx-heading">Profiles (Local)</h2>
+        <button type="button" class="btn primary" id="btnSettingsAddProfile">+ Add Profile</button>
+      </div>
+      <div id="profilesSettingsBody"></div>
+    </div>
+
     <div class="section-card">
       <div class="card-header"><h2 class="nx-heading">Appearance, Sound & Behavior</h2></div>
-      <div class="card-row">
-        <div class="row-info">
+      <div class="card-row" style="flex-wrap:wrap;align-items:flex-start;">
+        <div class="row-info" style="min-width:180px;">
           <div class="row-title">nextGx Theme</div>
           <div class="row-sub">Choose your browser accent</div>
         </div>
-        <div class="nx-segmented" id="setThemeSeg">
-          <button class="seg-btn ${s.theme === 'gx-violet' ? 'active' : ''}" data-theme="gx-violet"><span class="theme-dot gx-violet"></span>nextGx Violet</button>
-          <button class="seg-btn ${s.theme === 'crimson' ? 'active' : ''}" data-theme="crimson"><span class="theme-dot crimson"></span>Crimson</button>
-          <button class="seg-btn ${s.theme === 'cyan' ? 'active' : ''}" data-theme="cyan"><span class="theme-dot cyan"></span>Cyber Cyan</button>
-          <button class="seg-btn ${s.theme === 'emerald' ? 'active' : ''}" data-theme="emerald"><span class="theme-dot emerald"></span>Emerald</button>
+        <div class="nx-segmented theme-seg-wrap" id="setThemeSeg">
+          <button type="button" class="seg-btn ${s.theme === 'gx-violet' ? 'active' : ''}" data-theme="gx-violet"><span class="theme-dot gx-violet"></span>nextGx Violet</button>
+          <button type="button" class="seg-btn ${s.theme === 'crimson' ? 'active' : ''}" data-theme="crimson"><span class="theme-dot crimson"></span>Crimson</button>
+          <button type="button" class="seg-btn ${s.theme === 'cyan' ? 'active' : ''}" data-theme="cyan"><span class="theme-dot cyan"></span>Cyber Cyan</button>
+          <button type="button" class="seg-btn ${s.theme === 'emerald' ? 'active' : ''}" data-theme="emerald"><span class="theme-dot emerald"></span>Emerald</button>
+          <button type="button" class="seg-btn ${s.theme === 'magenta' ? 'active' : ''}" data-theme="magenta"><span class="theme-dot magenta"></span>Magenta</button>
+          <button type="button" class="seg-btn ${s.theme === 'amber' ? 'active' : ''}" data-theme="amber"><span class="theme-dot amber"></span>Amber</button>
+          <button type="button" class="seg-btn ${s.theme === 'lime' ? 'active' : ''}" data-theme="lime"><span class="theme-dot lime"></span>Lime</button>
+          <button type="button" class="seg-btn ${s.theme === 'ice' ? 'active' : ''}" data-theme="ice"><span class="theme-dot ice"></span>Ice</button>
         </div>
       </div>
       <div class="card-row">
@@ -1365,13 +2824,53 @@ async function renderSettingsPage() {
       </div>
       <div class="card-row">
         <div class="row-info">
-          <div class="row-title">UI Sound Effects</div>
-          <div class="row-sub">Subtle sounds on tab open/close and clicks</div>
+          <div class="row-title">Show GX Corner in Sidebar Rail</div>
+          <div class="row-sub">Quick-launch gaming news, upcoming releases, deals &amp; free games (nextgx://corner)</div>
         </div>
         <label class="nx-switch">
-          <input type="checkbox" id="setSoundsChk" ${s.uiSoundsEnabled !== false ? 'checked' : ''} />
+          <input type="checkbox" id="setGxCornerRailChk" ${s.sidebarItems?.gxCorner !== false ? 'checked' : ''} />
           <span class="nx-slider"></span>
         </label>
+      </div>
+      <div class="card-row sounds-settings-row">
+        <div class="sounds-row-top">
+          <div class="row-info">
+            <div class="row-title">GX Sound Effects</div>
+            <div class="row-sub">Subtle clicks, tab open/close, panel & notification sounds</div>
+          </div>
+          <div class="nx-segmented" id="setSoundsModeSeg" role="radiogroup" aria-label="GX Sound Effects">
+            <button type="button" class="seg-btn ${soundsEnabled ? 'active' : ''}" data-sounds-mode="gx" aria-pressed="${soundsEnabled ? 'true' : 'false'}">GX default</button>
+            <button type="button" class="seg-btn ${!soundsEnabled ? 'active' : ''}" data-sounds-mode="off" aria-pressed="${!soundsEnabled ? 'true' : 'false'}">Off</button>
+          </div>
+        </div>
+        <div class="sounds-volume-row ${soundsEnabled ? '' : 'is-disabled'}" id="setSoundsVolumeRow">
+          <label class="sounds-vol-label" for="setSoundsVolumeSlider">Volume</label>
+          <input
+            type="range"
+            id="setSoundsVolumeSlider"
+            class="nx-range"
+            min="0"
+            max="100"
+            step="1"
+            value="${soundsVolPct}"
+            ${soundsEnabled ? '' : 'disabled'}
+            aria-label="GX sounds volume"
+          />
+          <span class="sounds-vol-value nx-mono" id="setSoundsVolumeVal">${soundsVolPct}%</span>
+        </div>
+        <div class="nx-empty-inline ${soundsEnabled ? 'hidden' : ''}" id="setSoundsOffState" role="status">
+          <div class="nx-empty-inline-left">
+            <div class="nx-empty-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                <line x1="23" y1="9" x2="17" y2="15" />
+                <line x1="17" y1="9" x2="23" y2="15" />
+              </svg>
+            </div>
+            <span class="nx-empty-copy">Sounds are off — turn them on to hear GX sounds</span>
+          </div>
+          <button type="button" class="btn primary" id="btnEnableSounds">Turn on GX sounds</button>
+        </div>
       </div>
       <div class="card-row">
         <div class="row-info">
@@ -1447,6 +2946,13 @@ async function renderSettingsPage() {
       <div class="card-header"><h2 class="nx-heading">Privacy Shield & Security</h2></div>
       <div class="card-row">
         <div class="row-info">
+          <div class="row-title">Privacy &amp; Security Dashboard</div>
+          <div class="row-sub">View live blocked ads &amp; trackers breakdown, per-site permissions, and security posture (nextgx://privacy)</div>
+        </div>
+        <button type="button" class="btn primary" id="btnOpenPrivacyDashboard">Open Dashboard</button>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
           <div class="row-title">nextGx Built-in Ad Blocker</div>
           <div class="row-sub">Blocks ad networks & cosmetic ad slots — Blocked ${ad?.sessionBlocked || 0} this session (${ad?.totalBlocked || 0} lifetime)</div>
         </div>
@@ -1466,7 +2972,7 @@ async function renderSettingsPage() {
         </label>
       </div>
       ${pausedSitesHtml}
-      <div class="card-row" style="flex-wrap:wrap;">
+      <div class="card-row" id="settingsClearDataRow" style="flex-wrap:wrap;">
         <div class="row-info">
           <div class="row-title">Clear Browsing Data & Cache</div>
           <div class="row-sub">Select data types to remove from your browser</div>
@@ -1523,9 +3029,36 @@ async function renderSettingsPage() {
       </div>
       <div class="card-row">
         <div class="row-info">
+          <div class="row-title">Suspend idle background tabs after</div>
+          <div class="row-sub">Active, pinned, and audio-playing tabs are never hibernated</div>
+        </div>
+        <div class="nx-segmented ${autoSleepEnabled ? '' : 'is-disabled'}" id="setAutoSleepMinsSeg" role="radiogroup" aria-label="Idle tab hibernation delay" aria-disabled="${autoSleepEnabled ? 'false' : 'true'}">
+          <button type="button" class="seg-btn ${autoSleepMins === 2 ? 'active' : ''}" data-mins="2" aria-pressed="${autoSleepMins === 2 ? 'true' : 'false'}" ${autoSleepEnabled ? '' : 'disabled'}>2m</button>
+          <button type="button" class="seg-btn ${autoSleepMins === 5 ? 'active' : ''}" data-mins="5" aria-pressed="${autoSleepMins === 5 ? 'true' : 'false'}" ${autoSleepEnabled ? '' : 'disabled'}>5m</button>
+          <button type="button" class="seg-btn ${autoSleepMins === 10 ? 'active' : ''}" data-mins="10" aria-pressed="${autoSleepMins === 10 ? 'true' : 'false'}" ${autoSleepEnabled ? '' : 'disabled'}>10m</button>
+          <button type="button" class="seg-btn ${autoSleepMins === 20 ? 'active' : ''}" data-mins="20" aria-pressed="${autoSleepMins === 20 ? 'true' : 'false'}" ${autoSleepEnabled ? '' : 'disabled'}>20m</button>
+        </div>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
           <div class="row-title">Hibernate all inactive background tabs now</div>
         </div>
         <button class="btn primary" id="btnSetSleepNow">Hibernate Background Tabs</button>
+      </div>
+    </div>
+
+    <div class="section-card" id="settingsImportExportCard">
+      <div class="card-header"><h2 class="nx-heading">Backup &amp; Restore Settings</h2></div>
+      ${settingsIoBannerHtml}
+      <div class="card-row" style="flex-wrap:wrap;">
+        <div class="row-info" style="min-width:220px;">
+          <div class="row-title">Export or Import Settings (JSON)</div>
+          <div class="row-sub">Exports active profile settings (theme, sidebar layout, search engine, privacy &amp; performance options). Import validates keys and types against defaults.</div>
+        </div>
+        <div class="io-actions-group">
+          <button type="button" class="btn" id="btnExportSettingsJson">Export JSON</button>
+          <button type="button" class="btn primary" id="btnImportSettingsJson">Import JSON</button>
+        </div>
       </div>
     </div>
 
@@ -1533,14 +3066,85 @@ async function renderSettingsPage() {
       <div class="card-header"><h2 class="nx-heading">About nextGx Browser</h2></div>
       <div class="card-row">
         <div class="row-info">
-          <div class="row-title">nextGx Browser v2.5.0 (64-bit) — Powered by Chromium Engine v156.0.8078.100</div>
+          <div class="row-title">nextGx Browser v3.0.0 (64-bit) — Powered by Chromium Engine v156.0.8078.100</div>
           <div class="row-sub">Designed for Linux & Windows (Microsoft Store MSIX Ready)</div>
         </div>
       </div>
     </div>
   `;
 
+  renderSettingsProfilesSection();
   renderCookieDomainsList(true);
+
+  const btnSettingsAddProfile = document.getElementById('btnSettingsAddProfile');
+  if (btnSettingsAddProfile) {
+    btnSettingsAddProfile.addEventListener('click', () => {
+      const existing = Array.isArray(settingsProfilesData?.profiles) ? settingsProfilesData.profiles : [];
+      const used = new Set(existing.map((p) => p.color));
+      settingsProfileCreateColor =
+        WEBUI_PROFILE_COLORS.find((c) => !used.has(c.id))?.id ||
+        WEBUI_PROFILE_COLORS[existing.length % WEBUI_PROFILE_COLORS.length].id;
+      settingsProfileCreateOpen = !settingsProfileCreateOpen;
+      settingsProfileRenamingId = null;
+      settingsProfileDeletingId = null;
+      settingsProfileError = '';
+      renderSettingsProfilesSection();
+    });
+  }
+
+  const btnDismissSettingsIoBanner = document.getElementById('btnDismissSettingsIoBanner');
+  if (btnDismissSettingsIoBanner) {
+    btnDismissSettingsIoBanner.addEventListener('click', () => {
+      settingsIoBanner = null;
+      renderSettingsPage();
+    });
+  }
+
+  const btnExportSettingsJson = document.getElementById('btnExportSettingsJson');
+  if (btnExportSettingsJson) {
+    btnExportSettingsJson.addEventListener('click', async () => {
+      if (!window.gxChromePagesAPI.exportSettingsJson) return;
+      const res = await window.gxChromePagesAPI.exportSettingsJson();
+      if (!res || res.canceled) return;
+      if (!res.ok) {
+        settingsIoBanner = {
+          kind: 'error',
+          title: 'Settings export failed',
+          detail: res.error || 'Could not export settings.'
+        };
+      } else {
+        settingsIoBanner = {
+          kind: 'success',
+          title: 'Settings exported',
+          detail: res.fileName ? `Saved JSON settings file: ${res.fileName}` : 'Saved JSON settings file.'
+        };
+      }
+      renderSettingsPage();
+    });
+  }
+
+  const btnImportSettingsJson = document.getElementById('btnImportSettingsJson');
+  if (btnImportSettingsJson) {
+    btnImportSettingsJson.addEventListener('click', async () => {
+      if (!window.gxChromePagesAPI.importSettingsJson) return;
+      const res = await window.gxChromePagesAPI.importSettingsJson();
+      if (!res || res.canceled) return;
+      if (!res.ok) {
+        settingsIoBanner = {
+          kind: 'error',
+          title: 'Settings import failed',
+          detail: res.error || 'Could not import settings.'
+        };
+      } else {
+        settingsIoBanner = {
+          kind: 'success',
+          title: `Imported ${res.appliedCount} setting(s)`,
+          detail: `${res.ignoredCount || 0} unknown or invalid key(s) ignored${res.fileName ? ` from ${res.fileName}` : ''}. Applied immediately.`
+        };
+      }
+      renderSettingsPage();
+    });
+  }
 
   const cookieSearchInput = document.getElementById('cookieSearchInput');
   if (cookieSearchInput) {
@@ -1591,9 +3195,60 @@ async function renderSettingsPage() {
   document.getElementById('setBookmarksBarChk').addEventListener('change', (e) => {
     window.gxChromePagesAPI.updateSettings({ showBookmarksBar: e.target.checked });
   });
-  document.getElementById('setSoundsChk').addEventListener('change', (e) => {
-    window.gxChromePagesAPI.updateSettings({ uiSoundsEnabled: e.target.checked });
+
+  const setGxCornerRailChk = document.getElementById('setGxCornerRailChk');
+  if (setGxCornerRailChk) {
+    setGxCornerRailChk.addEventListener('change', (e) => {
+      window.gxChromePagesAPI.updateSettings({ sidebarItems: { gxCorner: e.target.checked } });
+    });
+  }
+
+  const applySoundsEnabledChoice = async (enabled) => {
+    const slider = document.getElementById('setSoundsVolumeSlider');
+    const vol = slider ? Math.max(0, Math.min(1, Number(slider.value) / 100)) : 0.35;
+    syncSoundsConfig({ uiSoundsEnabled: enabled, uiSoundsVolume: vol });
+    syncSoundsSettingsControls({ uiSoundsEnabled: enabled, uiSoundsVolume: vol });
+    await window.gxChromePagesAPI.updateSettings({ uiSoundsEnabled: enabled });
+    if (enabled) window.gxSounds?.playClick();
+  };
+
+  mainContainer.querySelectorAll('#setSoundsModeSeg .seg-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      applySoundsEnabledChoice(btn.dataset.soundsMode !== 'off');
+    });
   });
+
+  const btnEnableSounds = document.getElementById('btnEnableSounds');
+  if (btnEnableSounds) {
+    btnEnableSounds.addEventListener('click', () => {
+      applySoundsEnabledChoice(true);
+    });
+  }
+
+  const soundsVolSlider = document.getElementById('setSoundsVolumeSlider');
+  const soundsVolVal = document.getElementById('setSoundsVolumeVal');
+  if (soundsVolSlider) {
+    let volSaveTimer = null;
+    soundsVolSlider.addEventListener('input', (e) => {
+      const pct = Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0)));
+      const vol = pct / 100;
+      if (soundsVolVal) soundsVolVal.textContent = `${pct}%`;
+      window.gxSounds?.setConfig({ volume: vol });
+      clearTimeout(volSaveTimer);
+      volSaveTimer = setTimeout(() => {
+        window.gxChromePagesAPI.updateSettings({ uiSoundsVolume: vol });
+      }, 120);
+    });
+    soundsVolSlider.addEventListener('change', async (e) => {
+      clearTimeout(volSaveTimer);
+      const pct = Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0)));
+      const vol = pct / 100;
+      if (soundsVolVal) soundsVolVal.textContent = `${pct}%`;
+      window.gxSounds?.setConfig({ volume: vol });
+      await window.gxChromePagesAPI.updateSettings({ uiSoundsVolume: vol });
+      window.gxSounds?.playClick();
+    });
+  }
   document.getElementById('setCloseLastTabChk').addEventListener('change', (e) => {
     window.gxChromePagesAPI.updateSettings({ closeWindowOnLastTab: e.target.checked });
   });
@@ -1661,6 +3316,10 @@ async function renderSettingsPage() {
       showHomepageMsg('Homepage reset to Speed Dial (nextgx://newtab).', 'success');
     });
   }
+  document.getElementById('btnOpenPrivacyDashboard')?.addEventListener('click', () => {
+    switchPage('privacy');
+  });
+
   const setTrackerChk = document.getElementById('setTrackerBlockChk');
   document.getElementById('setAdblockChk').addEventListener('change', async (e) => {
     const stats = await window.gxChromePagesAPI.toggleAdblock(e.target.checked);
@@ -1687,7 +3346,20 @@ async function renderSettingsPage() {
     });
   });
   document.getElementById('setAutoSleepChk').addEventListener('change', (e) => {
+    syncAutoSleepSegmentDisabled(e.target.checked);
     window.gxChromePagesAPI.updateSettings({ autoSleepEnabled: e.target.checked });
+  });
+  mainContainer.querySelectorAll('#setAutoSleepMinsSeg .seg-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (btn.disabled) return;
+      const mins = Number(btn.dataset.mins);
+      mainContainer.querySelectorAll('#setAutoSleepMinsSeg .seg-btn').forEach((b) => {
+        const isActive = Number(b.dataset.mins) === mins;
+        b.classList.toggle('active', isActive);
+        b.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+      });
+      window.gxChromePagesAPI.updateSettings({ autoSleepMinutes: mins });
+    });
   });
   document.getElementById('btnSetClearData').addEventListener('click', async () => {
     const cache = document.getElementById('chkSetClearCache')?.checked ?? true;
@@ -1703,6 +3375,20 @@ async function renderSettingsPage() {
     await window.gxChromePagesAPI.sleepBackgroundTabs();
     renderSettingsPage();
   });
+
+  if (pendingSettingsScrollTarget) {
+    const targetId = pendingSettingsScrollTarget;
+    pendingSettingsScrollTarget = '';
+    const el = document.getElementById(targetId);
+    if (el) {
+      const highlightEl = el.closest('.card-row') || el;
+      requestAnimationFrame(() => {
+        highlightEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        highlightEl.classList.add('settings-highlight-flash');
+        setTimeout(() => highlightEl.classList.remove('settings-highlight-flash'), 1600);
+      });
+    }
+  }
 }
 
 function refreshVisiblePage() {
@@ -1711,12 +3397,62 @@ function refreshVisiblePage() {
     renderHistoryPage({ force: false });
   } else if (currentPage === 'settings') {
     refreshSettingsCookies({ force: false });
+  } else if (currentPage === 'privacy') {
+    renderPrivacyPage({ force: false });
   } else if (currentPage === 'downloads') {
     renderDownloadsPage({ force: false });
   } else if (currentPage === 'bookmarks') {
     if (!addingBookmarkOpen && !renamingFolderName && !editingBookmarkId) {
       renderBookmarksPage({ force: false });
     }
+  }
+}
+
+function syncSoundsConfig(s) {
+  if (!s || typeof s !== 'object') return;
+  const cfg = {};
+  if (typeof s.uiSoundsEnabled === 'boolean') cfg.enabled = s.uiSoundsEnabled;
+  if (typeof s.uiSoundsVolume === 'number' && Number.isFinite(s.uiSoundsVolume)) {
+    cfg.volume = Math.max(0, Math.min(1, s.uiSoundsVolume));
+  }
+  window.gxSounds?.setConfig(cfg);
+}
+
+function syncAutoSleepSegmentDisabled(enabled) {
+  const seg = document.getElementById('setAutoSleepMinsSeg');
+  if (!seg) return;
+  const isOn = Boolean(enabled);
+  seg.classList.toggle('is-disabled', !isOn);
+  seg.setAttribute('aria-disabled', isOn ? 'false' : 'true');
+  seg.querySelectorAll('.seg-btn').forEach((btn) => {
+    btn.disabled = !isOn;
+  });
+}
+
+function syncSoundsSettingsControls(s) {
+  if (!s || typeof s !== 'object') return;
+  if (typeof s.uiSoundsEnabled === 'boolean') {
+    const enabled = s.uiSoundsEnabled;
+    document.querySelectorAll('#setSoundsModeSeg .seg-btn').forEach((btn) => {
+      const isActive = (btn.dataset.soundsMode !== 'off') === enabled;
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+    const volSlider = document.getElementById('setSoundsVolumeSlider');
+    if (volSlider) volSlider.disabled = !enabled;
+    const volRow = document.getElementById('setSoundsVolumeRow');
+    if (volRow) volRow.classList.toggle('is-disabled', !enabled);
+    const offState = document.getElementById('setSoundsOffState');
+    if (offState) offState.classList.toggle('hidden', enabled);
+  }
+  if (typeof s.uiSoundsVolume === 'number' && Number.isFinite(s.uiSoundsVolume)) {
+    const pct = Math.round(Math.max(0, Math.min(1, s.uiSoundsVolume)) * 100);
+    const volSlider = document.getElementById('setSoundsVolumeSlider');
+    if (volSlider && document.activeElement !== volSlider) {
+      volSlider.value = String(pct);
+    }
+    const volVal = document.getElementById('setSoundsVolumeVal');
+    if (volVal) volVal.textContent = `${pct}%`;
   }
 }
 
@@ -1738,18 +3474,26 @@ function initThemeSync() {
     applyTheme(initialTheme);
   }
   if (window.gxChromePagesAPI?.getSettings) {
-    window.gxChromePagesAPI.getSettings().then((s) => applyTheme(s?.theme)).catch(() => {});
+    window.gxChromePagesAPI
+      .getSettings()
+      .then((s) => {
+        applyTheme(s?.theme);
+        syncSoundsConfig(s);
+      })
+      .catch(() => {});
   }
   if (window.gxChromePagesAPI?.onSettingsUpdate) {
     window.gxChromePagesAPI.onSettingsUpdate((s) => {
       if (s && s.theme) applyTheme(s.theme);
+      syncSoundsConfig(s);
+      syncSoundsSettingsControls(s);
       const bmChk = document.getElementById('setBookmarksBarChk');
       if (bmChk && s && typeof s.showBookmarksBar === 'boolean') {
         bmChk.checked = s.showBookmarksBar;
       }
-      const soundsChk = document.getElementById('setSoundsChk');
-      if (soundsChk && s && typeof s.uiSoundsEnabled === 'boolean') {
-        soundsChk.checked = s.uiSoundsEnabled;
+      const cornerRailChk = document.getElementById('setGxCornerRailChk');
+      if (cornerRailChk && s && s.sidebarItems && typeof s.sidebarItems.gxCorner === 'boolean') {
+        cornerRailChk.checked = s.sidebarItems.gxCorner;
       }
       const closeLastChk = document.getElementById('setCloseLastTabChk');
       if (closeLastChk && s && typeof s.closeWindowOnLastTab === 'boolean') {
@@ -1760,8 +3504,16 @@ function initThemeSync() {
         darkWebChk.checked = s.forceDarkWeb;
       }
       const autoSleepChk = document.getElementById('setAutoSleepChk');
-      if (autoSleepChk && s && typeof s.autoSleepEnabled === 'boolean') {
-        autoSleepChk.checked = s.autoSleepEnabled;
+      if (s && typeof s.autoSleepEnabled === 'boolean') {
+        if (autoSleepChk) autoSleepChk.checked = s.autoSleepEnabled;
+        syncAutoSleepSegmentDisabled(s.autoSleepEnabled);
+      }
+      if (s && typeof s.autoSleepMinutes === 'number' && Number.isFinite(s.autoSleepMinutes)) {
+        document.querySelectorAll('#setAutoSleepMinsSeg .seg-btn').forEach((btn) => {
+          const isActive = Number(btn.dataset.mins) === Number(s.autoSleepMinutes);
+          btn.classList.toggle('active', isActive);
+          btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        });
       }
       const restoreChk = document.getElementById('setRestoreSessionChk');
       if (restoreChk && s && typeof s.restoreSession === 'boolean') {
@@ -1779,6 +3531,9 @@ function initThemeSync() {
         document.querySelectorAll('#setSearchSeg .seg-btn').forEach((btn) => {
           btn.classList.toggle('active', btn.dataset.engine === s.searchEngine);
         });
+      }
+      if (currentPage === 'privacy') {
+        renderPrivacyPage({ force: false });
       }
     });
   }
@@ -1799,6 +3554,8 @@ function initThemeSync() {
     window.gxChromePagesAPI.onHistoryUpdate(() => {
       if (currentPage === 'history') {
         renderHistoryPage({ force: false });
+      } else if (currentPage === 'privacy') {
+        renderPrivacyPage({ force: false });
       }
     });
   }
@@ -1806,6 +3563,15 @@ function initThemeSync() {
     window.gxChromePagesAPI.onCookiesUpdate(() => {
       if (currentPage === 'settings') {
         refreshSettingsCookies({ force: false });
+      } else if (currentPage === 'privacy') {
+        renderPrivacyPage({ force: false });
+      }
+    });
+  }
+  if (window.gxChromePagesAPI?.onPermissionsUpdate) {
+    window.gxChromePagesAPI.onPermissionsUpdate(() => {
+      if (currentPage === 'privacy') {
+        renderPrivacyPage({ force: true });
       }
     });
   }
@@ -1816,9 +3582,35 @@ function initThemeSync() {
       }
     });
   }
+  if (window.gxChromePagesAPI?.onProfilesUpdate) {
+    window.gxChromePagesAPI.onProfilesUpdate((data) => {
+      settingsProfilesData = data;
+      if (currentPage === 'settings' && !settingsProfileCreateOpen && !settingsProfileRenamingId && !settingsProfileDeletingId) {
+        renderSettingsProfilesSection();
+      } else if (currentPage === 'privacy') {
+        renderPrivacyPage({ force: false });
+      }
+    });
+  }
+  if (window.gxChromePagesAPI?.onPasswordsUpdate) {
+    window.gxChromePagesAPI.onPasswordsUpdate(() => {
+      if (currentPage === 'passwords') {
+        if (!editingPasswordId) {
+          renderPasswordsPage();
+        }
+      } else if (currentPage === 'privacy') {
+        renderPrivacyPage({ force: false });
+      }
+    });
+  }
   if (window.gxChromePagesAPI?.onAdblockUpdate) {
     window.gxChromePagesAPI.onAdblockUpdate((stats) => {
-      if (!stats || currentPage !== 'settings') return;
+      if (!stats) return;
+      if (currentPage === 'privacy') {
+        renderPrivacyPage({ force: false });
+        return;
+      }
+      if (currentPage !== 'settings') return;
       const adChk = document.getElementById('setAdblockChk');
       const trChk = document.getElementById('setTrackerBlockChk');
       if (adChk && typeof stats.enabled === 'boolean') adChk.checked = stats.enabled;

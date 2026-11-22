@@ -1,0 +1,1065 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="gx-violet">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Player</title>
+  <link rel="stylesheet" href="theme.css" />
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      overflow-x: hidden;
+      overflow-y: auto;
+      background: var(--bg-deep);
+      color: var(--text-main);
+      font-family: var(--nx-font-sans);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .player-shell {
+      min-height: 100%;
+      padding: 16px 14px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      background:
+        radial-gradient(ellipse 90% 42% at 50% 0%, var(--nx-accent-soft), transparent 72%),
+        var(--bg-deep);
+    }
+
+    /* Empty State (GX error.html / designed empty state pattern) */
+    .player-empty {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 28px 18px;
+      gap: 12px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-glass);
+      box-shadow: var(--specular-top);
+      border-radius: var(--nx-radius-md);
+      clip-path: var(--nx-chamfer);
+    }
+
+    .player-empty-icon {
+      width: 60px;
+      height: 60px;
+      border-radius: var(--nx-radius-md);
+      clip-path: var(--nx-chamfer-sm);
+      background: var(--nx-accent-soft);
+      border: 1px solid var(--nx-accent);
+      box-shadow: var(--nx-glow-sm);
+      color: var(--nx-accent-bright);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .player-empty-title {
+      font-size: 13px;
+      color: var(--nx-accent-bright);
+    }
+
+    .player-empty-msg {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-main);
+      line-height: 1.45;
+      max-width: 240px;
+    }
+
+    .player-empty-sub {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      line-height: 1.45;
+      max-width: 250px;
+    }
+
+    .player-empty-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .player-quick-btn {
+      padding: 7px 12px;
+      border-radius: var(--nx-radius-xs);
+      clip-path: var(--nx-chamfer-sm);
+      border: 1px solid var(--nx-accent);
+      background: var(--nx-accent-soft);
+      color: var(--nx-accent-bright);
+      font-family: inherit;
+      font-size: 11.5px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+    }
+
+    .player-quick-btn:hover {
+      background: var(--nx-accent);
+      color: var(--nx-on-accent);
+      box-shadow: var(--nx-glow-sm);
+    }
+
+    .player-quick-btn.secondary {
+      border-color: var(--border-glass);
+      background: var(--bg-chrome);
+      color: var(--text-main);
+    }
+
+    .player-quick-btn.secondary:hover {
+      border-color: var(--nx-accent);
+      color: var(--nx-accent-bright);
+      background: var(--bg-elevated);
+    }
+
+    /* Active Player View */
+    .player-active {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .source-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 7px 10px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-glass);
+      border-left: 2px solid var(--nx-accent);
+      border-radius: var(--nx-radius-sm);
+      min-width: 0;
+    }
+
+    .source-identity {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+      flex: 1;
+    }
+
+    .source-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: var(--nx-radius-pill);
+      background: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    .source-dot.playing {
+      background: var(--nx-accent-bright);
+      box-shadow: var(--nx-glow-sm);
+    }
+
+    .source-name {
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--text-main);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+    }
+
+    .source-tag {
+      font-family: var(--nx-font-mono);
+      font-size: 9.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 1px 5px;
+      border-radius: var(--nx-radius-xs);
+      border: 1px solid var(--border-glass);
+      background: var(--bg-deep);
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    .source-tag.live {
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+
+    .source-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .source-mini-btn {
+      height: 24px;
+      padding: 0 7px;
+      border-radius: var(--nx-radius-xs);
+      border: 1px solid var(--border-glass);
+      background: var(--bg-chrome);
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 10.5px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: border-color var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease), background var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+    }
+
+    .source-mini-btn:hover,
+    .source-mini-btn.active {
+      border-color: var(--nx-accent);
+      background: var(--nx-accent-soft);
+      color: var(--nx-accent-bright);
+      box-shadow: var(--nx-glow-sm);
+    }
+
+    /* Hero Card */
+    .now-playing-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-glass);
+      box-shadow: var(--specular-top);
+      border-radius: var(--nx-radius-md);
+      padding: 16px 14px 15px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 13px;
+    }
+
+    .artwork-frame {
+      width: 176px;
+      height: 176px;
+      max-width: 68%;
+      aspect-ratio: 1 / 1;
+      border-radius: var(--nx-radius-md);
+      clip-path: var(--nx-chamfer);
+      border: 1px solid var(--border-glass);
+      background:
+        radial-gradient(circle at 30% 25%, var(--nx-accent-soft), transparent 65%),
+        var(--bg-chrome);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: border-color var(--nx-motion-base) var(--nx-motion-ease), box-shadow var(--nx-motion-base) var(--nx-motion-ease);
+    }
+
+    .artwork-frame.playing {
+      border-color: var(--nx-accent);
+      box-shadow: var(--nx-glow-md);
+    }
+
+    .artwork-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .artwork-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: var(--nx-accent-bright);
+    }
+
+    .artwork-placeholder-ring {
+      width: 68px;
+      height: 68px;
+      border-radius: 50%;
+      border: 1.5px solid var(--nx-accent);
+      background: var(--nx-accent-soft);
+      box-shadow: var(--nx-glow-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .artwork-placeholder-label {
+      font-family: var(--nx-font-display);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .track-meta {
+      width: 100%;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 0;
+    }
+
+    .track-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-main);
+      line-height: 1.3;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      word-break: break-word;
+    }
+
+    .track-artist {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--nx-accent-bright);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .track-album {
+      font-size: 11px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Seek Bar */
+    .seek-block {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .seek-range {
+      width: 100%;
+      height: 6px;
+      -webkit-appearance: none;
+      appearance: none;
+      border-radius: var(--nx-radius-pill);
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-glass);
+      outline: none;
+      cursor: pointer;
+    }
+
+    .seek-range::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      background: var(--nx-accent-bright);
+      border: 2px solid var(--nx-accent);
+      box-shadow: var(--nx-glow-sm);
+      cursor: pointer;
+      transition: transform var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+    }
+
+    .seek-range:hover:not(:disabled)::-webkit-slider-thumb {
+      transform: scale(1.15);
+      box-shadow: var(--nx-glow-md);
+    }
+
+    .seek-range:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .seek-range:disabled::-webkit-slider-thumb {
+      background: var(--text-muted);
+      border-color: var(--border-glass);
+      box-shadow: none;
+      cursor: not-allowed;
+    }
+
+    .seek-times {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 10.5px;
+      color: var(--text-muted);
+    }
+
+    /* Transport Controls */
+    .controls-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      margin-top: 2px;
+    }
+
+    .ctrl-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: var(--nx-radius-sm);
+      clip-path: var(--nx-chamfer-sm);
+      border: 1px solid var(--border-glass);
+      background: var(--bg-chrome);
+      color: var(--text-main);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background var(--nx-motion-fast) var(--nx-motion-ease), border-color var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease), transform var(--nx-motion-fast) var(--nx-motion-ease);
+    }
+
+    .ctrl-btn:hover:not(:disabled) {
+      background: var(--nx-accent-soft);
+      border-color: var(--nx-accent);
+      color: var(--nx-accent-bright);
+      box-shadow: var(--nx-glow-sm);
+    }
+
+    .ctrl-btn:active:not(:disabled) {
+      transform: scale(0.95);
+    }
+
+    .ctrl-btn:disabled {
+      opacity: 0.32;
+      cursor: not-allowed;
+    }
+
+    .ctrl-btn.primary {
+      width: 48px;
+      height: 48px;
+      border-color: var(--nx-accent);
+      background: var(--nx-accent);
+      color: var(--nx-on-accent);
+      box-shadow: var(--nx-glow-md);
+    }
+
+    .ctrl-btn.primary:hover:not(:disabled) {
+      background: var(--nx-accent-bright);
+      border-color: var(--nx-accent-bright);
+      color: var(--nx-on-accent);
+      box-shadow: var(--nx-glow-lg);
+    }
+
+    .ctrl-btn.primary:disabled {
+      background: var(--bg-elevated);
+      border-color: var(--border-glass);
+      color: var(--text-muted);
+      box-shadow: none;
+    }
+
+    .player-note {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-align: center;
+      line-height: 1.35;
+    }
+
+    /* Multi-source Switcher */
+    .sources-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--nx-radius-md);
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .sources-hdr {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 10.5px;
+      color: var(--nx-accent-bright);
+      padding: 0 2px;
+    }
+
+    .sources-list {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .source-row {
+      width: 100%;
+      padding: 7px 9px;
+      border-radius: var(--nx-radius-xs);
+      border: 1px solid var(--border-glass);
+      background: var(--bg-deep);
+      color: var(--text-main);
+      font-family: inherit;
+      text-align: left;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      transition: border-color var(--nx-motion-fast) var(--nx-motion-ease), background var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+    }
+
+    .source-row:hover {
+      border-color: var(--nx-accent-soft);
+      background: var(--bg-chrome);
+    }
+
+    .source-row.active {
+      border-color: var(--nx-accent);
+      background: var(--nx-accent-soft);
+      box-shadow: var(--nx-glow-sm);
+    }
+
+    .source-row-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+
+    .source-row-title {
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--text-main);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .source-row-sub {
+      font-size: 10px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  </style>
+</head>
+<body>
+  <main class="player-shell" id="playerShell">
+    <!-- Empty State -->
+    <section class="player-empty" id="playerEmptyState" aria-live="polite">
+      <div class="player-empty-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 18V5l12-2v13" />
+          <circle cx="6" cy="18" r="3" />
+          <circle cx="18" cy="16" r="3" />
+        </svg>
+      </div>
+      <h2 class="nx-heading player-empty-title">Player</h2>
+      <p class="player-empty-msg" id="playerEmptyMsg">Nothing playing — play something in a tab</p>
+      <p class="player-empty-sub">Media playing in any tab or sidebar service appears here automatically.</p>
+      <div class="player-empty-actions">
+        <button type="button" class="player-quick-btn" id="btnQuickYtMusic">YouTube Music</button>
+        <button type="button" class="player-quick-btn secondary" id="btnQuickSpotify">Spotify</button>
+      </div>
+    </section>
+
+    <!-- Active Media State -->
+    <section class="player-active hidden" id="playerActiveState" aria-live="polite">
+      <div class="source-bar">
+        <div class="source-identity">
+          <span class="source-dot" id="playerStatusDot"></span>
+          <span class="source-name" id="playerSourceLabel">Tab</span>
+          <span class="source-tag" id="playerStateTag">PAUSED</span>
+        </div>
+        <div class="source-actions">
+          <button type="button" class="source-mini-btn hidden" id="btnPlayerPip" title="Pop out video (Picture-in-Picture)">
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="4" width="20" height="15" rx="2" />
+              <rect x="11.5" y="10.5" width="8.5" height="6.5" rx="1" fill="currentColor" stroke="none" />
+            </svg>
+            PiP
+          </button>
+          <button type="button" class="source-mini-btn" id="btnPlayerFocusSource" title="Jump to playing tab or service">
+            Open ↗
+          </button>
+        </div>
+      </div>
+
+      <div class="now-playing-card">
+        <div class="artwork-frame" id="playerArtworkFrame">
+          <img class="artwork-img hidden" id="playerArtworkImg" alt="" referrerpolicy="no-referrer" draggable="false" />
+          <div class="artwork-placeholder" id="playerArtworkPlaceholder">
+            <div class="artwork-placeholder-ring">
+              <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 18V5l12-2v13" />
+                <circle cx="6" cy="18" r="3" />
+                <circle cx="18" cy="16" r="3" />
+              </svg>
+            </div>
+            <span class="artwork-placeholder-label" id="playerMediaKindLabel">Audio</span>
+          </div>
+        </div>
+
+        <div class="track-meta">
+          <div class="track-title" id="playerTrackTitle">Untitled</div>
+          <div class="track-artist" id="playerTrackArtist"></div>
+          <div class="track-album hidden" id="playerTrackAlbum"></div>
+        </div>
+
+        <div class="seek-block">
+          <input type="range" class="seek-range" id="playerSeekRange" min="0" max="100" step="1" value="0" aria-label="Seek playback position" />
+          <div class="seek-times nx-mono">
+            <span id="playerTimeCurrent">0:00</span>
+            <span id="playerTimeDuration">--:--</span>
+          </div>
+        </div>
+
+        <div class="controls-row">
+          <button type="button" class="ctrl-btn" id="btnPlayerPrev" title="Previous track not supported by this page" aria-label="Previous track" disabled>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+              <rect x="4" y="5" width="2.5" height="14" rx="1" />
+              <polygon points="19,5 8.5,12 19,19" />
+            </svg>
+          </button>
+
+          <button type="button" class="ctrl-btn primary" id="btnPlayerPlayPause" title="Play / Pause" aria-label="Play or Pause">
+            <svg id="iconPlay" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <polygon points="7,4.5 20,12 7,19.5" />
+            </svg>
+            <svg id="iconPause" class="hidden" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <rect x="6" y="4.5" width="4.2" height="15" rx="1.2" />
+              <rect x="13.8" y="4.5" width="4.2" height="15" rx="1.2" />
+            </svg>
+          </button>
+
+          <button type="button" class="ctrl-btn" id="btnPlayerNext" title="Next track not supported by this page" aria-label="Next track" disabled>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+              <polygon points="5,5 15.5,12 5,19" />
+              <rect x="17.5" y="5" width="2.5" height="14" rx="1" />
+            </svg>
+          </button>
+        </div>
+
+        <div class="player-note hidden" id="playerControlNote"></div>
+      </div>
+
+      <div class="sources-card hidden" id="playerSourcesSection">
+        <div class="sources-hdr nx-heading">
+          <span>Active Sources</span>
+          <span class="nx-mono" id="playerSourcesCount">0</span>
+        </div>
+        <div class="sources-list" id="playerSourcesList"></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="sounds.js"></script>
+  <script>
+    let playerState = { activeSource: null, sources: [], hasPlayingMedia: false };
+    let isSeeking = false;
+    let seekLockUntil = 0;
+    let lastArtworkUrl = '';
+    let clockTimerId = null;
+
+    const emptyStateEl = document.getElementById('playerEmptyState');
+    const activeStateEl = document.getElementById('playerActiveState');
+    const statusDotEl = document.getElementById('playerStatusDot');
+    const sourceLabelEl = document.getElementById('playerSourceLabel');
+    const stateTagEl = document.getElementById('playerStateTag');
+    const btnPlayerPip = document.getElementById('btnPlayerPip');
+    const btnPlayerFocusSource = document.getElementById('btnPlayerFocusSource');
+    const artworkFrameEl = document.getElementById('playerArtworkFrame');
+    const artworkImgEl = document.getElementById('playerArtworkImg');
+    const artworkPlaceholderEl = document.getElementById('playerArtworkPlaceholder');
+    const mediaKindLabelEl = document.getElementById('playerMediaKindLabel');
+    const trackTitleEl = document.getElementById('playerTrackTitle');
+    const trackArtistEl = document.getElementById('playerTrackArtist');
+    const trackAlbumEl = document.getElementById('playerTrackAlbum');
+    const seekRangeEl = document.getElementById('playerSeekRange');
+    const timeCurrentEl = document.getElementById('playerTimeCurrent');
+    const timeDurationEl = document.getElementById('playerTimeDuration');
+    const btnPlayerPrev = document.getElementById('btnPlayerPrev');
+    const btnPlayerPlayPause = document.getElementById('btnPlayerPlayPause');
+    const btnPlayerNext = document.getElementById('btnPlayerNext');
+    const iconPlayEl = document.getElementById('iconPlay');
+    const iconPauseEl = document.getElementById('iconPause');
+    const controlNoteEl = document.getElementById('playerControlNote');
+    const sourcesSectionEl = document.getElementById('playerSourcesSection');
+    const sourcesCountEl = document.getElementById('playerSourcesCount');
+    const sourcesListEl = document.getElementById('playerSourcesList');
+
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme || 'gx-violet');
+    }
+
+    function applySettings(s) {
+      if (!s || typeof s !== 'object') return;
+      if (s.theme) applyTheme(s.theme);
+      window.gxSounds?.setConfig({
+        enabled: s.uiSoundsEnabled !== false,
+        volume: typeof s.uiSoundsVolume === 'number' ? s.uiSoundsVolume : 0.35
+      });
+    }
+
+    function formatTime(rawSec) {
+      const sec = Number(rawSec);
+      if (!Number.isFinite(sec) || sec < 0) return '--:--';
+      const total = Math.floor(sec);
+      const hrs = Math.floor(total / 3600);
+      const mins = Math.floor((total % 3600) / 60);
+      const secs = total % 60;
+      const pad = (n) => String(n).padStart(2, '0');
+      return hrs > 0 ? `${hrs}:${pad(mins)}:${pad(secs)}` : `${mins}:${pad(secs)}`;
+    }
+
+    function computeDisplayedTime(src) {
+      if (!src) return 0;
+      let cur = Number(src.currentTime) || 0;
+      if (src.isPlaying && typeof src.updatedAt === 'number' && src.updatedAt > 0) {
+        const elapsed = Math.max(0, (Date.now() - src.updatedAt) / 1000);
+        const rate = Number(src.playbackRate) || 1;
+        cur += elapsed * rate;
+      }
+      if (typeof src.duration === 'number' && Number.isFinite(src.duration) && src.duration > 0) {
+        cur = Math.min(src.duration, cur);
+      }
+      return Math.max(0, cur);
+    }
+
+    function updateSeekVisual(value, max) {
+      const pct = max > 0 ? Math.max(0, Math.min(100, (value / max) * 100)) : 0;
+      seekRangeEl.style.background = `linear-gradient(90deg, var(--nx-accent) 0%, var(--nx-accent-bright) ${pct}%, var(--bg-elevated) ${pct}%, var(--bg-elevated) 100%)`;
+    }
+
+    function renderSeekProgress(src) {
+      if (!src || isSeeking || Date.now() < seekLockUntil) return;
+      const canSeek = Boolean(src.canSeek && typeof src.duration === 'number' && src.duration > 0);
+      const cur = computeDisplayedTime(src);
+
+      seekRangeEl.disabled = !canSeek;
+      if (canSeek) {
+        seekRangeEl.max = String(Math.max(1, Math.floor(src.duration)));
+        seekRangeEl.value = String(Math.min(Math.floor(src.duration), Math.floor(cur)));
+        updateSeekVisual(cur, src.duration);
+        timeCurrentEl.textContent = formatTime(cur);
+        timeDurationEl.textContent = formatTime(src.duration);
+        seekRangeEl.title = 'Drag to seek';
+      } else {
+        seekRangeEl.max = '100';
+        seekRangeEl.value = '0';
+        updateSeekVisual(0, 100);
+        timeCurrentEl.textContent = src.isLive ? formatTime(cur) : (cur > 0 ? formatTime(cur) : '0:00');
+        timeDurationEl.textContent = src.isLive ? 'LIVE' : '--:--';
+        seekRangeEl.title = src.isLive ? 'Live stream — seeking unavailable' : 'Seeking not available for this source';
+      }
+    }
+
+    function renderArtwork(src) {
+      const art = typeof src?.artwork === 'string' ? src.artwork.trim() : '';
+      const isSafeArt =
+        Boolean(art) &&
+        (/^https?:\/\//i.test(art) || /^data:image\/(png|jpeg|jpg|webp|gif);base64,/i.test(art));
+
+      artworkFrameEl.classList.toggle('playing', Boolean(src?.isPlaying));
+      mediaKindLabelEl.textContent = src?.mediaKind === 'video' ? 'Video' : 'Audio';
+
+      if (!isSafeArt) {
+        lastArtworkUrl = '';
+        artworkImgEl.classList.add('hidden');
+        artworkImgEl.removeAttribute('src');
+        artworkPlaceholderEl.classList.remove('hidden');
+        return;
+      }
+
+      if (art !== lastArtworkUrl) {
+        lastArtworkUrl = art;
+        artworkImgEl.classList.add('hidden');
+        artworkPlaceholderEl.classList.remove('hidden');
+        artworkImgEl.src = art;
+      }
+    }
+
+    artworkImgEl.addEventListener('load', () => {
+      if (artworkImgEl.naturalWidth > 0 && lastArtworkUrl) {
+        artworkImgEl.classList.remove('hidden');
+        artworkPlaceholderEl.classList.add('hidden');
+      }
+    });
+
+    artworkImgEl.addEventListener('error', () => {
+      artworkImgEl.classList.add('hidden');
+      artworkPlaceholderEl.classList.remove('hidden');
+    });
+
+    function renderSourcesList(sources, activeWcId) {
+      const list = Array.isArray(sources) ? sources : [];
+      if (list.length <= 1) {
+        sourcesSectionEl.classList.add('hidden');
+        sourcesListEl.innerHTML = '';
+        return;
+      }
+      sourcesSectionEl.classList.remove('hidden');
+      sourcesCountEl.textContent = String(list.length);
+      sourcesListEl.innerHTML = '';
+
+      for (const s of list) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `source-row${s.wcId === activeWcId ? ' active' : ''}`;
+        btn.dataset.wcId = String(s.wcId);
+
+        const dot = document.createElement('span');
+        dot.className = `source-dot${s.isPlaying ? ' playing' : ''}`;
+
+        const info = document.createElement('div');
+        info.className = 'source-row-info';
+
+        const tEl = document.createElement('div');
+        tEl.className = 'source-row-title';
+        tEl.textContent = s.title || s.sourceName || 'Media';
+
+        const subEl = document.createElement('div');
+        subEl.className = 'source-row-sub';
+        const kindTag = s.sourceType === 'sidebar' ? 'Sidebar' : 'Tab';
+        subEl.textContent = `${kindTag} · ${s.sourceName || 'Page'} · ${s.isPlaying ? 'Playing' : 'Paused'}`;
+
+        info.appendChild(tEl);
+        info.appendChild(subEl);
+        btn.appendChild(dot);
+        btn.appendChild(info);
+
+        btn.addEventListener('click', () => {
+          window.gxSounds?.playClick();
+          window.gxPlayerAPI?.control({ action: 'select-source', sourceWcId: s.wcId });
+        });
+
+        sourcesListEl.appendChild(btn);
+      }
+    }
+
+    function renderPlayerState(nextState) {
+      if (!nextState || typeof nextState !== 'object') return;
+      playerState = nextState;
+      const src = playerState.activeSource || null;
+
+      if (!src) {
+        emptyStateEl.classList.remove('hidden');
+        activeStateEl.classList.add('hidden');
+        lastArtworkUrl = '';
+        stopClockTimer();
+        return;
+      }
+
+      emptyStateEl.classList.add('hidden');
+      activeStateEl.classList.remove('hidden');
+
+      const isPlaying = Boolean(src.isPlaying);
+      statusDotEl.classList.toggle('playing', isPlaying);
+      const originPrefix = src.sourceType === 'sidebar' ? 'Sidebar' : 'Tab';
+      sourceLabelEl.textContent = `${originPrefix} · ${src.sourceName || 'Media'}`;
+      sourceLabelEl.title = src.sourceUrl || src.sourceName || '';
+
+      if (src.isLive) {
+        stateTagEl.textContent = 'LIVE';
+        stateTagEl.classList.add('live');
+      } else {
+        stateTagEl.textContent = isPlaying ? 'PLAYING' : 'PAUSED';
+        stateTagEl.classList.remove('live');
+      }
+
+      btnPlayerFocusSource.title =
+        src.sourceType === 'sidebar'
+          ? `Open ${src.sourceName || 'service'} in sidebar`
+          : `Switch to tab: ${src.sourceName || 'Tab'}`;
+
+      const showPip = Boolean(src.hasPlayingVideo || src.pipActive);
+      btnPlayerPip.classList.toggle('hidden', !showPip);
+      btnPlayerPip.classList.toggle('active', Boolean(src.pipActive && showPip));
+      btnPlayerPip.title = src.pipActive
+        ? 'Exit Picture-in-Picture'
+        : 'Pop out video (Picture-in-Picture)';
+
+      renderArtwork(src);
+
+      trackTitleEl.textContent = src.title || src.sourceName || 'Untitled Media';
+      trackTitleEl.title = trackTitleEl.textContent;
+      trackArtistEl.textContent = src.artist || src.sourceName || '';
+      trackArtistEl.classList.toggle('hidden', !trackArtistEl.textContent);
+      trackAlbumEl.textContent = src.album || '';
+      trackAlbumEl.classList.toggle('hidden', !src.album);
+
+      renderSeekProgress(src);
+
+      // Transport buttons — honestly reflect what this source supports
+      const canPlayPause = Boolean(src.canPlayPause);
+      btnPlayerPlayPause.disabled = !canPlayPause;
+      iconPlayEl.classList.toggle('hidden', isPlaying);
+      iconPauseEl.classList.toggle('hidden', !isPlaying);
+      btnPlayerPlayPause.title = !canPlayPause
+        ? 'Playback control unavailable for this source — click Open to control in tab'
+        : isPlaying
+        ? 'Pause'
+        : 'Play';
+      btnPlayerPlayPause.setAttribute('aria-label', isPlaying ? 'Pause' : 'Play');
+
+      const canPrev = Boolean(src.canPrevious);
+      btnPlayerPrev.disabled = !canPrev;
+      btnPlayerPrev.title = canPrev ? 'Previous track' : 'Previous track not supported by this page';
+
+      const canNext = Boolean(src.canNext);
+      btnPlayerNext.disabled = !canNext;
+      btnPlayerNext.title = canNext ? 'Next track' : 'Next track not supported by this page';
+
+      if (!canPlayPause) {
+        controlNoteEl.textContent = 'Audio detected — control playback directly inside the source tab.';
+        controlNoteEl.classList.remove('hidden');
+      } else {
+        controlNoteEl.textContent = '';
+        controlNoteEl.classList.add('hidden');
+      }
+
+      renderSourcesList(playerState.sources, src.wcId);
+
+      if (isPlaying) startClockTimer();
+      else stopClockTimer();
+    }
+
+    function startClockTimer() {
+      if (clockTimerId) return;
+      clockTimerId = setInterval(() => {
+        if (document.visibilityState === 'hidden') return;
+        if (playerState.activeSource && playerState.activeSource.isPlaying) {
+          renderSeekProgress(playerState.activeSource);
+        }
+      }, 1000);
+    }
+
+    function stopClockTimer() {
+      if (clockTimerId) {
+        clearInterval(clockTimerId);
+        clockTimerId = null;
+      }
+    }
+
+    btnPlayerPlayPause.addEventListener('click', async () => {
+      const src = playerState.activeSource;
+      if (!src || btnPlayerPlayPause.disabled) return;
+      window.gxSounds?.playClick();
+      const res = await window.gxPlayerAPI?.control({
+        action: 'toggle-play',
+        sourceWcId: src.wcId
+      });
+      if (res?.state) renderPlayerState(res.state);
+    });
+
+    btnPlayerPrev.addEventListener('click', async () => {
+      const src = playerState.activeSource;
+      if (!src || btnPlayerPrev.disabled) return;
+      window.gxSounds?.playClick();
+      await window.gxPlayerAPI?.control({
+        action: 'previous',
+        sourceWcId: src.wcId
+      });
+    });
+
+    btnPlayerNext.addEventListener('click', async () => {
+      const src = playerState.activeSource;
+      if (!src || btnPlayerNext.disabled) return;
+      window.gxSounds?.playClick();
+      await window.gxPlayerAPI?.control({
+        action: 'next',
+        sourceWcId: src.wcId
+      });
+    });
+
+    btnPlayerFocusSource.addEventListener('click', () => {
+      const src = playerState.activeSource;
+      if (!src) return;
+      window.gxSounds?.playClick();
+      window.gxPlayerAPI?.control({
+        action: 'focus-source',
+        sourceWcId: src.wcId
+      });
+    });
+
+    btnPlayerPip.addEventListener('click', () => {
+      const src = playerState.activeSource;
+      if (!src) return;
+      window.gxSounds?.playClick();
+      window.gxPlayerAPI?.control({
+        action: 'pip',
+        sourceWcId: src.wcId
+      });
+    });
+
+    document.getElementById('btnQuickYtMusic').addEventListener('click', () => {
+      window.gxSounds?.playClick();
+      window.gxPlayerAPI?.openSidebarService('youtubeMusic');
+    });
+
+    document.getElementById('btnQuickSpotify').addEventListener('click', () => {
+      window.gxSounds?.playClick();
+      window.gxPlayerAPI?.openSidebarService('spotify');
+    });
+
+    const beginSeek = () => {
+      if (seekRangeEl.disabled) return;
+      isSeeking = true;
+    };
+
+    seekRangeEl.addEventListener('pointerdown', beginSeek);
+    seekRangeEl.addEventListener('mousedown', beginSeek);
+
+    seekRangeEl.addEventListener('input', () => {
+      if (seekRangeEl.disabled) return;
+      isSeeking = true;
+      const val = Number(seekRangeEl.value) || 0;
+      const max = Number(seekRangeEl.max) || 100;
+      timeCurrentEl.textContent = formatTime(val);
+      updateSeekVisual(val, max);
+    });
+
+    const commitSeek = async () => {
+      const wasSeeking = isSeeking;
+      isSeeking = false;
+      const src = playerState.activeSource;
+      if (!wasSeeking || !src || seekRangeEl.disabled) return;
+      const seekTime = Number(seekRangeEl.value) || 0;
+      seekLockUntil = Date.now() + 600;
+      const res = await window.gxPlayerAPI?.control({
+        action: 'seek',
+        sourceWcId: src.wcId,
+        seekTime
+      });
+      if (res?.state) renderPlayerState(res.state);
+    };
+
+    seekRangeEl.addEventListener('change', commitSeek);
+    seekRangeEl.addEventListener('pointerup', commitSeek);
+    seekRangeEl.addEventListener('mouseup', commitSeek);
+
+    (function init() {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('incognito') === '1') {
+        document.documentElement.setAttribute('data-incognito', 'true');
+      }
+      const initialTheme = params.get('theme');
+      if (initialTheme) applyTheme(initialTheme);
+
+      window.gxPlayerAPI?.onSettingsUpdate?.((s) => applySettings(s));
+      window.gxPlayerAPI?.onUpdate?.((st) => renderPlayerState(st));
+
+      window.gxPlayerAPI?.getSettings?.().then((s) => applySettings(s)).catch(() => {});
+      window.gxPlayerAPI?.getState?.().then((st) => renderPlayerState(st)).catch(() => {});
+    })();
+  </script>
+</body>
+</html>

@@ -24,25 +24,30 @@ class GXSoundEngine {
   }
 
   _playTone(freqStart, freqEnd, duration = 0.06, type = 'sine', gainScale = 0.18) {
+    this._playToneAt(0, freqStart, freqEnd, duration, type, gainScale);
+  }
+
+  _playToneAt(startOffset, freqStart, freqEnd, duration = 0.06, type = 'sine', gainScale = 0.18) {
     if (!this.enabled || this.volume <= 0) return;
     const ctx = this._ensureCtx();
     if (!ctx) return;
 
-    const now = ctx.currentTime;
+    const start = ctx.currentTime + Math.max(0, startOffset);
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = type;
-    osc.frequency.setValueAtTime(freqStart, now);
-    osc.frequency.exponentialRampToValueAtTime(Math.max(40, freqEnd), now + duration);
+    osc.frequency.setValueAtTime(freqStart, start);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(40, freqEnd), start + duration);
 
     const amp = this.volume * gainScale;
-    gain.gain.setValueAtTime(amp, now);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.linearRampToValueAtTime(amp, start + Math.min(0.008, duration * 0.25));
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
 
     osc.connect(gain);
     gain.connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + duration + 0.01);
+    osc.start(start);
+    osc.stop(start + duration + 0.01);
   }
 
   playClick() {
@@ -63,6 +68,12 @@ class GXSoundEngine {
 
   playShutter() {
     this._playTone(900, 260, 0.1, 'square', 0.12);
+  }
+
+  playNotification() {
+    if (!this.enabled || this.volume <= 0) return;
+    this._playToneAt(0, 587.33, 659.25, 0.08, 'sine', 0.14);
+    this._playToneAt(0.07, 880, 932.33, 0.12, 'triangle', 0.12);
   }
 }
 

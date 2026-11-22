@@ -1,0 +1,680 @@
+const { WebContentsView } = require('electron');
+const {
+  PRELOAD_FILE,
+  TAB_PRELOAD_FILE,
+  SIDEBAR_PANEL_CHROME_FILE,
+  PLAYER_PANEL_FILE,
+  PLAYER_PANEL_FILE_URL,
+  SIDEBAR_ICON_WIDTH,
+  SIDEBAR_PANEL_DEFAULT_WIDTH,
+  SIDEBAR_PANEL_MIN_WIDTH,
+  SIDEBAR_PANEL_MAX_WIDTH,
+  windowContexts,
+  webContentsToWinId,
+  registerWebContents,
+  state
+} = require('./core');
+const playerMod = () => require('./player');
+const {
+  resolveInternalUiFile,
+  isNewTabUrl,
+  isWebUiUrl,
+  isErrorPageUrl,
+  getInternalUiQuery
+} = require('./utils');
+const {
+  getFailedUrlFromErrorPage,
+  buildErrorPageUrl
+} = require('./navigation');
+const { broadcastState, broadcastSettingsUpdate } = require('./broadcast');
+const {
+  getMaxEffectiveSidebarPanelWidth,
+  getEffectiveSidebarPanelWidth,
+  updateActiveViewBounds
+} = require('./layout');
+const { attachKeyboardShortcuts } = require('./shortcuts');
+const { restoreFocusToActiveTab, closePopover } = require('./popovers');
+const { createTab } = require('./tabs');
+
+const SIDEBAR_SERVICES = {
+  youtube: { key: 'youtube', title: 'YouTube', url: 'https://www.youtube.com' },
+  youtubeMusic: { key: 'youtubeMusic', title: 'YouTube Music', url: 'https://music.youtube.com' },
+  spotify: { key: 'spotify', title: 'Spotify', url: 'https://open.spotify.com' },
+  appleMusic: { key: 'appleMusic', title: 'Apple Music', url: 'https://music.apple.com' },
+  soundcloud: { key: 'soundcloud', title: 'SoundCloud', url: 'https://soundcloud.com' },
+  deezer: { key: 'deezer', title: 'Deezer', url: 'https://www.deezer.com' },
+  tidal: { key: 'tidal', title: 'Tidal', url: 'https://listen.tidal.com' },
+  twitch: { key: 'twitch', title: 'Twitch', url: 'https://www.twitch.tv' },
+  chatgpt: { key: 'chatgpt', title: 'ChatGPT', url: 'https://chatgpt.com' },
+  claude: { key: 'claude', title: 'Claude', url: 'https://claude.ai' },
+  gemini: { key: 'gemini', title: 'Gemini', url: 'https://gemini.google.com' },
+  perplexity: { key: 'perplexity', title: 'Perplexity', url: 'https://www.perplexity.ai' },
+  whatsapp: { key: 'whatsapp', title: 'WhatsApp', url: 'https://web.whatsapp.com' },
+  discord: { key: 'discord', title: 'Discord', url: 'https://discord.com/app' },
+  player: { key: 'player', title: 'Player', url: PLAYER_PANEL_FILE_URL, internal: true }
+};
+
+function clampSidebarWidth(rawWidth) {
+  const num = Number(rawWidth);
+  if (!Number.isFinite(num)) return SIDEBAR_PANEL_DEFAULT_WIDTH;
+  return Math.max(SIDEBAR_PANEL_MIN_WIDTH, Math.min(SIDEBAR_PANEL_MAX_WIDTH, Math.round(num)));
+}
+
+function createSidebarPanelState() {
+  const s = state.storage ? state.storage.getSettings() : {};
+  return {
+    views: new Map(), // serviceKey -> WebContentsView
+    meta: new Map(), // serviceKey -> { key, title, defaultUrl, url, failedUrl, isLoading, audible }
+    activeKey: null,
+    open: false,
+    pinned: Boolean(s.sidebarPanelPinned),
+    width: clampSidebarWidth(s.sidebarPanelWidth)
+  };
+}
+
+function ensureSidebarPanelState(ctx) {
+  if (!ctx) return null;
+  if (!ctx.sidebarPanel || !(ctx.sidebarPanel.views instanceof Map)) {
+    ctx.sidebarPanel = createSidebarPanelState();
+  }
+  if (!(ctx.sidebarPanel.meta instanceof Map)) {
+    ctx.sidebarPanel.meta = new Map();
+  }
+  ctx.sidebarPanel.width = clampSidebarWidth(ctx.sidebarPanel.width);
+  ctx.sidebarPanel.pinned = Boolean(ctx.sidebarPanel.pinned);
+  return ctx.sidebarPanel;
+}
+
+function resolveSidebarService(keyOrOpts) {
+  if (!keyOrOpts) return null;
+  if (typeof keyOrOpts === 'string') {
+    const trimmed = keyOrOpts.trim();
+    if (SIDEBAR_SERVICES[trimmed]) return SIDEBAR_SERVICES[trimmed];
+    for (const svc of Object.values(SIDEBAR_SERVICES)) {
+      if (svc.url === trimmed || svc.url.replace(/\/$/, '') === trimmed.replace(/\/$/, '')) {
+        return svc;
+      }
+    }
+    return null;
+  }
+  if (typeof keyOrOpts === 'object') {
+    const candidateKey = keyOrOpts.key || keyOrOpts.serviceKey || keyOrOpts.id || '';
+    if (candidateKey && SIDEBAR_SERVICES[candidateKey]) {
+      return SIDEBAR_SERVICES[candidateKey];
+    }
+    if (typeof keyOrOpts.url === 'string') {
+      return resolveSidebarService(keyOrOpts.url);
+    }
+  }
+  return null;
+}
+
+function getActiveSidebarView(ctx) {
+  const panel = ensureSidebarPanelState(ctx);
+  if (!panel || !panel.open || !panel.activeKey) return null;
+  const view = panel.views.get(panel.activeKey);
+  if (!view || !view.webContents || view.webContents.isDestroyed()) return null;
+  return view;
+}
+
+function findSidebarServiceByWebContents(ctx, wc) {
+  const panel = ensureSidebarPanelState(ctx);
+  if (!panel || !wc) return null;
+  for (const [key, view] of panel.views.entries()) {
+    if (view && view.webContents && !view.webContents.isDestroyed() && view.webContents.id === wc.id) {
+      return {
+        key,
+        view,
+        meta: panel.meta.get(key) || null,
+        service: SIDEBAR_SERVICES[key] || null
+      };
+    }
+  }
+  return null;
+}
+
+function getSidebarServiceCurrentUrl(ctx, serviceKey) {
+  const panel = ensureSidebarPanelState(ctx);
+  const service = SIDEBAR_SERVICES[serviceKey];
+  if (!panel || !service) return '';
+  const view = panel.views.get(serviceKey);
+  const meta = panel.meta.get(serviceKey);
+
+  if (view && view.webContents && !view.webContents.isDestroyed()) {
+    const liveUrl = view.webContents.getURL();
+    if (isErrorPageUrl(liveUrl)) {
+      return getFailedUrlFromErrorPage(liveUrl) || meta?.failedUrl || service.url;
+    }
+    if (liveUrl && !liveUrl.startsWith('chrome-error://') && liveUrl !== 'about:blank') {
+      return liveUrl;
+    }
+  }
+
+  if (meta && meta.url) {
+    if (isErrorPageUrl(meta.url)) {
+      return meta.failedUrl || getFailedUrlFromErrorPage(meta.url) || service.url;
+    }
+    return meta.url;
+  }
+
+  return service.url;
+}
+
+function serializeSidebarState(ctx) {
+  const panel = ensureSidebarPanelState(ctx);
+  if (!panel) {
+    return {
+      open: false,
+      activeKey: null,
+      title: '',
+      serviceUrl: '',
+      currentUrl: '',
+      isInternal: false,
+      isLoading: false,
+      pinned: false,
+      width: SIDEBAR_PANEL_DEFAULT_WIDTH,
+      loadedKeys: [],
+      audibleKeys: []
+    };
+  }
+  const activeService = panel.activeKey ? SIDEBAR_SERVICES[panel.activeKey] || null : null;
+  const activeMeta = panel.activeKey ? panel.meta.get(panel.activeKey) || null : null;
+  const currentUrl = panel.activeKey ? getSidebarServiceCurrentUrl(ctx, panel.activeKey) : '';
+  const audibleKeys = [];
+  for (const [k, m] of panel.meta.entries()) {
+    if (m && m.audible) audibleKeys.push(k);
+  }
+  const clampedWidth = clampSidebarWidth(panel.width);
+  const maxWidth = getMaxEffectiveSidebarPanelWidth(ctx);
+  const effectiveWidth = getEffectiveSidebarPanelWidth(ctx, clampedWidth);
+  return {
+    open: Boolean(panel.open && panel.activeKey),
+    activeKey: panel.activeKey || null,
+    title: activeService ? activeService.title : '',
+    serviceUrl: activeService ? activeService.url : '',
+    currentUrl,
+    isInternal: Boolean(activeService?.internal),
+    isLoading: Boolean(activeMeta?.isLoading),
+    pinned: Boolean(panel.pinned),
+    width: clampedWidth,
+    effectiveWidth,
+    maxWidth,
+    loadedKeys: Array.from(panel.views.keys()),
+    audibleKeys
+  };
+}
+
+function syncSidebarFrameViewState(ctx) {
+  if (!ctx || !ctx.win || ctx.win.isDestroyed()) return;
+  if (
+    ctx.sidebarPanelFrameView &&
+    ctx.sidebarPanelFrameView.webContents &&
+    !ctx.sidebarPanelFrameView.webContents.isDestroyed()
+  ) {
+    ctx.sidebarPanelFrameView.webContents.send('sidebar:update', serializeSidebarState(ctx));
+  }
+}
+
+function broadcastSidebarState(ctx) {
+  if (!ctx || !ctx.win || ctx.win.isDestroyed()) return;
+  const payload = serializeSidebarState(ctx);
+  ctx.win.webContents.send('sidebar:update', payload);
+  if (
+    ctx.sidebarPanelFrameView &&
+    ctx.sidebarPanelFrameView.webContents &&
+    !ctx.sidebarPanelFrameView.webContents.isDestroyed()
+  ) {
+    ctx.sidebarPanelFrameView.webContents.send('sidebar:update', payload);
+  }
+  broadcastState(ctx);
+}
+
+function ensureSidebarPanelFrameView(ctx) {
+  if (!ctx || !ctx.win || ctx.win.isDestroyed()) return null;
+  if (
+    ctx.sidebarPanelFrameView &&
+    ctx.sidebarPanelFrameView.webContents &&
+    !ctx.sidebarPanelFrameView.webContents.isDestroyed()
+  ) {
+    return ctx.sidebarPanelFrameView;
+  }
+  if (ctx.sidebarPanelFrameView) {
+    try {
+      ctx.win.contentView.removeChildView(ctx.sidebarPanelFrameView);
+    } catch (_) {}
+    ctx.sidebarPanelFrameView = null;
+  }
+
+  const view = new WebContentsView({
+    webPreferences: {
+      preload: PRELOAD_FILE,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  });
+
+  try {
+    view.setBackgroundColor(ctx.incognito ? '#09090d' : '#12101b');
+  } catch (_) {}
+
+  const wc = view.webContents;
+  registerWebContents(wc, ctx.win.id);
+  attachKeyboardShortcuts(ctx, wc);
+
+  wc.on('focus', () => {
+    if (ctx.popoverOpenKind) closePopover(ctx);
+  });
+
+  wc.on('did-finish-load', () => {
+    if (!ctx.win || ctx.win.isDestroyed() || wc.isDestroyed()) return;
+    wc.send('sidebar:update', serializeSidebarState(ctx));
+  });
+
+  wc.loadFile(SIDEBAR_PANEL_CHROME_FILE, {
+    query: getInternalUiQuery(ctx.incognito)
+  });
+
+  ctx.win.contentView.addChildView(view);
+  view.setBounds({ x: -5000, y: -5000, width: 1, height: 1 });
+  ctx.sidebarPanelFrameView = view;
+  return view;
+}
+
+function buildWebContentsViewForSidebarService(ctx, service) {
+  const panel = ensureSidebarPanelState(ctx);
+  state.adBlocker.attachToSession(ctx.session);
+
+  const view = new WebContentsView({
+    webPreferences: {
+      preload: TAB_PRELOAD_FILE,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      session: ctx.session,
+      plugins: true
+    }
+  });
+
+  const meta = {
+    key: service.key,
+    title: service.title,
+    defaultUrl: service.url,
+    url: service.url,
+    failedUrl: '',
+    isLoading: true,
+    audible: false
+  };
+
+  panel.views.set(service.key, view);
+  panel.meta.set(service.key, meta);
+
+  const wc = view.webContents;
+  registerWebContents(wc, ctx.win.id);
+  wc.setUserAgent(wc.getUserAgent().replace(/Electron\/[^\s]+\s?/g, ''));
+  attachKeyboardShortcuts(ctx, wc);
+
+  wc.on('focus', () => {
+    if (ctx.popoverOpenKind) closePopover(ctx);
+  });
+
+  wc.setWindowOpenHandler(({ url }) => {
+    if (url && /^https?:\/\//i.test(url)) {
+      createTab(ctx, { url, incognito: ctx.incognito, active: true });
+    }
+    return { action: 'deny' };
+  });
+
+  wc.on('did-start-loading', () => {
+    meta.isLoading = true;
+    broadcastSidebarState(ctx);
+  });
+
+  wc.on('did-stop-loading', () => {
+    meta.isLoading = false;
+    state.adBlocker.injectCosmeticFilters(wc);
+    const s = state.storage.getSettings();
+    if (s.forceDarkWeb && /^https?:/i.test(meta.url)) {
+      wc.insertCSS(
+        `html { filter: invert(0.92) hue-rotate(180deg) !important; background: #0d0e12 !important; } img, video, iframe, canvas { filter: invert(1) hue-rotate(180deg) !important; }`
+      ).catch(() => {});
+    }
+    broadcastSidebarState(ctx);
+  });
+
+  const handleUrlChange = (url) => {
+    if (!url || url.startsWith('chrome-error://')) return;
+    meta.url = url;
+    if (isErrorPageUrl(url)) {
+      meta.failedUrl = getFailedUrlFromErrorPage(url) || meta.failedUrl;
+    } else {
+      meta.failedUrl = '';
+    }
+    broadcastSidebarState(ctx);
+  };
+
+  wc.on('did-fail-load', (_e, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (!isMainFrame) return;
+    if (!errorCode || errorCode === -3 || errorDescription === 'ERR_ABORTED') return;
+
+    const failedUrl = validatedURL || meta.url || service.url || '';
+    if (
+      !failedUrl ||
+      failedUrl.startsWith('chrome-error://') ||
+      isErrorPageUrl(failedUrl) ||
+      isNewTabUrl(failedUrl) ||
+      isWebUiUrl(failedUrl) ||
+      Boolean(resolveInternalUiFile(failedUrl))
+    ) {
+      return;
+    }
+
+    const errorPageUrl = buildErrorPageUrl({ failedUrl, errorCode, errorDescription }, ctx);
+    const canLoadErrorPage = !wc.isDestroyed();
+    meta.isLoading = canLoadErrorPage;
+    meta.failedUrl = failedUrl;
+    meta.url = errorPageUrl;
+    broadcastSidebarState(ctx);
+
+    if (canLoadErrorPage) {
+      wc.loadURL(errorPageUrl).catch(() => {});
+    }
+  });
+
+  wc.on('did-navigate', (_e, url) => {
+    state.adBlocker.clearCosmeticKeys(wc);
+    if (!service.internal) {
+      playerMod().onSidebarNavigated(ctx, service.key, wc.id);
+    }
+    handleUrlChange(url);
+  });
+
+  wc.on('did-navigate-in-page', (_e, url, isMainFrame) => {
+    if (isMainFrame) handleUrlChange(url);
+  });
+
+  wc.on('dom-ready', () => state.adBlocker.injectCosmeticFilters(wc));
+
+  wc.on('audio-state-changed', (event) => {
+    meta.audible = Boolean(event.audible);
+    if (!service.internal) {
+      playerMod().onSidebarAudioChanged(ctx, service.key, wc.id, meta.audible);
+    }
+    broadcastSidebarState(ctx);
+  });
+
+  if (service.internal) {
+    try {
+      view.setBackgroundColor(ctx.incognito ? '#09090d' : '#12101b');
+    } catch (_) {}
+    wc.on('did-finish-load', () => {
+      if (!ctx.win || ctx.win.isDestroyed() || wc.isDestroyed()) return;
+      if (service.key === 'player') {
+        playerMod().sendPlayerStateToWebContents(ctx, wc);
+      }
+    });
+  } else {
+    wc.once('destroyed', () => {
+      playerMod().onWebContentsDestroyed(wc.id);
+    });
+  }
+
+  ctx.win.contentView.addChildView(view);
+  view.setBounds({ x: -5000, y: -5000, width: 1, height: 1 });
+  if (service.internal && service.key === 'player') {
+    wc.loadFile(PLAYER_PANEL_FILE, { query: getInternalUiQuery(ctx.incognito) }).catch(() => {});
+  } else {
+    wc.loadURL(service.url).catch(() => {});
+  }
+  return view;
+}
+
+function getOrCreateSidebarView(ctx, service) {
+  const panel = ensureSidebarPanelState(ctx);
+  const existing = panel.views.get(service.key);
+  if (existing && existing.webContents && !existing.webContents.isDestroyed()) {
+    return existing;
+  }
+  if (existing) {
+    try {
+      if (ctx.win && !ctx.win.isDestroyed() && ctx.win.contentView) {
+        ctx.win.contentView.removeChildView(existing);
+      }
+    } catch (_) {}
+    panel.views.delete(service.key);
+  }
+  return buildWebContentsViewForSidebarService(ctx, service);
+}
+
+function syncSidebarLayoutLeft(ctx) {
+  if (!ctx || !ctx.layoutState) return;
+  const panel = ensureSidebarPanelState(ctx);
+  if (panel.open && panel.activeKey && panel.pinned) {
+    ctx.layoutState.left = SIDEBAR_ICON_WIDTH + getEffectiveSidebarPanelWidth(ctx, panel.width);
+  } else {
+    ctx.layoutState.left = SIDEBAR_ICON_WIDTH;
+  }
+}
+
+function openSidebarPanel(ctx, keyOrOpts) {
+  if (!ctx || !ctx.win || ctx.win.isDestroyed()) return serializeSidebarState(ctx);
+  const panel = ensureSidebarPanelState(ctx);
+  const service = resolveSidebarService(keyOrOpts || panel.activeKey);
+  if (!service) return serializeSidebarState(ctx);
+
+  if (ctx.popoverOpenKind) {
+    closePopover(ctx);
+  }
+
+  ensureSidebarPanelFrameView(ctx);
+  const view = getOrCreateSidebarView(ctx, service);
+  panel.activeKey = service.key;
+  panel.open = true;
+
+  syncSidebarLayoutLeft(ctx);
+  updateActiveViewBounds(ctx);
+  if (view && view.webContents && !view.webContents.isDestroyed()) {
+    view.webContents.focus();
+  }
+  broadcastSidebarState(ctx);
+  return serializeSidebarState(ctx);
+}
+
+function closeSidebarPanel(ctx, { restoreFocus = true } = {}) {
+  if (!ctx || !ctx.win || ctx.win.isDestroyed()) return serializeSidebarState(ctx);
+  const panel = ensureSidebarPanelState(ctx);
+  if (!panel.open) return serializeSidebarState(ctx);
+
+  panel.open = false;
+  syncSidebarLayoutLeft(ctx);
+  updateActiveViewBounds(ctx);
+  if (restoreFocus) {
+    restoreFocusToActiveTab(ctx);
+  }
+  broadcastSidebarState(ctx);
+  return serializeSidebarState(ctx);
+}
+
+function toggleSidebarPanel(ctx, keyOrOpts) {
+  if (!ctx || !ctx.win || ctx.win.isDestroyed()) return serializeSidebarState(ctx);
+  const panel = ensureSidebarPanelState(ctx);
+  const service = resolveSidebarService(keyOrOpts);
+  if (!service) return serializeSidebarState(ctx);
+
+  if (panel.open && panel.activeKey === service.key) {
+    return closeSidebarPanel(ctx);
+  }
+  return openSidebarPanel(ctx, service.key);
+}
+
+function setSidebarPinned(ctx, pinnedArg) {
+  if (!ctx || !ctx.win || ctx.win.isDestroyed()) return serializeSidebarState(ctx);
+  const panel = ensureSidebarPanelState(ctx);
+  const nextPinned =
+    typeof pinnedArg === 'boolean'
+      ? pinnedArg
+      : typeof pinnedArg === 'object' && pinnedArg !== null && typeof pinnedArg.pinned === 'boolean'
+      ? pinnedArg.pinned
+      : !panel.pinned;
+
+  panel.pinned = Boolean(nextPinned);
+  if (state.storage) {
+    const s = state.storage.updateSettings({ sidebarPanelPinned: panel.pinned });
+    broadcastSettingsUpdate(s);
+  }
+  let updatedCallingCtx = false;
+  for (const winCtx of windowContexts.values()) {
+    if (!winCtx || !winCtx.win || winCtx.win.isDestroyed()) continue;
+    const winPanel = ensureSidebarPanelState(winCtx);
+    winPanel.pinned = panel.pinned;
+    if (winPanel.open) {
+      syncSidebarLayoutLeft(winCtx);
+    }
+    updateActiveViewBounds(winCtx);
+    broadcastSidebarState(winCtx);
+    if (winCtx === ctx) updatedCallingCtx = true;
+  }
+  if (!updatedCallingCtx) {
+    if (panel.open) {
+      syncSidebarLayoutLeft(ctx);
+    }
+    updateActiveViewBounds(ctx);
+    broadcastSidebarState(ctx);
+  }
+  return serializeSidebarState(ctx);
+}
+
+function setSidebarWidth(ctx, rawWidth, { persist = true } = {}) {
+  if (!ctx || !ctx.win || ctx.win.isDestroyed()) return serializeSidebarState(ctx);
+  const panel = ensureSidebarPanelState(ctx);
+  const clamped = clampSidebarWidth(rawWidth);
+  panel.width = clamped;
+
+  if (persist) {
+    if (state.storage) {
+      const s = state.storage.updateSettings({ sidebarPanelWidth: clamped });
+      broadcastSettingsUpdate(s);
+    }
+    let updatedCallingCtx = false;
+    for (const winCtx of windowContexts.values()) {
+      if (!winCtx || !winCtx.win || winCtx.win.isDestroyed()) continue;
+      const winPanel = ensureSidebarPanelState(winCtx);
+      winPanel.width = clamped;
+      if (winPanel.open && winPanel.pinned) {
+        syncSidebarLayoutLeft(winCtx);
+      }
+      updateActiveViewBounds(winCtx);
+      broadcastSidebarState(winCtx);
+      if (winCtx === ctx) updatedCallingCtx = true;
+    }
+    if (!updatedCallingCtx) {
+      if (panel.open && panel.pinned) {
+        syncSidebarLayoutLeft(ctx);
+      }
+      updateActiveViewBounds(ctx);
+      broadcastSidebarState(ctx);
+    }
+    return serializeSidebarState(ctx);
+  }
+
+  if (panel.open && panel.pinned) {
+    syncSidebarLayoutLeft(ctx);
+  }
+  updateActiveViewBounds(ctx);
+  return serializeSidebarState(ctx);
+}
+
+function reloadSidebarPanel(ctx) {
+  if (!ctx || !ctx.win || ctx.win.isDestroyed()) return serializeSidebarState(ctx);
+  const panel = ensureSidebarPanelState(ctx);
+  if (!panel.activeKey) return serializeSidebarState(ctx);
+
+  const view = panel.views.get(panel.activeKey);
+  const meta = panel.meta.get(panel.activeKey);
+  const service = SIDEBAR_SERVICES[panel.activeKey];
+  if (!view || !view.webContents || view.webContents.isDestroyed()) {
+    return serializeSidebarState(ctx);
+  }
+
+  const wc = view.webContents;
+  const currentUrl = wc.getURL();
+  if (isErrorPageUrl(meta?.url) || isErrorPageUrl(currentUrl)) {
+    const retryUrl =
+      getFailedUrlFromErrorPage(currentUrl) ||
+      meta?.failedUrl ||
+      getFailedUrlFromErrorPage(meta?.url) ||
+      service?.url;
+    if (retryUrl && !isErrorPageUrl(retryUrl) && !resolveInternalUiFile(retryUrl)) {
+      if (meta) {
+        meta.url = retryUrl;
+        meta.failedUrl = '';
+        meta.isLoading = true;
+      }
+      broadcastSidebarState(ctx);
+      wc.loadURL(retryUrl).catch(() => {});
+      return serializeSidebarState(ctx);
+    }
+  }
+  wc.reload();
+  return serializeSidebarState(ctx);
+}
+
+function openSidebarPanelInNewTab(ctx) {
+  if (!ctx || !ctx.win || ctx.win.isDestroyed()) return serializeSidebarState(ctx);
+  const panel = ensureSidebarPanelState(ctx);
+  if (!panel.activeKey) return serializeSidebarState(ctx);
+  if (SIDEBAR_SERVICES[panel.activeKey]?.internal) return serializeSidebarState(ctx);
+
+  const targetUrl = getSidebarServiceCurrentUrl(ctx, panel.activeKey);
+  if (!targetUrl) return serializeSidebarState(ctx);
+
+  createTab(ctx, {
+    url: targetUrl,
+    incognito: ctx.incognito,
+    active: true
+  });
+  return serializeSidebarState(ctx);
+}
+
+function cleanupSidebarPanelViews(ctx) {
+  if (!ctx) return;
+  if (ctx.sidebarPanelFrameView) {
+    if (ctx.sidebarPanelFrameView.webContents) {
+      webContentsToWinId.delete(ctx.sidebarPanelFrameView.webContents.id);
+    }
+    ctx.sidebarPanelFrameView = null;
+  }
+  if (!ctx.sidebarPanel || !(ctx.sidebarPanel.views instanceof Map)) return;
+  for (const view of ctx.sidebarPanel.views.values()) {
+    if (view && view.webContents) {
+      webContentsToWinId.delete(view.webContents.id);
+    }
+  }
+  ctx.sidebarPanel.views.clear();
+  if (ctx.sidebarPanel.meta instanceof Map) {
+    ctx.sidebarPanel.meta.clear();
+  }
+}
+
+module.exports = {
+  SIDEBAR_SERVICES,
+  clampSidebarWidth,
+  createSidebarPanelState,
+  ensureSidebarPanelState,
+  resolveSidebarService,
+  getActiveSidebarView,
+  findSidebarServiceByWebContents,
+  getSidebarServiceCurrentUrl,
+  serializeSidebarState,
+  syncSidebarFrameViewState,
+  broadcastSidebarState,
+  syncSidebarLayoutLeft,
+  openSidebarPanel,
+  closeSidebarPanel,
+  toggleSidebarPanel,
+  setSidebarPinned,
+  setSidebarWidth,
+  reloadSidebarPanel,
+  openSidebarPanelInNewTab,
+  cleanupSidebarPanelViews
+};
