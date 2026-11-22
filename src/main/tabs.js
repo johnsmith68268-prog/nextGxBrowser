@@ -1221,7 +1221,24 @@ function toggleActiveTabDevTools(ctx) {
 }
 
 function openOrFocusGxCornerTab(ctx) {
-  if (!ctx || !ctx.win || ctx.win.isDestroyed()) return serializeTabs(ctx);
+  // n-2: the old guard called serializeTabs(ctx) for a null ctx, but
+  // serializeTabs dereferences ctx immediately, so it still threw. Return a
+  // minimal state object with the same shape instead.
+  if (!ctx) {
+    return {
+      windowIncognito: false,
+      profileId: 'default',
+      activeWorkspaceId: DEFAULT_WORKSPACE_ID,
+      workspaces: [],
+      groups: [],
+      tabs: [],
+      activeTabId: null,
+      activeTab: null,
+      split: null,
+      sidebarPanel: null
+    };
+  }
+  if (!ctx.win || ctx.win.isDestroyed()) return serializeTabs(ctx);
   sidebarMod().closeSidebarIfUnpinned(ctx, { restoreFocus: false, ignoreGrace: true });
   const activeWsId = ctx.incognito ? DEFAULT_WORKSPACE_ID : ctx.activeWorkspaceId || DEFAULT_WORKSPACE_ID;
 
