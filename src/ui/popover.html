@@ -1885,6 +1885,24 @@
     .ts-list .rl-row.selected {
       background: var(--surface);
     }
+
+    /* UX phase: omnibox suggestions — group header + site favicons. */
+    .os-header {
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--muted);
+      padding: 8px 10px 4px;
+    }
+
+    .os-favicon {
+      width: 16px;
+      height: 16px;
+      border-radius: 3px;
+      object-fit: contain;
+      flex-shrink: 0;
+    }
   </style>
 </head>
 
@@ -2721,7 +2739,7 @@
         </span>
         <span style="color:var(--muted);font-size:11px;">↗</span>
       </button>
-      <div class="prof-footnote">Switching opens a new window in that profile</div>
+      <div class="prof-footnote">Switching focuses a profile's open window and restores its tabs — it never opens a duplicate window</div>
     </div>
   </div>
 
@@ -3789,18 +3807,31 @@
       if (!listEl) return;
       const suggestions = Array.isArray(payload?.suggestions) ? payload.suggestions : [];
       listEl.innerHTML = '';
+      if (suggestions.length) {
+        const head = document.createElement('div');
+        head.className = 'os-header';
+        head.textContent = 'From your history';
+        listEl.appendChild(head);
+      }
       for (const m of suggestions) {
         const row = document.createElement('div');
         row.className = 'rl-row';
+        const iconHtml = m.favicon
+          ? `<img class="os-favicon" src="${escapeHtml(m.favicon)}" alt="" onerror="this.outerHTML='<span class=\"rl-icon\">↺</span>'" />`
+          : '<span class="rl-icon">↺</span>';
         row.innerHTML = `
           <button type="button" class="rl-open" title="${escapeHtml(m.url || '')}">
-            <span class="rl-icon">↺</span>
+            ${iconHtml}
             <span class="rl-text">
               <span class="rl-title">${escapeHtml(m.title || m.url)}</span>
               <span class="rl-url">${escapeHtml(m.url || '')}</span>
             </span>
           </button>
         `;
+        row.addEventListener('mouseenter', () => {
+          listEl.querySelectorAll('.rl-row.selected').forEach((r) => r.classList.remove('selected'));
+          row.classList.add('selected');
+        });
         row.querySelector('.rl-open').addEventListener('mousedown', (e) => {
           e.preventDefault();
           window.gxAPI.closePopover();
@@ -4864,13 +4895,18 @@
         const mainBtn = document.createElement('button');
         mainBtn.type = 'button';
         mainBtn.className = 'prof-main-btn';
-        mainBtn.title = isActive && isThisWindow
-          ? `${prof.name} (Active profile)`
-          : `Switch to ${prof.name} (opens new window)`;
+        const openProfileIds = Array.isArray(data?.openProfileIds) ? data.openProfileIds : [];
+        const hasOpenWindow = openProfileIds.includes(prof.id);
+        mainBtn.title = isThisWindow
+          ? `${prof.name} (This window)`
+          : hasOpenWindow
+            ? `Focus the window already open in ${prof.name} — its tabs are exactly as you left them`
+            : `Switch to ${prof.name} (opens a new window with its saved tabs)`;
 
         const metaParts = [];
         if (isActive) metaParts.push('Active');
-        if (isThisWindow && !isActive) metaParts.push('This window');
+        if (isThisWindow) metaParts.push('This window');
+        else if (hasOpenWindow) metaParts.push('Open — click to focus');
         if (isDefault) metaParts.push('Default');
 
         mainBtn.innerHTML = `
@@ -4883,7 +4919,7 @@
             : ''
           }
             </span>
-            <span class="prof-meta">${escapeHtml(metaParts.join(' • ') || 'Click to open window')}</span>
+            <span class="prof-meta">${escapeHtml(metaParts.join(' • ') || 'Click to switch')}</span>
           </span>
         `;
 
@@ -4935,7 +4971,14 @@
       renderProfileInlineArea();
     }
 
-    document.getElementById('btnProfAdd').addEventListener('click', () => {
+    document.getElementById('btnProfAdd').addEventListener('click', async () => {
+      // UX phase: the ONE shared "New Profile" modal lives in the shell.
+      window.gxAPI.closePopover();
+      if (typeof window.gxAPI.openCreateProfileModal === 'function') {
+        await window.gxAPI.openCreateProfileModal();
+        return;
+      }
+      // Fallback (old preload): the inline box in this popover.
       const profiles = Array.isArray(currentProfilesData?.profiles) ? currentProfilesData.profiles : [];
       const used = new Set(profiles.map((p) => p.color));
       const nextColor =

@@ -1100,8 +1100,8 @@ test('s-14 / sidebar helpers: service resolution and width clamping', () => {
   assert.equal(resolveSidebarService('not-a-service'), null);
   assert.equal(resolveSidebarService(null), null);
 
-  assert.equal(clampSidebarWidth(100), 320, 'below minimum clamps to 320');
-  assert.equal(clampSidebarWidth(9999), 640, 'above maximum clamps to 640');
+  assert.equal(clampSidebarWidth(100), 260, 'below minimum clamps to 260 (UX phase: min 320 -> 260)');
+  assert.equal(clampSidebarWidth(9999), 800, 'above maximum clamps to 800 (UX phase: max 640 -> 800)');
   assert.equal(clampSidebarWidth(400), 400);
   assert.equal(clampSidebarWidth('junk'), 380, 'non-numeric width falls back to default 380');
   assert.equal(clampSidebarWidth(undefined), 380);

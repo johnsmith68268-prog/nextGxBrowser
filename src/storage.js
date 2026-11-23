@@ -46,7 +46,7 @@ function buildDefaultSidebarItems() {
     gemini: false,
     perplexity: false,
     whatsapp: false,
-    discord: false,
+    discord: true,
     gxCorner: true,
     player: true,
     gxControl: true,
@@ -821,7 +821,8 @@ class StorageManager {
   _clampSidebarPanelWidth(rawWidth) {
     const num = Number(rawWidth);
     if (!Number.isFinite(num)) return this.defaults.settings.sidebarPanelWidth;
-    return Math.max(320, Math.min(640, Math.round(num)));
+    // UX phase: panel range widened from 320–640px to 260–800px (see core.js).
+    return Math.max(260, Math.min(800, Math.round(num)));
   }
 
   _sanitizeAutoSleepMinutes(rawMinutes) {
@@ -2852,6 +2853,27 @@ class StorageManager {
     const target = this._targetFor(profileId);
     if (target !== this) return target.removeSpeedDial(id);
     const list = this._readOwnSpeedDial().filter(s => s.id !== id);
+    return this._write('speedDial', list);
+  }
+
+  // UX phase: edit a Speed Dial tile in place (New Tab customisation).
+  updateSpeedDial(id, { title, url }, profileId) {
+    const target = this._targetFor(profileId);
+    if (target !== this) return target.updateSpeedDial(id, { title, url });
+    const list = [...this._readOwnSpeedDial()];
+    const idx = list.findIndex((s) => s && s.id === id);
+    if (idx === -1) return list;
+    const formattedUrl = /^https?:\/\//i.test(url || '') ? url : `https://${url || ''}`;
+    let domain = '';
+    try {
+      domain = new URL(formattedUrl).hostname.replace(/^www\./, '');
+    } catch (_) {}
+    list[idx] = {
+      ...list[idx],
+      title: (title || '').trim() || domain || formattedUrl,
+      url: formattedUrl,
+      domain
+    };
     return this._write('speedDial', list);
   }
 

@@ -1378,6 +1378,15 @@ body {
   text-overflow: ellipsis;
 }
 
+.tab-hover-meta {
+  font-family: var(--nx-font-mono);
+  font-size: 11px;
+  color: var(--nx-accent-bright);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .zoom-indicator span {
   font-family: var(--nx-font-mono);
   font-variant-numeric: tabular-nums;
@@ -1542,8 +1551,8 @@ body {
 /* SIDEBAR OVERLAY PANEL */
 .nx-sidebar-panel {
   width: 380px;
-  min-width: 240px;
-  max-width: 640px;
+  min-width: 260px;
+  max-width: 800px;
   height: 100%;
   background: var(--bg-chrome);
   border-right: 1px solid var(--nx-accent);
@@ -1618,13 +1627,31 @@ body {
 .sidebar-panel-resizer {
   position: absolute;
   top: 0;
-  right: 0;
-  width: 6px;
+  right: -3px;
+  width: 12px;
   height: 100%;
   cursor: ew-resize;
   background: transparent;
   z-index: 2;
   transition: background var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+}
+
+/* UX phase: the resizer's visible strip stays slim; the 12px hit-area above
+   is what makes it grabbable. The glow strip is drawn on the inner edge. */
+.sidebar-panel-resizer::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 2px;
+  background: transparent;
+  transition: background var(--nx-motion-fast) var(--nx-motion-ease);
+}
+
+.sidebar-panel-resizer:hover::before,
+.sidebar-panel-resizer.dragging::before {
+  background: var(--nx-accent-bright);
 }
 
 .sidebar-panel-resizer:hover,
@@ -1809,6 +1836,56 @@ body {
 .nx-meter-fill.is-danger {
   background: var(--danger);
   box-shadow: none;
+}
+
+/* GX Control circular RAM gauge (Opera GX-style, live numbers) */
+.gx-gauge-wrap {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  margin: 2px auto;
+}
+
+.gx-gauge {
+  transform: rotate(-90deg);
+  display: block;
+}
+
+.gx-gauge-track {
+  fill: none;
+  stroke: var(--bg-deep);
+  stroke-width: 7;
+}
+
+.gx-gauge-arc {
+  fill: none;
+  stroke: var(--nx-accent);
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-dasharray: 188.5;
+  stroke-dashoffset: 188.5;
+  transition: stroke-dashoffset 0.3s ease, stroke 0.3s ease;
+}
+
+.gx-gauge-arc.is-warn {
+  stroke: var(--warning);
+}
+
+.gx-gauge-arc.is-danger {
+  stroke: var(--danger);
+}
+
+.gx-gauge-val {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--nx-font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-main);
+  pointer-events: none;
 }
 
 /* GX CONTROL RESOURCE LIMITERS & PER-TAB MONITOR */
@@ -2397,4 +2474,460 @@ body {
   background: var(--nx-on-accent);
   opacity: 0.95;
   height: 48px;
+}
+
+/* ================================================================
+   UX PHASE (2026-11-23) — profile modal, expandable rail, focus
+   system, micro-animations, toast actions, empty states.
+   One dark + red GX shell; tokens live in theme.css.
+   ================================================================ */
+
+/* --- Shared focus ring: every interactive element, one look --- */
+:focus-visible {
+  outline: 2px solid var(--nx-accent-bright);
+  outline-offset: 2px;
+  border-radius: var(--nx-radius-xs);
+}
+
+button:focus-visible,
+input:focus-visible,
+[tabindex]:focus-visible {
+  box-shadow: 0 0 0 3px var(--nx-accent-soft);
+}
+
+/* --- Shared modal (shell) --- */
+.nx-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 4, 10, 0.62);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  animation: nxFadeIn var(--nx-motion-base) var(--nx-motion-ease);
+}
+
+.nx-modal {
+  width: min(460px, calc(100vw - 48px));
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  background: var(--bg-chrome);
+  border: 1px solid var(--nx-accent);
+  border-radius: var(--nx-radius-lg);
+  box-shadow: var(--nx-shadow-lg), var(--nx-glow-md);
+  padding: 20px 22px 18px;
+  animation: nxModalIn var(--nx-motion-base) var(--nx-motion-ease);
+}
+
+@keyframes nxFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes nxModalIn {
+  from { opacity: 0; transform: translateY(10px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.nx-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.nx-modal-header h2 {
+  font-size: 17px;
+  letter-spacing: 0.01em;
+}
+
+.nx-modal-sub {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.55;
+  margin: 8px 0 16px;
+}
+
+.nx-field-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 14px 0 7px;
+}
+
+.nx-input {
+  width: 100%;
+  background: var(--bg-deep);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--nx-radius-sm);
+  color: var(--text-main);
+  font-size: 14px;
+  padding: 9px 12px;
+  transition: border-color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+}
+
+.nx-input:focus {
+  outline: none;
+  border-color: var(--nx-accent-bright);
+  box-shadow: 0 0 0 3px var(--nx-accent-soft);
+}
+
+.nx-input.is-invalid {
+  border-color: #ff4d6d;
+  box-shadow: 0 0 0 3px rgba(255, 77, 109, 0.18);
+}
+
+.nx-field-hint {
+  display: flex;
+  justify-content: flex-end;
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-top: 5px;
+}
+
+.nx-modal-error {
+  background: rgba(255, 77, 109, 0.12);
+  border: 1px solid rgba(255, 77, 109, 0.55);
+  color: #ffb3c0;
+  border-radius: var(--nx-radius-sm);
+  font-size: 12.5px;
+  padding: 8px 10px;
+  margin-top: 10px;
+}
+
+.nx-btn {
+  border-radius: var(--nx-radius-sm);
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease), border-color var(--nx-motion-fast) var(--nx-motion-ease), transform var(--nx-motion-fast) var(--nx-motion-ease);
+}
+
+.nx-btn:active {
+  transform: translateY(1px);
+}
+
+.nx-btn-primary {
+  background: var(--nx-accent);
+  color: var(--nx-on-accent);
+  box-shadow: var(--nx-glow-sm);
+}
+
+.nx-btn-primary:hover:not(:disabled) {
+  background: var(--nx-accent-bright);
+}
+
+.nx-btn-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.nx-btn-ghost {
+  background: transparent;
+  color: var(--text-main);
+  border-color: var(--border-glass);
+}
+
+.nx-btn-ghost:hover {
+  background: var(--bg-surface);
+}
+
+.nx-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.nx-check-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  color: var(--text-main);
+  margin-top: 18px;
+  cursor: pointer;
+}
+
+.nx-check-row input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--nx-accent);
+  cursor: pointer;
+}
+
+/* --- New Profile modal specifics --- */
+.nx-profile-preview {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--bg-deep);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--nx-radius-md);
+  padding: 13px 15px;
+}
+
+.nx-profile-preview-avatar {
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--nx-on-accent);
+  background: var(--profile-color, var(--nx-accent));
+  box-shadow: var(--nx-glow-sm);
+}
+
+.nx-profile-preview-name {
+  font-size: 15px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 300px;
+}
+
+.nx-profile-preview-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.nx-profile-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.nx-profile-swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  background: var(--profile-color, var(--nx-accent));
+  transition: transform var(--nx-motion-fast) var(--nx-motion-ease), border-color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+}
+
+.nx-profile-swatch:hover {
+  transform: scale(1.12);
+}
+
+.nx-profile-swatch.active {
+  border-color: var(--nx-on-accent);
+  box-shadow: 0 0 0 2px var(--nx-accent-bright), var(--nx-glow-sm);
+  transform: scale(1.12);
+}
+
+.nx-profile-avatars {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.nx-profile-avatar-opt {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 2px solid var(--border-glass);
+  background: var(--bg-deep);
+  color: var(--text-main);
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform var(--nx-motion-fast) var(--nx-motion-ease), border-color var(--nx-motion-fast) var(--nx-motion-ease), background var(--nx-motion-fast) var(--nx-motion-ease);
+}
+
+.nx-profile-avatar-opt:hover {
+  transform: scale(1.1);
+}
+
+.nx-profile-avatar-opt.active {
+  border-color: var(--nx-accent-bright);
+  background: var(--nx-accent-soft);
+  color: var(--nx-accent-bright);
+}
+
+/* --- Expandable sidebar rail (overlay flyout: never shifts the tab view) --- */
+.nx-sidebar {
+  transition: width var(--nx-motion-base) var(--nx-motion-ease), box-shadow var(--nx-motion-base) var(--nx-motion-ease);
+}
+
+.nx-sidebar .sidebar-label {
+  display: none;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nx-sidebar.rail-hover-expand:hover,
+.nx-sidebar.expanded {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 184px;
+  min-width: 184px;
+  z-index: 35;
+  box-shadow: var(--nx-shadow-lg), var(--nx-glow-sm);
+  align-items: stretch;
+  padding: 10px 8px;
+}
+
+.nx-sidebar.rail-hover-expand:hover .sidebar-group,
+.nx-sidebar.expanded .sidebar-group {
+  align-items: stretch;
+}
+
+.nx-sidebar.rail-hover-expand:hover .sidebar-btn,
+.nx-sidebar.expanded .sidebar-btn {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 0 10px;
+  gap: 10px;
+}
+
+.nx-sidebar.rail-hover-expand:hover .sidebar-label,
+.nx-sidebar.expanded .sidebar-label {
+  display: block;
+}
+
+.nx-sidebar.rail-hover-expand:hover .sidebar-btn.active::before,
+.nx-sidebar.expanded .sidebar-btn.active::before {
+  left: -8px;
+}
+
+#btnRailExpand svg {
+  transition: transform var(--nx-motion-base) var(--nx-motion-ease);
+}
+
+.nx-sidebar.expanded #btnRailExpand svg {
+  transform: rotate(180deg);
+}
+
+/* --- Live width badge while dragging the sidebar resizer --- */
+.nx-resize-badge {
+  position: fixed;
+  z-index: 210;
+  background: var(--bg-surface);
+  border: 1px solid var(--nx-accent);
+  color: var(--text-main);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 10px;
+  border-radius: var(--nx-radius-pill);
+  box-shadow: var(--nx-glow-sm);
+  pointer-events: none;
+  transform: translate(-50%, -140%);
+  white-space: nowrap;
+}
+
+/* --- Tab bar polish: close button + loading spinner --- */
+.nx-tab {
+  animation: nxTabIn var(--nx-motion-base) var(--nx-motion-ease);
+}
+
+@keyframes nxTabIn {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.tab-close-btn {
+  opacity: 0;
+  transition: opacity var(--nx-motion-fast) var(--nx-motion-ease), background var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease);
+}
+
+.nx-tab:hover .tab-close-btn,
+.nx-tab.active .tab-close-btn,
+.tab-close-btn:focus-visible {
+  opacity: 1;
+}
+
+.tab-loading-spinner {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid var(--nx-accent-soft);
+  border-top-color: var(--nx-accent-bright);
+  animation: nxSpin 0.8s linear infinite;
+}
+
+/* --- Toast with an action (Undo) --- */
+.nx-toast {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.nx-toast-action {
+  background: none;
+  border: none;
+  color: var(--nx-accent-bright);
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--nx-radius-xs);
+}
+
+.nx-toast-action:hover {
+  text-decoration: underline;
+}
+
+/* --- Nicer empty states (WebUI pages share .nx-empty-state) --- */
+.nx-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  padding: 34px 20px;
+  color: var(--text-muted);
+}
+
+.nx-empty-state .nx-empty-art {
+  width: 54px;
+  height: 54px;
+  border-radius: var(--nx-radius-md);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-glass);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--nx-accent-bright);
+  font-size: 24px;
+}
+
+.nx-empty-state .nx-empty-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.nx-empty-state .nx-empty-copy {
+  font-size: 12.5px;
+  line-height: 1.55;
+  max-width: 340px;
 }

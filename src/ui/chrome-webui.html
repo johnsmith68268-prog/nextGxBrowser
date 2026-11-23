@@ -151,6 +151,65 @@
     .theme-dot.lime { background: var(--nx-swatch-lime); }
     .theme-dot.ice { background: var(--nx-swatch-ice); }
 
+    /* Theme preview cards (Opera-style mini window mock per theme) */
+    .seg-btn.theme-card {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 7px;
+      padding: 8px 10px 7px;
+    }
+
+    .theme-card-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .theme-preview {
+      display: block;
+      width: 68px;
+      height: 42px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: #12101b;
+      position: relative;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    /* Mini window: accent title bar + dots, dark body, accent tab */
+    .theme-preview::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 0;
+      height: 11px;
+      background: var(--nx-swatch-violet);
+    }
+
+    .theme-preview::after {
+      content: '';
+      position: absolute;
+      left: 6px;
+      top: 17px;
+      width: 30px;
+      height: 5px;
+      border-radius: 3px;
+      background: var(--nx-swatch-violet);
+      opacity: 0.85;
+      box-shadow: 0 9px 0 -1px rgba(255, 255, 255, 0.14), 0 18px 0 -1px rgba(255, 255, 255, 0.08);
+    }
+
+    .theme-preview.gx-violet::before, .theme-preview.gx-violet::after { background: var(--nx-swatch-violet); }
+    .theme-preview.crimson::before, .theme-preview.crimson::after { background: var(--nx-swatch-crimson); }
+    .theme-preview.cyan::before, .theme-preview.cyan::after { background: var(--nx-swatch-cyan); }
+    .theme-preview.emerald::before, .theme-preview.emerald::after { background: var(--nx-swatch-emerald); }
+    .theme-preview.magenta::before, .theme-preview.magenta::after { background: var(--nx-swatch-magenta); }
+    .theme-preview.amber::before, .theme-preview.amber::after { background: var(--nx-swatch-amber); }
+    .theme-preview.lime::before, .theme-preview.lime::after { background: var(--nx-swatch-lime); }
+    .theme-preview.ice::before, .theme-preview.ice::after { background: var(--nx-swatch-ice); }
+
     .hidden {
       display: none !important;
     }
@@ -793,6 +852,119 @@
       font-size: 13.5px;
     }
 
+    /* UX phase: nicer empty states — art + title + copy + action, not just "0". */
+    .nx-empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      text-align: center;
+      padding: 34px 20px;
+      color: var(--text-secondary);
+    }
+
+    .nx-empty-state .nx-empty-art {
+      width: 54px;
+      height: 54px;
+      border-radius: 12px;
+      background: var(--bg-surface, #221e33);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--nx-accent-bright, #c77dff);
+      font-size: 24px;
+    }
+
+    .nx-empty-state .nx-empty-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .nx-empty-state .nx-empty-copy {
+      font-size: 12.5px;
+      line-height: 1.55;
+      max-width: 340px;
+    }
+
+    /* UX phase: keyboard-shortcuts help rows (Settings). */
+    .nx-shortcut-row {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg-surface, #221e33);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 10px;
+      margin: 0 8px 8px 0;
+      font-size: 12.5px;
+    }
+
+    .nx-shortcut-label {
+      color: var(--text-main);
+    }
+
+    .nx-kbd {
+      background: var(--bg-deep, #12101b);
+      border: 1px solid var(--border);
+      border-bottom-width: 2px;
+      border-radius: 5px;
+      padding: 1px 7px;
+      font-family: inherit;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--nx-accent-bright, #c77dff);
+      white-space: nowrap;
+    }
+
+    /* UX phase: proper centred confirm modal for destructive actions. */
+    .nx-webui-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(5, 4, 10, 0.62);
+      backdrop-filter: blur(6px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      animation: nxWebuiFadeIn 180ms ease;
+    }
+
+    @keyframes nxWebuiFadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .nx-webui-modal {
+      width: min(420px, calc(100vw - 48px));
+      background: var(--bg-chrome, #181524);
+      border: 1px solid var(--nx-accent, #9d4edd);
+      border-radius: 14px;
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+      padding: 20px 22px 18px;
+      animation: nxWebuiModalIn 180ms ease;
+    }
+
+    @keyframes nxWebuiModalIn {
+      from { opacity: 0; transform: translateY(10px) scale(0.97); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .nx-webui-modal-body {
+      color: var(--text-secondary);
+      font-size: 13px;
+      line-height: 1.55;
+      margin: 8px 0 4px;
+    }
+
+    .nx-webui-modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
     /* Bookmarks Manager: Favicons, Inline Edit, Folders */
     .bm-favicon-wrap {
       width: 18px;
@@ -1423,6 +1595,7 @@
         width="24"
         height="24"
         draggable="false"
+        onerror="this.style.display='none'"
         style="display:block;width:24px;height:24px;object-fit:contain;flex-shrink:0;filter:var(--gx-emblem-filter, none) drop-shadow(0 0 5px var(--nx-accent-soft));transition:filter 0.25s ease;"
       />
       <span class="nx-heading" id="pageHeaderTitle">History</span>

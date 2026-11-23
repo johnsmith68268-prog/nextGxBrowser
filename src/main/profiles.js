@@ -57,6 +57,16 @@ function ensureProfileSessionInitialized(profileId, { setupPermissionsForSession
   return ses;
 }
 
+function listOpenProfileIds() {
+  const ids = [];
+  for (const ctx of windowContexts.values()) {
+    if (!ctx || !ctx.win || ctx.win.isDestroyed() || ctx.incognito) continue;
+    const pid = ctx.profileId || DEFAULT_PROFILE_ID;
+    if (!ids.includes(pid)) ids.push(pid);
+  }
+  return ids;
+}
+
 function listProfilesData(ctx = null) {
   const store = state.storage.getProfilesStore();
   const windowProfileId = ctx?.profileId || store.activeId || DEFAULT_PROFILE_ID;
@@ -70,8 +80,47 @@ function listProfilesData(ctx = null) {
     profiles: store.profiles,
     activeProfile,
     windowProfileId,
-    windowProfile
+    windowProfile,
+    // UX phase: which profiles already have a live window, so the UI can
+    // offer "Focus window" instead of "Open new window".
+    openProfileIds: listOpenProfileIds()
   };
+}
+
+// UX phase (Chrome parity): find a live, non-incognito window for a profile.
+function findExistingProfileWindow(profileId) {
+  const pid =
+    typeof profileId === 'string' && profileId.trim()
+      ? profileId.trim().toLowerCase()
+      : DEFAULT_PROFILE_ID;
+  for (const ctx of windowContexts.values()) {
+    if (!ctx || !ctx.win || ctx.win.isDestroyed() || ctx.incognito) continue;
+    if ((ctx.profileId || DEFAULT_PROFILE_ID) === pid) return ctx;
+  }
+  return null;
+}
+
+// Pure helper (unit-tested): first saved window that actually has tabs, or null.
+function pickRestoreWindow(saved) {
+  const wins = Array.isArray(saved?.windows)
+    ? saved.windows.filter((w) => w && Array.isArray(w.tabs) && w.tabs.length > 0)
+    : [];
+  return wins[0] || null;
+}
+
+function focusProfileWindow(ctx) {
+  if (!ctx || !ctx.win || ctx.win.isDestroyed()) return false;
+  try {
+    if (typeof ctx.win.isMinimized === 'function' && ctx.win.isMinimized()) {
+      ctx.win.restore();
+    }
+    if (typeof ctx.win.show === 'function' && !ctx.win.isVisible()) {
+      ctx.win.show();
+    }
+    if (typeof ctx.win.focus === 'function') ctx.win.focus();
+    if (typeof ctx.win.moveTop === 'function') ctx.win.moveTop();
+  } catch (_) {}
+  return true;
 }
 
 function getActiveProfileData(ctx = null) {
@@ -115,10 +164,37 @@ function switchProfileAndOpenWindow(profileId, { openWindow = true } = {}) {
   ensureProfileSessionInitialized(res.activeId);
 
   let createdWindowId = null;
+  let focusedWindowId = null;
   if (openWindow) {
-    const { createBrowserWindow } = require('./windows');
-    const created = createBrowserWindow({ incognito: false, profileId: res.activeId });
-    createdWindowId = created?.win?.id ?? null;
+    // Chrome behaviour: if this profile already has a window, focus it and
+    // restore it exactly as it was — do NOT open a new window or a new tab.
+    const existing = findExistingProfileWindow(res.activeId);
+    if (existing) {
+      if (focusProfileWindow(existing)) {
+        focusedWindowId = existing.win.id;
+      }
+    } else {
+      // No live window: restore the profile's saved session (tabs, workspace,
+      // split view) instead of a blank start page. Respect the profile's
+      // "restore session" setting, like the startup path does.
+      let restoreTabs = null;
+      try {
+        const settings = state.storage ? state.storage.getSettings(res.activeId) : {};
+        if (settings.restoreSession !== false) {
+          const saved = state.storage ? state.storage.getSession(res.activeId) : null;
+          restoreTabs = pickRestoreWindow(saved);
+        }
+      } catch (_) {
+        restoreTabs = null;
+      }
+      const { createBrowserWindow } = require('./windows');
+      const created = createBrowserWindow({
+        incognito: false,
+        profileId: res.activeId,
+        restoreTabs
+      });
+      createdWindowId = created?.win?.id ?? null;
+    }
   }
 
   broadcastProfilesUpdate();
@@ -129,7 +205,10 @@ function switchProfileAndOpenWindow(profileId, { openWindow = true } = {}) {
     activeId: res.activeId,
     profile: res.profile,
     profiles: res.profiles,
-    windowId: createdWindowId
+    windowId: createdWindowId || focusedWindowId,
+    createdWindowId,
+    focusedWindowId,
+    focusedExisting: Boolean(focusedWindowId)
   };
 }
 
@@ -218,7 +297,24 @@ async function deleteProfileAndCleanup(profileId) {
   return delRes;
 }
 
+// UX phase: one shared "New Profile" modal lives in the shell (index.html).
+// Settings (a tab view) and the profile popover (a separate view) cannot show
+// it themselves, so they ask main to open it in the shell window instead.
+function requestOpenCreateProfileModal() {
+  let sent = false;
+  for (const ctx of windowContexts.values()) {
+    if (!ctx || !ctx.win || ctx.win.isDestroyed() || ctx.incognito) continue;
+    try {
+      ctx.win.webContents.send('profiles:open-create-modal', { source: 'profile-menu' });
+      sent = true;
+    } catch (_) {}
+  }
+  return { ok: sent };
+}
+
 function registerProfileIpcHandlers(handleInternal) {
+  handleInternal('profiles:open-create-modal', () => requestOpenCreateProfileModal());
+
   handleInternal('profiles:list', (e) => {
     const ctx = getCtxFromSender(e.sender);
     return listProfilesData(ctx);
@@ -258,6 +354,11 @@ module.exports = {
   getInitializedProfileSessions,
   ensureProfileSessionInitialized,
   listProfilesData,
+  listOpenProfileIds,
+  findExistingProfileWindow,
+  focusProfileWindow,
+  pickRestoreWindow,
+  requestOpenCreateProfileModal,
   getActiveProfileData,
   createProfileAndBroadcast,
   renameProfileAndBroadcast,

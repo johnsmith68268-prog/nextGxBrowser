@@ -585,6 +585,31 @@
       white-space: nowrap;
     }
 
+    .tile-edit {
+      position: absolute;
+      top: 5px;
+      right: 30px;
+      width: 18px;
+      height: 18px;
+      border: none;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.45);
+      color: #fff;
+      font-size: 11px;
+      line-height: 1;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 150ms ease, background 150ms ease;
+    }
+
+    .tile-edit:hover {
+      background: var(--accent, #9d4edd);
+    }
+
+    .dial-tile:hover .tile-edit {
+      opacity: 1;
+    }
+
     .tile-del {
       position: absolute;
       top: 5px;
@@ -1266,7 +1291,7 @@
 
   <div class="modal-backdrop" id="addModal">
     <form class="modal-box" id="addDialForm">
-      <h3 class="nx-heading">Add Speed Dial</h3>
+      <h3 class="nx-heading" id="addDialTitle">Add Speed Dial</h3>
       <input type="text" id="dialTitleInput" placeholder="Title (e.g. Twitch)" required />
       <input type="text" id="dialUrlInput" placeholder="Address (e.g. twitch.tv)" required />
       <div class="modal-actions">
@@ -1308,6 +1333,7 @@
         card.className = 'dial-tile';
         card.style.background = item.bg || GRADIENTS[idx % GRADIENTS.length];
         card.innerHTML = `
+          <button class="tile-edit" title="Edit">✎</button>
           <button class="tile-del" title="Remove">✕</button>
           <span class="tile-title">${escapeHtml(item.title)}</span>
         `;
@@ -1316,6 +1342,17 @@
             e.stopPropagation();
             const updated = await window.gxNewTabAPI.removeSpeedDial(item.id);
             renderDials(updated);
+            return;
+          }
+          if (e.target.closest('.tile-edit')) {
+            e.stopPropagation();
+            editingDialId = item.id;
+            document.getElementById('addDialTitle').textContent = 'Edit Speed Dial';
+            document.getElementById('dialTitleInput').value = item.title || '';
+            document.getElementById('dialUrlInput').value = item.url || '';
+            document.querySelector('#addDialForm button[type="submit"]').textContent = 'Save';
+            addModal.classList.add('open');
+            document.getElementById('dialTitleInput').focus();
             return;
           }
           window.gxNewTabAPI.navigate(item.url);
@@ -1327,12 +1364,20 @@
       addCard.className = 'dial-tile add-tile';
       addCard.textContent = '+';
       addCard.title = 'Add site to Speed Dial';
-      addCard.addEventListener('click', () => addModal.classList.add('open'));
+      addCard.addEventListener('click', () => { resetDialForm(); addModal.classList.add('open'); });
       dialGrid.appendChild(addCard);
+    }
+
+    let editingDialId = null;
+    function resetDialForm() {
+      editingDialId = null;
+      document.getElementById('addDialTitle').textContent = 'Add Speed Dial';
+      document.querySelector('#addDialForm button[type="submit"]').textContent = 'Add';
     }
 
     document.getElementById('btnCancelModal').addEventListener('click', () => {
       addModal.classList.remove('open');
+      resetDialForm();
     });
 
     document.getElementById('addDialForm').addEventListener('submit', async (e) => {
@@ -1340,9 +1385,12 @@
       const title = document.getElementById('dialTitleInput').value.trim();
       const url = document.getElementById('dialUrlInput').value.trim();
       if (title && url && window.gxNewTabAPI) {
-        const updated = await window.gxNewTabAPI.addSpeedDial({ title, url });
+        const updated = editingDialId
+          ? await window.gxNewTabAPI.updateSpeedDial(editingDialId, { title, url })
+          : await window.gxNewTabAPI.addSpeedDial({ title, url });
         renderDials(updated);
         addModal.classList.remove('open');
+        resetDialForm();
         e.target.reset();
       }
     });

@@ -356,7 +356,13 @@ async function renderHistoryPage({ force = true } = {}) {
 
   let historyHtml = '';
   if (!filtered.length) {
-    historyHtml = `<div class="section-card"><div class="empty-state">Your browsing history appears here.</div></div>`;
+    // UX phase: illustrated empty state with an action, not a bare sentence.
+    historyHtml = `<div class="section-card"><div class="nx-empty-state">
+      <div class="nx-empty-art" aria-hidden="true">◷</div>
+      <div class="nx-empty-title">No history yet</div>
+      <div class="nx-empty-copy">Pages you visit will appear here, grouped by date. Start browsing and your history will fill in.</div>
+      <button type="button" class="btn primary" id="btnEmptyHistoryBrowse">Browse the web</button>
+    </div></div>`;
   } else {
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
@@ -439,6 +445,10 @@ async function renderHistoryPage({ force = true } = {}) {
 
   mainContainer.innerHTML = closedSectionHtml + bulkBarHtml + historyHtml;
   if (!force && prevScrollY > 0) window.scrollTo(0, prevScrollY);
+
+  document.getElementById('btnEmptyHistoryBrowse')?.addEventListener('click', () => {
+    window.gxChromePagesAPI.createTab({ url: 'nextgx://newtab', active: true });
+  });
 
   const btnLoadMoreHistory = document.getElementById('btnLoadMoreHistory');
   if (btnLoadMoreHistory) {
@@ -580,9 +590,17 @@ async function renderDownloadsPage({ force = true } = {}) {
             aria-label="Search downloads"
           />
         </div>
-        <div class="empty-state">${dlSearchText ? `No downloads match "${escapeHtml(dlSearchText)}".` : 'No downloads in this category.'}</div>
+        <div class="nx-empty-state">
+          <div class="nx-empty-art" aria-hidden="true">↓</div>
+          <div class="nx-empty-title">${dlSearchText ? 'No downloads match your search' : 'No downloads yet'}</div>
+          <div class="nx-empty-copy">${dlSearchText ? `Nothing downloaded matches "${escapeHtml(dlSearchText)}".` : 'Files you download will appear here with speed, progress and pause / resume controls.'}</div>
+          ${dlSearchText ? '' : '<button type="button" class="btn primary" id="btnEmptyDownloadsBrowse">Browse the web</button>'}
+        </div>
       </div>
     `;
+    document.getElementById('btnEmptyDownloadsBrowse')?.addEventListener('click', () => {
+      window.gxChromePagesAPI.createTab({ url: 'nextgx://newtab', active: true });
+    });
     const emptyDlSearch = document.getElementById('dlSearchInput');
     if (emptyDlSearch) {
       emptyDlSearch.addEventListener('input', (e) => {
@@ -885,6 +903,10 @@ async function renderBookmarksPage({ force = true } = {}) {
     renderBookmarksPage({ force: true });
   });
 
+  document.getElementById('btnEmptyBookmarkAdd')?.addEventListener('click', () => {
+    document.getElementById('btnToggleAddBookmark')?.click();
+  });
+
   document.getElementById('btnToggleAddBookmark').addEventListener('click', () => {
     addingBookmarkOpen = !addingBookmarkOpen;
     addingBookmarkError = '';
@@ -952,10 +974,13 @@ async function renderBookmarksPage({ force = true } = {}) {
 
   let sectionsHtml = '';
   if (!filtered.length) {
-    const emptyMsg = !list.length
-      ? 'No bookmarks saved yet. Click the star in the address bar or use "+ Add Bookmark".'
-      : `No bookmarks match "${escapeHtml(searchQuery)}".`;
-    sectionsHtml = `<div class="section-card"><div class="empty-state">${emptyMsg}</div></div>`;
+    // UX phase: illustrated empty state with an action.
+    sectionsHtml = `<div class="section-card"><div class="nx-empty-state">
+      <div class="nx-empty-art" aria-hidden="true">☆</div>
+      <div class="nx-empty-title">${!list.length ? 'No bookmarks yet' : 'No bookmarks match your search'}</div>
+      <div class="nx-empty-copy">${!list.length ? 'Save a site with the star in the address bar, or add one here — it will show up on the New Tab page and bookmarks bar.' : `No bookmarks match "${escapeHtml(searchQuery)}".`}</div>
+      ${!list.length ? '<button type="button" class="btn primary" id="btnEmptyBookmarkAdd">Add a bookmark</button>' : ''}
+    </div></div>`;
   } else {
     const rootItems = [];
     const folderMap = new Map();
@@ -3448,6 +3473,7 @@ function renderSettingsProfilesSection() {
   const profiles = Array.isArray(data.profiles) ? data.profiles : [];
   const activeId = data.activeId || 'default';
   const windowProfileId = data.windowProfileId || activeId;
+  const openProfileIds = Array.isArray(data.openProfileIds) ? data.openProfileIds : [];
 
   const bannerHtml = settingsProfileBanner
     ? `
@@ -3536,7 +3562,7 @@ function renderSettingsProfilesSection() {
           <div class="row-sub">${isDefault ? 'Default profile — uses main browser data directory' : `Isolated local storage & session partition (persist:profile-${escapeHtml(prof.id)})`}</div>
         </div>
         <div class="io-actions-group">
-          <button type="button" class="btn ${isActive ? '' : 'primary'} switch-profile-btn" data-profile-id="${escapeHtml(prof.id)}">${isActive ? 'Open Window' : 'Switch'}</button>
+          <button type="button" class="btn ${isThisWindow ? '' : 'primary'} switch-profile-btn" data-profile-id="${escapeHtml(prof.id)}"${isThisWindow ? ' disabled title="This is the current window"' : ''}>${isThisWindow ? 'Current Window' : (openProfileIds.includes(prof.id) ? 'Focus Window' : 'Switch')}</button>
           <button type="button" class="btn rename-profile-btn" data-profile-id="${escapeHtml(prof.id)}">Rename</button>
           <button type="button" class="btn danger delete-profile-btn" data-profile-id="${escapeHtml(prof.id)}"${isDefault ? ' disabled title="Default profile cannot be deleted"' : ''}>Delete</button>
         </div>
@@ -3547,7 +3573,7 @@ function renderSettingsProfilesSection() {
   container.innerHTML = `
     <div class="card-row">
       <div class="row-info">
-        <div class="row-sub" style="margin-top:0;">Local-only profiles with isolated cookies, history, bookmarks, passwords, theme, and sidebar layout. Switching opens a new window in the selected profile.</div>
+        <div class="row-sub" style="margin-top:0;">Local-only profiles with isolated cookies, history, bookmarks, passwords, theme, and sidebar layout. If a profile already has a window open, switching focuses that window and restores its tabs — it never opens a duplicate window.</div>
       </div>
     </div>
     ${bannerHtml}
@@ -3670,7 +3696,9 @@ function renderSettingsProfilesSection() {
         settingsProfileBanner = {
           kind: 'info',
           title: `Switched active profile to "${res.profile?.name || id}"`,
-          detail: 'Opened a new browser window in this profile. Existing tabs remain in their current window.'
+          detail: res.focusedExisting
+            ? 'Focused the window already open in this profile — its tabs are exactly as you left them.'
+            : 'Opened a new browser window in this profile and restored its saved tabs. Existing tabs remain in their current window.'
         };
         settingsProfilesData = await window.gxChromePagesAPI.listProfiles();
         renderSettingsProfilesSection();
@@ -3693,13 +3721,33 @@ function renderSettingsProfilesSection() {
   });
 
   container.querySelectorAll('.delete-profile-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const id = btn.dataset.profileId;
       if (!id || id === 'default') return;
-      settingsProfileCreateOpen = false;
-      settingsProfileRenamingId = null;
-      settingsProfileDeletingId = id;
-      settingsProfileError = '';
+      const target = profiles.find((pr) => pr.id === id);
+      const confirmed = await showWebuiConfirmModal({
+        title: `Delete "${target?.name || id}"?`,
+        body: 'This permanently removes its local cookies, cache, history, bookmarks, passwords, and settings. This cannot be undone.',
+        confirmLabel: 'Delete Profile',
+        danger: true
+      });
+      if (!confirmed) return;
+      const res = await window.gxChromePagesAPI.deleteProfile(id);
+      settingsProfileDeletingId = null;
+      if (!res || !res.ok) {
+        settingsProfileBanner = {
+          kind: 'error',
+          title: 'Could not delete profile',
+          detail: res?.error || 'Unknown error.'
+        };
+      } else {
+        settingsProfileBanner = {
+          kind: 'success',
+          title: 'Profile deleted',
+          detail: 'Profile data directory and isolated session storage were removed.'
+        };
+      }
+      settingsProfilesData = await window.gxChromePagesAPI.listProfiles();
       renderSettingsProfilesSection();
     });
   });
@@ -3734,6 +3782,47 @@ function renderSettingsProfilesSection() {
       settingsProfilesData = await window.gxChromePagesAPI.listProfiles();
       renderSettingsProfilesSection();
     });
+  });
+}
+
+
+// UX phase: one proper confirm modal for destructive WebUI actions
+// (profile delete, …). Centred overlay with backdrop dim, Esc/backdrop
+// cancels, focus starts on Cancel so Enter cannot delete by accident.
+function showWebuiConfirmModal({ title, body, confirmLabel = 'Confirm', danger = false } = {}) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'nx-webui-modal-backdrop';
+    overlay.innerHTML = `
+      <div class="nx-webui-modal" role="alertdialog" aria-modal="true" aria-label="${escapeHtml(title || 'Confirm')}">
+        <h2 class="nx-heading" style="font-size:16px;">${escapeHtml(title || 'Are you sure?')}</h2>
+        <p class="nx-webui-modal-body">${escapeHtml(body || '')}</p>
+        <div class="nx-webui-modal-actions">
+          <button type="button" class="btn nx-webui-modal-cancel">Cancel</button>
+          <button type="button" class="btn ${danger ? 'danger-solid' : 'primary'} nx-webui-modal-confirm">${escapeHtml(confirmLabel)}</button>
+        </div>
+      </div>
+    `;
+    const done = (value) => {
+      overlay.remove();
+      document.removeEventListener('keydown', onKey, true);
+      resolve(value);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        done(false);
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) done(false);
+    });
+    overlay.querySelector('.nx-webui-modal-cancel').addEventListener('click', () => done(false));
+    overlay.querySelector('.nx-webui-modal-confirm').addEventListener('click', () => done(true));
+    document.body.appendChild(overlay);
+    overlay.querySelector('.nx-webui-modal-cancel').focus();
   });
 }
 
@@ -4367,6 +4456,44 @@ async function renderSettingsPage() {
     ? `nextGx Browser v${aboutVersionInfo.app} (64-bit) — Electron ${aboutVersionInfo.electron} · Chromium ${aboutVersionInfo.chrome}`
     : 'nextGx Browser v3.0.0 (64-bit) — Powered by Chromium Engine v156.0.8078.100';
 
+  // UX phase: keyboard-shortcuts help, right in Settings (same real
+  // shortcut map as the Extensions page card — see shortcuts.js).
+  const settingsShortcutRows = [
+    ['New tab', 'Ctrl+T'],
+    ['Reopen closed tab', 'Ctrl+Shift+T'],
+    ['New window', 'Ctrl+N'],
+    ['New Private window', 'Ctrl+Shift+N'],
+    ['Close tab', 'Ctrl+W'],
+    ['Reload page', 'Ctrl+R / F5'],
+    ['Focus address bar', 'Ctrl+L'],
+    ['Bookmark this page', 'Ctrl+D'],
+    ['History', 'Ctrl+H'],
+    ['Downloads', 'Ctrl+J'],
+    ['Find in page', 'Ctrl+F'],
+    ['Print', 'Ctrl+P'],
+    ['Zoom reset / in / out', 'Ctrl+0 / Ctrl++ / Ctrl+−'],
+    ['Fullscreen', 'F11'],
+    ['Developer tools', 'F12'],
+    ['Search tabs', 'Ctrl+Shift+A'],
+    ['Switch tabs', 'Ctrl+Tab'],
+    ['Reading mode', 'Alt+Shift+R'],
+    ['Split view divider (when focused)', '← → resize · Home centres'],
+    ['Close panel / drawer', 'Esc']
+  ];
+  const settingsShortcutsHtml = `
+    <div class="section-card" id="settingsShortcutsCard">
+      <div class="card-header"><h2 class="nx-heading">Keyboard shortcuts</h2></div>
+      <div class="card-row" style="flex-wrap:wrap;">
+        ${settingsShortcutRows
+          .map(
+            ([label, keys]) =>
+              `<span class="nx-shortcut-row"><span class="nx-shortcut-label">${escapeHtml(label)}</span><kbd class="nx-kbd">${escapeHtml(keys)}</kbd></span>`
+          )
+          .join('')}
+      </div>
+    </div>
+  `;
+
   mainContainer.innerHTML = `
     <div class="section-card" id="profilesSettingsCard">
       <div class="card-header">
@@ -4375,6 +4502,7 @@ async function renderSettingsPage() {
       </div>
       <div id="profilesSettingsBody"></div>
     </div>
+    ${settingsShortcutsHtml}
 
     <div class="section-card">
       <div class="card-header"><h2 class="nx-heading">Appearance, Sound & Behavior</h2></div>
@@ -4384,14 +4512,14 @@ async function renderSettingsPage() {
           <div class="row-sub">Choose your browser accent</div>
         </div>
         <div class="nx-segmented theme-seg-wrap" id="setThemeSeg">
-          <button type="button" class="seg-btn ${s.theme === 'gx-violet' ? 'active' : ''}" data-theme="gx-violet"><span class="theme-dot gx-violet"></span>nextGx Violet</button>
-          <button type="button" class="seg-btn ${s.theme === 'crimson' ? 'active' : ''}" data-theme="crimson"><span class="theme-dot crimson"></span>Crimson</button>
-          <button type="button" class="seg-btn ${s.theme === 'cyan' ? 'active' : ''}" data-theme="cyan"><span class="theme-dot cyan"></span>Cyber Cyan</button>
-          <button type="button" class="seg-btn ${s.theme === 'emerald' ? 'active' : ''}" data-theme="emerald"><span class="theme-dot emerald"></span>Emerald</button>
-          <button type="button" class="seg-btn ${s.theme === 'magenta' ? 'active' : ''}" data-theme="magenta"><span class="theme-dot magenta"></span>Magenta</button>
-          <button type="button" class="seg-btn ${s.theme === 'amber' ? 'active' : ''}" data-theme="amber"><span class="theme-dot amber"></span>Amber</button>
-          <button type="button" class="seg-btn ${s.theme === 'lime' ? 'active' : ''}" data-theme="lime"><span class="theme-dot lime"></span>Lime</button>
-          <button type="button" class="seg-btn ${s.theme === 'ice' ? 'active' : ''}" data-theme="ice"><span class="theme-dot ice"></span>Ice</button>
+          <button type="button" class="seg-btn theme-card ${s.theme === 'gx-violet' ? 'active' : ''}" data-theme="gx-violet"><span class="theme-preview gx-violet" aria-hidden="true"></span><span class="theme-card-label"><span class="theme-dot gx-violet"></span>nextGx Violet</span></button>
+          <button type="button" class="seg-btn theme-card ${s.theme === 'crimson' ? 'active' : ''}" data-theme="crimson"><span class="theme-preview crimson" aria-hidden="true"></span><span class="theme-card-label"><span class="theme-dot crimson"></span>Crimson</span></button>
+          <button type="button" class="seg-btn theme-card ${s.theme === 'cyan' ? 'active' : ''}" data-theme="cyan"><span class="theme-preview cyan" aria-hidden="true"></span><span class="theme-card-label"><span class="theme-dot cyan"></span>Cyber Cyan</span></button>
+          <button type="button" class="seg-btn theme-card ${s.theme === 'emerald' ? 'active' : ''}" data-theme="emerald"><span class="theme-preview emerald" aria-hidden="true"></span><span class="theme-card-label"><span class="theme-dot emerald"></span>Emerald</span></button>
+          <button type="button" class="seg-btn theme-card ${s.theme === 'magenta' ? 'active' : ''}" data-theme="magenta"><span class="theme-preview magenta" aria-hidden="true"></span><span class="theme-card-label"><span class="theme-dot magenta"></span>Magenta</span></button>
+          <button type="button" class="seg-btn theme-card ${s.theme === 'amber' ? 'active' : ''}" data-theme="amber"><span class="theme-preview amber" aria-hidden="true"></span><span class="theme-card-label"><span class="theme-dot amber"></span>Amber</span></button>
+          <button type="button" class="seg-btn theme-card ${s.theme === 'lime' ? 'active' : ''}" data-theme="lime"><span class="theme-preview lime" aria-hidden="true"></span><span class="theme-card-label"><span class="theme-dot lime"></span>Lime</span></button>
+          <button type="button" class="seg-btn theme-card ${s.theme === 'ice' ? 'active' : ''}" data-theme="ice"><span class="theme-preview ice" aria-hidden="true"></span><span class="theme-card-label"><span class="theme-dot ice"></span>Ice</span></button>
         </div>
       </div>
       <div class="card-row">
@@ -4786,7 +4914,13 @@ async function renderSettingsPage() {
 
   const btnSettingsAddProfile = document.getElementById('btnSettingsAddProfile');
   if (btnSettingsAddProfile) {
-    btnSettingsAddProfile.addEventListener('click', () => {
+    btnSettingsAddProfile.addEventListener('click', async () => {
+      // UX phase: the ONE shared "New Profile" modal lives in the shell.
+      if (typeof window.gxChromePagesAPI?.openCreateProfileModal === 'function') {
+        await window.gxChromePagesAPI.openCreateProfileModal();
+        return;
+      }
+      // Fallback (old preload): the inline form in this page.
       const existing = Array.isArray(settingsProfilesData?.profiles) ? settingsProfilesData.profiles : [];
       const used = new Set(existing.map((p) => p.color));
       settingsProfileCreateColor =

@@ -29,6 +29,7 @@ const { cancelScheduledSessionSave, saveSessionNow } = require('./main/session')
 const { setupDownloadListener } = require('./main/downloads');
 const { broadcastCookiesUpdate, cancelScheduledCookiesBroadcast } = require('./main/cookies');
 const { restorePersistedExtensions } = require('./main/extensions');
+const { loadBundledGxExtension } = require('./main/gx-extension');
 const { configureShortcuts } = require('./main/shortcuts');
 const { closePopover } = require('./main/popovers');
 const { closeSidebarPanel } = require('./main/sidebar');
@@ -63,6 +64,18 @@ configureShortcuts({
   toggleActiveTabDevTools,
   closePopover,
   closeSidebarPanel
+});
+
+// Certificate errors: deny by default, allow only origins the user has
+// explicitly proceeded past on the "Connection Not Private" error page
+// (src/main/cert-exceptions.js — in-memory, session-only, never persisted).
+// Without this handler Chromium would show its own interstitial; with it,
+// a denied cert still fails the navigation, which the app turns into the
+// custom error page (with the Proceed-anyway option) via did-fail-load.
+const { isCertExceptionAllowed, clearCertExceptions } = require('./main/cert-exceptions');
+app.on('certificate-error', (event, _webContents, url, _error, _certificate, callback) => {
+  event.preventDefault();
+  callback(isCertExceptionAllowed(url));
 });
 
 app.on('second-instance', (_event, argv) => {
@@ -111,6 +124,19 @@ if (gotSingleInstanceLock) {
       });
     }, 50);
     setTimeout(() => {
+      // Best-effort: load the bundled GX extension (ad-block DNR rules +
+      // cosmetic filters) alongside the engine blocker. Never fatal —
+      // the engine blocker in src/adblocker.js is the verified path.
+      loadBundledGxExtension()
+        .then((st) => {
+          if (st.loaded) console.log(`[GX Extension] Bundled extension loaded (id ${st.id}); DNR enforcement under Electron is unverified — engine blocker remains authoritative.`);
+          else console.error('[GX Extension] Bundled extension did not load:', st.error);
+        })
+        .catch((err) => {
+          console.error('[GX Extension] Bundled extension load failed:', err);
+        });
+    }, 100);
+    setTimeout(() => {
       cleanupOrphanedWallpapers();
     }, 5000);
   });
@@ -118,6 +144,7 @@ if (gotSingleInstanceLock) {
 
 app.on('before-quit', () => {
   state.isAppQuitting = true;
+  clearCertExceptions();
   stopBackgroundTimers();
   stopCornerBackgroundRefresh();
   gxControl.shutdown();

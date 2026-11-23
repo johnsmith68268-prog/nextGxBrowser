@@ -5,8 +5,8 @@ const FIND_BAR_HEIGHT = 38;
 const LEFT_TOOL_WIDTH = 340;
 const RIGHT_DRAWER_WIDTH = 360;
 const SIDEBAR_PANEL_DEFAULT_WIDTH = 380;
-const SIDEBAR_PANEL_MIN_WIDTH = 320;
-const SIDEBAR_PANEL_MAX_WIDTH = 640;
+const SIDEBAR_PANEL_MIN_WIDTH = 260;
+const SIDEBAR_PANEL_MAX_WIDTH = 800;
 const SPLIT_DIVIDER_WIDTH = 6;
 const SPLIT_MIN_RATIO = 0.2;
 const SPLIT_MAX_RATIO = 0.8;
@@ -114,6 +114,23 @@ const btnSidebarReload = document.getElementById('btnSidebarReload');
 const btnSidebarOpenTab = document.getElementById('btnSidebarOpenTab');
 const btnSidebarClose = document.getElementById('btnSidebarClose');
 const sidebarPanelResizer = document.getElementById('sidebarPanelResizer');
+const sidebarResizeBadge = document.getElementById('sidebarResizeBadge');
+
+function showSidebarResizeBadge(width, clientX) {
+  if (!sidebarResizeBadge) return;
+  sidebarResizeBadge.textContent = `${width} px`;
+  sidebarResizeBadge.style.left = `${Math.max(80, clientX || 200)}px`;
+  sidebarResizeBadge.style.top = '118px';
+  sidebarResizeBadge.classList.remove('hidden');
+}
+
+function hideSidebarResizeBadgeSoon() {
+  if (!sidebarResizeBadge) return;
+  clearTimeout(hideSidebarResizeBadgeSoon._timer);
+  hideSidebarResizeBadgeSoon._timer = setTimeout(() => {
+    sidebarResizeBadge.classList.add('hidden');
+  }, 700);
+}
 
 const rightDrawer = document.getElementById('rightDrawer');
 const rightDrawerTitle = document.getElementById('rightDrawerTitle');
@@ -164,13 +181,28 @@ function getActiveTabFullUrl() {
   return url === 'nextgx://newtab' ? '' : url;
 }
 
-function showToast(msg, { sound = true } = {}) {
+function showToast(msg, { sound = true, actionLabel = null, onAction = null } = {}) {
   if (!topToast) return;
   if (sound) window.gxSounds?.playNotification();
-  topToast.textContent = msg;
+  topToast.textContent = '';
+  const label = document.createElement('span');
+  label.textContent = msg;
+  topToast.appendChild(label);
+  if (actionLabel && typeof onAction === 'function') {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'nx-toast-action';
+    btn.textContent = actionLabel;
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      topToast.classList.add('hidden');
+      onAction();
+    });
+    topToast.appendChild(btn);
+  }
   topToast.classList.remove('hidden');
   clearTimeout(showToast._timer);
-  showToast._timer = setTimeout(() => topToast.classList.add('hidden'), 2800);
+  showToast._timer = setTimeout(() => topToast.classList.add('hidden'), 5000);
 }
 
 function clampSidebarPanelWidth(rawWidth) {
@@ -185,7 +217,8 @@ function getEffectiveSidebarPanelWidth(rawWidth) {
   if (!contentWidth) return base;
   const rightOffset = activeRightDrawer ? RIGHT_DRAWER_WIDTH : 0;
   const maxAvail = Math.max(240, Math.floor(contentWidth - SIDEBAR_ICON_WIDTH - rightOffset - 160));
-  return Math.min(base, maxAvail);
+  // UX phase: never wider than 800px or half the window, whichever is smaller.
+  return Math.min(base, maxAvail, Math.floor(contentWidth / 2));
 }
 
 function syncLayoutOffsets() {
@@ -798,9 +831,13 @@ function buildTabElement(tab, group, state, activeWsGroupsList, otherClosableCou
   // [TABS-W2] Gap 5.1 — no native `title` tooltip on the tab: the hover
   // preview card is the tooltip, and the native one would double it.
 
-  const iconHtml = tab.favicon
-    ? `<img class="tab-favicon" draggable="false" src="${escapeHtml(tab.favicon)}" alt="" onerror="this.style.display='none'" />`
-    : `<svg class="tab-favicon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8"/></svg>`;
+  // UX phase: a loading tab shows a spinner instead of its favicon, so the
+  // strip always says what the tab is doing (Chrome-style).
+  const iconHtml = tab.isLoading
+    ? `<span class="tab-loading-spinner" aria-label="Loading"></span>`
+    : tab.favicon
+      ? `<img class="tab-favicon" draggable="false" src="${escapeHtml(tab.favicon)}" alt="" onerror="this.style.display='none'" />`
+      : `<svg class="tab-favicon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8"/></svg>`;
 
   const splitSvg = splitRole
     ? `<span class="tab-split-badge" title="Split view (${splitRole === 'left' ? 'Left' : 'Right'} pane)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/>${
@@ -994,12 +1031,20 @@ function buildTabElement(tab, group, state, activeWsGroupsList, otherClosableCou
       e.stopPropagation();
       window.gxSounds?.playTabClose();
       window.gxAPI.closeTab(tab.id);
+      showToast('Tab closed', {
+        sound: false,
+        actionLabel: 'Undo',
+        onAction: () => window.gxAPI.reopenLastClosedTab?.()
+      });
       return;
     }
     hideTabHoverCard();
     userScrolledTabStrip = false;
     window.gxSounds?.playClick();
     window.gxAPI.closePopover();
+    // A tab switch dismisses the GX left tool drawer too — it used to
+    // stick open over the new tab's Settings / History / Downloads page.
+    if (activeLeftTool) closeLeftTool();
     window.gxAPI.switchTab(tab.id);
   });
 
@@ -1007,6 +1052,11 @@ function buildTabElement(tab, group, state, activeWsGroupsList, otherClosableCou
     if (e.button === 1) {
       window.gxSounds?.playTabClose();
       window.gxAPI.closeTab(tab.id);
+      showToast('Tab closed', {
+        sound: false,
+        actionLabel: 'Undo',
+        onAction: () => window.gxAPI.reopenLastClosedTab?.()
+      });
     }
   });
 
@@ -1186,6 +1236,36 @@ function patchTabElementInPlace(el, tab, group, state) {
     }
   }
 
+  // UX phase: swap the favicon for a spinner while the tab is loading.
+  const wasLoading = el.dataset.loading === '1';
+  const isLoadingNow = Boolean(tab.isLoading);
+  if (wasLoading !== isLoadingNow) {
+    el.dataset.loading = isLoadingNow ? '1' : '0';
+    const spinner = el.querySelector('.tab-loading-spinner');
+    if (isLoadingNow && !spinner) {
+      const sp = document.createElement('span');
+      sp.className = 'tab-loading-spinner';
+      sp.setAttribute('aria-label', 'Loading');
+      const fav = el.querySelector('.tab-favicon, .tab-favicon-svg');
+      if (fav) fav.replaceWith(sp);
+      else el.prepend(sp);
+    } else if (!isLoadingNow && spinner) {
+      if (nextFav) {
+        const img = document.createElement('img');
+        img.className = 'tab-favicon';
+        img.draggable = false;
+        img.alt = '';
+        img.src = nextFav;
+        img.onerror = () => { img.style.display = 'none'; };
+        spinner.replaceWith(img);
+      } else {
+        const wrap = document.createElement('span');
+        wrap.innerHTML = `<svg class="tab-favicon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8"/></svg>`;
+        spinner.replaceWith(wrap.firstElementChild);
+      }
+    }
+  }
+
   if (!tab.pinned) {
     // [TABS-W2] Gap 8.2/8.6 — speaker button: present when audible OR muted;
     // swap the button when the muted state flips.
@@ -1236,6 +1316,13 @@ function scheduleTabHoverCard(tab, group, tabEl) {
   if (settingsState.tabHoverPreview === false) return;
   tabHoverTimer = setTimeout(() => {
     const card = getTabHoverCardEl();
+    // Memory readout (Chrome-style): per-tab RAM/CPU from the last
+    // system-stats sample, when the tab has been measured yet.
+    const hoverStat = lastSystemStats?.tabStats?.[tab.id] || null;
+    const hoverMem =
+      hoverStat && typeof hoverStat.ramMB === 'number'
+        ? `Memory: ${hoverStat.ramMB} MB${hoverStat.cpuPercent !== null && hoverStat.cpuPercent !== undefined ? ` • CPU: ${formatCpuPct(hoverStat.cpuPercent)}` : ''}${hoverStat.cpuThrottled ? ' • Throttled' : ''}`
+        : '';
     card.innerHTML = `
       <div class="tab-hover-head">
         ${
@@ -1246,6 +1333,7 @@ function scheduleTabHoverCard(tab, group, tabEl) {
         <span class="tab-hover-title">${escapeHtml(tab.title || 'Start Page')}</span>
       </div>
       <div class="tab-hover-url">${escapeHtml(tab.url || '')}</div>
+      ${hoverMem ? `<div class="tab-hover-meta">${escapeHtml(hoverMem)}</div>` : ''}
     `;
     card.classList.remove('hidden');
     const rect = tabEl.getBoundingClientRect();
@@ -1345,7 +1433,7 @@ async function renderOmniboxSuggestions() {
     if (!url || seen.has(url)) continue;
     if (title.toLowerCase().includes(q) || url.toLowerCase().includes(q)) {
       seen.add(url);
-      matches.push({ title, url });
+      matches.push({ title, url, favicon: entry.favicon || '' });
       if (matches.length >= 6) break;
     }
   }
@@ -2430,6 +2518,302 @@ if (btnProfileMenu) {
   });
 }
 
+
+// ================================================================
+// UX PHASE — ONE shared "New Profile" modal (Chrome-style)
+// Opened from the toolbar avatar menu, Settings, and the profile
+// popover via gxAPI.openCreateProfileModal(). Creating a profile
+// here switches to it (when the checkbox is on) instead of showing
+// a "Click Switch" banner.
+// ================================================================
+const PROFILE_MODAL_COLORS = [
+  { id: 'gx-violet', label: 'Violet' },
+  { id: 'crimson', label: 'Crimson' },
+  { id: 'cyan', label: 'Cyan' },
+  { id: 'emerald', label: 'Emerald' },
+  { id: 'magenta', label: 'Magenta' },
+  { id: 'amber', label: 'Amber' },
+  { id: 'lime', label: 'Lime' },
+  { id: 'ice', label: 'Ice' }
+];
+// Avatar is a single alphanumeric letter (storage.deriveProfileAvatar
+// keeps the first alphanumeric character); '' means "initial from name".
+const PROFILE_MODAL_AVATARS = [
+  { id: '', label: 'Auto — initial from name', letter: 'Aa' },
+  { id: 'A', label: 'A' },
+  { id: 'G', label: 'G' },
+  { id: 'M', label: 'M' },
+  { id: 'P', label: 'P' },
+  { id: 'S', label: 'S' },
+  { id: 'W', label: 'W' }
+];
+
+const profileModalBackdrop = document.getElementById('profileModalBackdrop');
+const profileModalEl = document.getElementById('profileModal');
+const profileModalForm = document.getElementById('profileModalForm');
+const profileModalName = document.getElementById('profileModalName');
+const profileModalAvatar = document.getElementById('profileModalAvatar');
+const profileModalPreviewName = document.getElementById('profileModalPreviewName');
+const profileModalError = document.getElementById('profileModalError');
+const profileModalCount = document.getElementById('profileModalCount');
+const profileModalSwatches = document.getElementById('profileModalSwatches');
+const profileModalAvatars = document.getElementById('profileModalAvatars');
+const profileModalSwitchAfter = document.getElementById('profileModalSwitchAfter');
+const profileModalCreateBtn = document.getElementById('btnProfileModalCreate');
+
+let profileModalOpen = false;
+let profileModalColor = 'gx-violet';
+let profileModalAvatarChoice = '';
+let profileModalLastFocus = null;
+
+function profileModalAvatarLetter() {
+  if (profileModalAvatarChoice) return profileModalAvatarChoice.toUpperCase();
+  const name = profileModalName ? profileModalName.value.trim() : '';
+  const m = name.match(/[A-Za-z0-9]/);
+  return m ? m[0].toUpperCase() : 'P';
+}
+
+function renderProfileModalPreview() {
+  if (!profileModalEl) return;
+  const name = profileModalName ? profileModalName.value.trim().replace(/\s+/g, ' ') : '';
+  if (profileModalAvatar) {
+    profileModalAvatar.textContent = profileModalAvatarLetter();
+    profileModalAvatar.dataset.profileColor = profileModalColor;
+  }
+  if (profileModalPreviewName) {
+    profileModalPreviewName.textContent = name || 'Your profile';
+  }
+  if (profileModalCount) {
+    profileModalCount.textContent = `${profileModalName ? profileModalName.value.length : 0} / 40`;
+  }
+  if (profileModalCreateBtn) {
+    const switchAfter = profileModalSwitchAfter ? profileModalSwitchAfter.checked : true;
+    profileModalCreateBtn.textContent = switchAfter ? 'Create & Switch' : 'Create Profile';
+  }
+}
+
+function buildProfileModalPickers() {
+  if (profileModalSwatches && !profileModalSwatches.children.length) {
+    for (const c of PROFILE_MODAL_COLORS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'nx-profile-swatch';
+      b.dataset.profileColor = c.id;
+      b.title = c.label;
+      b.setAttribute('aria-label', c.label);
+      b.setAttribute('role', 'radio');
+      b.addEventListener('click', () => {
+        profileModalColor = c.id;
+        profileModalSwatches.querySelectorAll('.nx-profile-swatch').forEach((x) => {
+          x.classList.toggle('active', x.dataset.profileColor === c.id);
+          x.setAttribute('aria-checked', x.dataset.profileColor === c.id ? 'true' : 'false');
+        });
+        renderProfileModalPreview();
+      });
+      profileModalSwatches.appendChild(b);
+    }
+  }
+  if (profileModalAvatars && !profileModalAvatars.children.length) {
+    for (const a of PROFILE_MODAL_AVATARS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'nx-profile-avatar-opt';
+      b.textContent = a.id === '' ? 'Aa' : a.id;
+      b.title = a.label;
+      b.setAttribute('aria-label', a.label);
+      b.setAttribute('role', 'radio');
+      b.dataset.avatar = a.id;
+      b.addEventListener('click', () => {
+        profileModalAvatarChoice = a.id;
+        profileModalAvatars.querySelectorAll('.nx-profile-avatar-opt').forEach((x) => {
+          x.classList.toggle('active', x.dataset.avatar === a.id);
+          x.setAttribute('aria-checked', x.dataset.avatar === a.id ? 'true' : 'false');
+        });
+        renderProfileModalPreview();
+      });
+      profileModalAvatars.appendChild(b);
+    }
+  }
+  if (profileModalSwatches) {
+    profileModalSwatches.querySelectorAll('.nx-profile-swatch').forEach((x) => {
+      x.classList.toggle('active', x.dataset.profileColor === profileModalColor);
+      x.setAttribute('aria-checked', x.dataset.profileColor === profileModalColor ? 'true' : 'false');
+    });
+  }
+  if (profileModalAvatars) {
+    profileModalAvatars.querySelectorAll('.nx-profile-avatar-opt').forEach((x) => {
+      x.classList.toggle('active', x.dataset.avatar === profileModalAvatarChoice);
+      x.setAttribute('aria-checked', x.dataset.avatar === profileModalAvatarChoice ? 'true' : 'false');
+    });
+  }
+}
+
+function openProfileModal() {
+  if (!profileModalBackdrop || profileModalOpen) return;
+  buildProfileModalPickers();
+  // Default colour: first colour no existing profile uses yet.
+  try {
+    const used = new Set((cachedProfileState?.profiles || []).map((pr) => pr.color));
+    profileModalColor =
+      PROFILE_MODAL_COLORS.find((c) => !used.has(c.id))?.id || 'gx-violet';
+  } catch (_) {
+    profileModalColor = 'gx-violet';
+  }
+  profileModalAvatarChoice = '';
+  if (profileModalName) profileModalName.value = '';
+  if (profileModalSwitchAfter) profileModalSwitchAfter.checked = true;
+  if (profileModalError) profileModalError.classList.add('hidden');
+  if (profileModalName) profileModalName.classList.remove('is-invalid');
+  buildProfileModalPickers();
+  renderProfileModalPreview();
+  profileModalLastFocus = document.activeElement;
+  profileModalOpen = true;
+  profileModalBackdrop.classList.remove('hidden');
+  if (profileModalName) profileModalName.focus();
+}
+
+function closeProfileModal() {
+  if (!profileModalBackdrop || !profileModalOpen) return;
+  profileModalOpen = false;
+  profileModalBackdrop.classList.add('hidden');
+  if (profileModalLastFocus && typeof profileModalLastFocus.focus === 'function') {
+    try { profileModalLastFocus.focus(); } catch (_) {}
+  }
+}
+
+if (profileModalBackdrop) {
+  profileModalBackdrop.addEventListener('click', (e) => {
+    if (e.target === profileModalBackdrop) closeProfileModal();
+  });
+  profileModalBackdrop.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeProfileModal();
+      return;
+    }
+    // Focus trap: Tab cycles inside the modal.
+    if (e.key === 'Tab') {
+      const focusable = Array.from(
+        profileModalEl.querySelectorAll('button, input, [tabindex]')
+      ).filter((el) => !el.disabled && el.offsetParent !== null);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  });
+}
+
+if (profileModalName) {
+  profileModalName.addEventListener('input', () => {
+    profileModalName.classList.remove('is-invalid');
+    if (profileModalError) profileModalError.classList.add('hidden');
+    renderProfileModalPreview();
+  });
+}
+
+if (profileModalSwitchAfter) {
+  profileModalSwitchAfter.addEventListener('change', renderProfileModalPreview);
+}
+
+document.getElementById('btnProfileModalClose')?.addEventListener('click', closeProfileModal);
+document.getElementById('btnProfileModalCancel')?.addEventListener('click', closeProfileModal);
+
+if (profileModalForm) {
+  profileModalForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = profileModalName ? profileModalName.value.trim().replace(/\s+/g, ' ').slice(0, 40) : '';
+    if (!name) {
+      if (profileModalError) {
+        profileModalError.textContent = 'Please enter a profile name.';
+        profileModalError.classList.remove('hidden');
+      }
+      profileModalName?.classList.add('is-invalid');
+      profileModalName?.focus();
+      return;
+    }
+    if (profileModalCreateBtn) {
+      profileModalCreateBtn.disabled = true;
+      profileModalCreateBtn.textContent = 'Creating…';
+    }
+    try {
+      const res = await window.gxAPI.createProfile({
+        name,
+        color: profileModalColor,
+        avatar: profileModalAvatarChoice || undefined
+      });
+      if (!res || !res.ok) {
+        if (profileModalError) {
+          profileModalError.textContent = res?.error || 'Could not create profile.';
+          profileModalError.classList.remove('hidden');
+        }
+        return;
+      }
+      const createdName = res.profile?.name || name;
+      const switchAfter = profileModalSwitchAfter ? profileModalSwitchAfter.checked : true;
+      closeProfileModal();
+      showToast(`Profile "${createdName}" created`, { sound: false });
+      if (switchAfter && res.profile?.id) {
+        const sw = await window.gxAPI.switchProfile(res.profile.id);
+        if (!sw || !sw.ok) {
+          showToast('Profile created, but switching failed', { sound: false });
+        }
+      }
+    } catch (err) {
+      if (profileModalError) {
+        profileModalError.textContent = 'Could not create profile.';
+        profileModalError.classList.remove('hidden');
+      }
+    } finally {
+      if (profileModalCreateBtn) {
+        profileModalCreateBtn.disabled = false;
+        renderProfileModalPreview();
+      }
+    }
+  });
+}
+
+// Opened from Settings / the profile popover, via main (profiles.js).
+window.gxAPI.onOpenCreateProfileModal?.(() => openProfileModal());
+
+// ================================================================
+// UX PHASE — expandable sidebar rail (overlay flyout, labels)
+// ================================================================
+const nxSidebarEl = document.querySelector('.nx-sidebar');
+const btnRailExpand = document.getElementById('btnRailExpand');
+
+function setRailExpanded(expanded, { persist = true } = {}) {
+  if (!nxSidebarEl) return;
+  nxSidebarEl.classList.toggle('expanded', Boolean(expanded));
+  if (btnRailExpand) {
+    btnRailExpand.setAttribute('aria-pressed', expanded ? 'true' : 'false');
+    btnRailExpand.title = expanded ? 'Collapse sidebar — hide labels' : 'Expand sidebar — show labels';
+    const label = btnRailExpand.querySelector('.sidebar-label');
+    if (label) label.textContent = expanded ? 'Collapse' : 'Expand';
+  }
+  if (persist) {
+    try { localStorage.setItem('nx-rail-expanded', expanded ? '1' : '0'); } catch (_) {}
+  }
+}
+
+if (btnRailExpand) {
+  btnRailExpand.addEventListener('click', () => {
+    window.gxSounds?.playClick();
+    setRailExpanded(!nxSidebarEl?.classList.contains('expanded'));
+  });
+}
+
+try {
+  if (localStorage.getItem('nx-rail-expanded') === '1') setRailExpanded(true, { persist: false });
+} catch (_) {}
+
 document.getElementById('btnChromeMenu').addEventListener('click', () => {
   window.gxSounds?.playClick();
   const rect = document.getElementById('btnChromeMenu').getBoundingClientRect();
@@ -2494,7 +2878,12 @@ document.querySelectorAll('[data-service-url]').forEach((btn) => {
   const key = btn.dataset.sidebarItem;
   const title = btn.getAttribute('title') || key || 'Service';
   if (SERVICE_LOGOS[url]) {
-    btn.innerHTML = SERVICE_LOGOS[url];
+    // Keep the label span: replacing innerHTML would destroy it and the
+    // expanded rail would show no labels for service buttons (found by
+    // screenshot verification — GX Corner/Player kept theirs, services lost).
+    const labelText = btn.dataset.label || title;
+    btn.innerHTML = `${SERVICE_LOGOS[url]}<span class="sidebar-label"></span>`;
+    btn.querySelector('.sidebar-label').textContent = labelText;
   }
   if (key) {
     SERVICE_META_BY_KEY[key] = { key, url, title, logoHtml: SERVICE_LOGOS[url] || '' };
@@ -2559,6 +2948,15 @@ function applySidebarPanelDOMState() {
     }
     btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
   });
+
+  // UX phase: hover-expanding the rail is an overlay flyout; it must not
+  // run while the panel is pinned (pinned panel is in flex flow).
+  if (nxSidebarEl) {
+    nxSidebarEl.classList.toggle('rail-hover-expand', !pinned);
+    if (pinned && nxSidebarEl.classList.contains('expanded')) {
+      setRailExpanded(false);
+    }
+  }
 
   if (!sidebarPanel) return;
 
@@ -2666,7 +3064,7 @@ if (btnSidebarClose) {
   });
 }
 
-// Sidebar Panel Right-Edge Drag-to-Resize (320px – 640px, persisted on release)
+// Sidebar Panel Right-Edge Drag-to-Resize (260px – 800px / 50% window, persisted on release)
 let sidebarResizeStartX = 0;
 let sidebarResizeStartWidth = SIDEBAR_PANEL_DEFAULT_WIDTH;
 let activeSidebarPointerId = null;
@@ -2675,6 +3073,7 @@ function beginSidebarPanelResize(clientX, pointerId = null) {
   if (isResizingSidebarPanel) return;
   isResizingSidebarPanel = true;
   sidebarResizeStartWidth = getEffectiveSidebarPanelWidth(sidebarPanelState.width);
+  showSidebarResizeBadge(sidebarResizeStartWidth, clientX);
   sidebarResizeStartX = typeof clientX === 'number' ? clientX : SIDEBAR_ICON_WIDTH + sidebarResizeStartWidth;
   activeSidebarPointerId = pointerId;
   sidebarPanelResizer?.classList.add('dragging');
@@ -2693,6 +3092,7 @@ function updateSidebarPanelResize(clientX) {
   if (nextWidth !== sidebarPanelState.width) {
     sidebarPanelState.width = nextWidth;
     applySidebarPanelDOMState();
+    showSidebarResizeBadge(nextWidth, clientX);
     window.gxAPI.setSidebarWidth(nextWidth, { persist: false });
   }
 }
@@ -2712,10 +3112,21 @@ function endSidebarPanelResize() {
   sidebarPanelState.width = finalWidth;
   applySidebarPanelDOMState();
   syncLayoutOffsets();
+  hideSidebarResizeBadgeSoon();
   window.gxAPI.setSidebarWidth(finalWidth, { persist: true });
 }
 
 if (sidebarPanelResizer) {
+  sidebarPanelResizer.addEventListener('dblclick', (e) => {
+    e.preventDefault();
+    sidebarPanelState.width = SIDEBAR_PANEL_DEFAULT_WIDTH;
+    applySidebarPanelDOMState();
+    syncLayoutOffsets();
+    showSidebarResizeBadge(SIDEBAR_PANEL_DEFAULT_WIDTH, e.clientX);
+    hideSidebarResizeBadgeSoon();
+    window.gxAPI.setSidebarWidth(SIDEBAR_PANEL_DEFAULT_WIDTH, { persist: true });
+    showToast('Sidebar width reset to 380 px', { sound: false });
+  });
   sidebarPanelResizer.addEventListener('pointerdown', (e) => {
     if (e.button !== undefined && e.button !== 0) return;
     e.preventDefault();
@@ -2752,7 +3163,25 @@ window.addEventListener('mouseup', () => {
 
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !e.defaultPrevented) {
+    if (profileModalOpen) {
+      e.preventDefault();
+      closeProfileModal();
+      return;
+    }
+    if (nxSidebarEl && nxSidebarEl.classList.contains('expanded')) {
+      e.preventDefault();
+      setRailExpanded(false);
+      return;
+    }
     if (findBarOpen && document.activeElement === findInput) return;
+    // Escape closes the GX left tool drawer first (GX Control / Cleaner /
+    // Customize Dock used to ignore Escape entirely), then the sidebar
+    // panel, matching the main-process Escape handling in shortcuts.js.
+    if (activeLeftTool) {
+      e.preventDefault();
+      closeLeftTool();
+      return;
+    }
     if (sidebarPanelState.open && !sidebarPanelState.pinned) {
       e.preventDefault();
       window.gxAPI.closeSidebarPanel().then((state) => applySidebarPanelState(state));
@@ -3258,6 +3687,20 @@ function renderSystemStats(stats) {
       }
     }
 
+    // Circular RAM gauge (GX-style): live number in the ring, hot red
+    // when over the cap, amber when near it. Circumference for r=30 is 188.5.
+    const ramGaugeArc = document.getElementById('perfRamGaugeArc');
+    const ramGaugeText = document.getElementById('perfRamGaugeText');
+    if (ramGaugeArc) {
+      ramGaugeArc.style.strokeDashoffset = `${Math.max(0, 188.5 * (1 - pct / 100)).toFixed(1)}`;
+      ramGaugeArc.classList.toggle('is-danger', Boolean(ramCfg.enabled && ramCfg.overLimit));
+      ramGaugeArc.classList.toggle('is-warn', Boolean(ramCfg.enabled && !ramCfg.overLimit && pct >= 85));
+    }
+    if (ramGaugeText) {
+      ramGaugeText.textContent =
+        stats.browserRamMB >= 1024 ? `${(stats.browserRamMB / 1024).toFixed(1)} GB` : `${stats.browserRamMB} MB`;
+    }
+
     const sysRamEl = document.getElementById('perfSysRamText');
     if (sysRamEl) {
       sysRamEl.textContent = `System RAM: ${stats.usedSysMB} / ${stats.totalSysMB} MB (${stats.sysRamPercent}%)`;
@@ -3502,6 +3945,33 @@ function renderPerformanceTabList({ forceRebuild = false } = {}) {
 document.getElementById('btnSleepBackgroundTabs').addEventListener('click', async () => {
   const res = await window.gxAPI.sleepBackgroundTabs();
   showToast(`Hibernated ${res.sleptCount || 0} background tab(s)`);
+  loadPerformancePanel();
+});
+
+// Hot Tab Killer (Opera GX-style): hibernate the single background tab
+// using the most RAM, as measured in the last system-stats sample.
+// The active tab, pinned tabs and audible tabs are never candidates —
+// sleepTab itself also refuses the active tab.
+document.getElementById('btnHotTabKiller')?.addEventListener('click', async () => {
+  const tabStatsMap = lastSystemStats?.tabStats || {};
+  const tabs = Array.isArray(currentState.tabs) ? currentState.tabs : [];
+  let hungriest = null;
+  let hungriestMB = -1;
+  for (const tab of tabs) {
+    if (!tab || tab.id === currentState.activeTabId || tab.sleeping || tab.pinned || tab.audible) continue;
+    const stat = tabStatsMap[tab.id];
+    const mb = stat && typeof stat.ramMB === 'number' ? stat.ramMB : -1;
+    if (mb > hungriestMB) {
+      hungriestMB = mb;
+      hungriest = tab;
+    }
+  }
+  if (!hungriest) {
+    showToast('No hibernatable background tab with measured RAM');
+    return;
+  }
+  await window.gxAPI.sleepTab(hungriest.id);
+  showToast(`Hibernated hungriest tab: ${hungriest.title || 'Untitled'} (${hungriestMB >= 0 ? `${hungriestMB} MB` : 'unmeasured'})`);
   loadPerformancePanel();
 });
 

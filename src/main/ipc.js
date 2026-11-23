@@ -62,6 +62,7 @@ const {
 const { applyZoomAction } = require('./shortcuts');
 const { openPopover, resizePopover, closePopover } = require('./popovers');
 const { scheduleSessionSave } = require('./session');
+const { allowCertException } = require('./cert-exceptions');
 const {
   createTab,
   openOrFocusGxCornerTab,
@@ -70,6 +71,7 @@ const {
   sleepBackgroundTabs,
   closeTab,
   closeOtherTabs,
+  reopenLastClosedTab,
   duplicateTab,
   reorderTab,
   togglePinTab,
@@ -474,6 +476,8 @@ function registerIpcHandlers() {
   handleInternal('tabs:open-corner', (e) => openOrFocusGxCornerTab(getCtxFromSender(e.sender)));
   handleInternal('tabs:switch', (e, tabId) => switchTab(getCtxFromSender(e.sender), tabId));
   handleInternal('tabs:close', (e, tabId) => closeTab(getCtxFromSender(e.sender), tabId));
+  // UX phase: Undo for a closed tab (toast action in the shell).
+  handleInternal('tabs:reopen-closed', (e) => reopenLastClosedTab(getCtxFromSender(e.sender)));
   handleInternal('tabs:close-others', (e, tabId) => closeOtherTabs(getCtxFromSender(e.sender), tabId));
   handleInternal('tabs:duplicate', (e, tabId) => duplicateTab(getCtxFromSender(e.sender), tabId));
   handleInternal('tabs:reorder', (e, arg1, arg2) => {
@@ -602,6 +606,47 @@ function registerIpcHandlers() {
     if (!candidate || isErrorPageUrl(candidate) || resolveInternalUiFile(candidate)) {
       return serializeTabs(ctx);
     }
+    tab.url = candidate;
+    tab.isLoading = true;
+    broadcastState(ctx);
+    scheduleSessionSave(ctx);
+    tab.view.webContents.loadURL(candidate).catch(() => {});
+    return serializeTabs(ctx);
+  });
+  // "Proceed anyway" from the Connection Not Private error page. The
+  // error page only offers this for cert errors, and only after showing
+  // the full warning. The exception is session-only (in-memory, cleared
+  // on quit — see src/main/cert-exceptions.js) and covers exactly the
+  // failed origin, https only. It does NOT change the default: every
+  // other cert error is still denied by the app-level handler in main.js.
+  handleInternal('tabs:proceed-insecure', (e, requestedUrl) => {
+    const ctx = getCtxFromSender(e.sender);
+    const sidebarEntry = findSidebarServiceByWebContents(ctx, e.sender);
+    if (sidebarEntry) {
+      const meta = sidebarEntry.meta || null;
+      const candidate =
+        (typeof requestedUrl === 'string' ? requestedUrl.trim() : '') ||
+        meta?.failedUrl ||
+        '';
+      if (!candidate || isErrorPageUrl(candidate) || resolveInternalUiFile(candidate)) {
+        return serializeTabs(ctx);
+      }
+      allowCertException(candidate);
+      reloadSidebarPanel(ctx);
+      return serializeTabs(ctx);
+    }
+    const tab = findTabByWebContents(ctx, e.sender);
+    if (!tab || !tab.view || tab.view.webContents.isDestroyed()) return serializeTabs(ctx);
+    const currentUrl = tab.view.webContents.getURL();
+    const candidate =
+      getFailedUrlFromErrorPage(currentUrl) ||
+      tab.failedUrl ||
+      getFailedUrlFromErrorPage(tab.url) ||
+      (typeof requestedUrl === 'string' ? requestedUrl.trim() : '');
+    if (!candidate || isErrorPageUrl(candidate) || resolveInternalUiFile(candidate)) {
+      return serializeTabs(ctx);
+    }
+    allowCertException(candidate);
     tab.url = candidate;
     tab.isLoading = true;
     broadcastState(ctx);
@@ -1392,6 +1437,7 @@ function registerIpcHandlers() {
     };
   });
   handleInternal('newtab:add-dial', (e, item) => state.storage.addSpeedDial(item, getSenderProfileId(e)));
+  handleInternal('newtab:update-dial', (e, payload) => state.storage.updateSpeedDial(payload?.id, payload || {}, getSenderProfileId(e)));
   handleInternal('newtab:remove-dial', (e, id) => state.storage.removeSpeedDial(id, getSenderProfileId(e)));
   handleInternal('newtab:save-wallpaper', (_e, payload) => saveCustomWallpaperPayload(payload));
   handleInternal('newtab:remove-wallpaper', () => removeCustomWallpaperFile());

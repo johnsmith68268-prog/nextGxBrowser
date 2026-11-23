@@ -148,6 +148,14 @@ function startBackgroundTimers() {
 
   autoSleepIntervalId = setInterval(() => {
     if (state.isAppQuitting) return;
+    // Sidebar views are suspended on their own 5-minute idle clock even
+    // when Auto-Memory Saver is off: a sidebar service left open in the
+    // background is a renderer process doing nothing, and the run report
+    // found each one costs roughly 200 MB. Audible / visible services
+    // are never suspended (suspendIdleSidebarViews enforces that).
+    try {
+      sidebarMod().suspendIdleSidebarViews(5 * 60 * 1000);
+    } catch (_) {}
     const s = state.storage.getSettings();
     if (!s.autoSleepEnabled) return;
     const rawMinutes = Number(s.autoSleepMinutes);

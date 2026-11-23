@@ -237,6 +237,34 @@
       box-shadow: var(--nx-glow-md);
     }
 
+    .btn.danger {
+      background: transparent;
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+
+    .btn.danger:hover:not(:disabled) {
+      background: var(--danger);
+      border-color: var(--danger);
+      color: #fff;
+      box-shadow: var(--nx-glow-sm);
+    }
+
+    .proceed-warning {
+      background: var(--bg-input);
+      border: 1px solid var(--danger);
+      border-left: 3px solid var(--danger);
+      border-radius: var(--nx-radius-sm);
+      padding: 11px 14px;
+      font-size: 12.5px;
+      line-height: 1.55;
+      color: var(--text-muted);
+    }
+
+    .proceed-warning strong {
+      color: var(--danger);
+    }
+
     .hidden {
       display: none !important;
     }
@@ -287,6 +315,15 @@
         <ul id="errorTipsList"></ul>
       </div>
 
+      <div class="proceed-warning hidden" id="proceedWarning">
+        <strong>Warning:</strong> proceeding means nextGx will trust this site's
+        certificate for this session only, even though it could not be verified.
+        Your connection could be intercepted. Only proceed if you recognise this
+        site and trust this network (for example, a work / school proxy whose
+        certificate your computer does not know yet). Never enter passwords or
+        payment details on a site you proceeded past.
+      </div>
+
       <div class="error-actions">
         <button type="button" class="btn primary" id="btnRetry">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -297,6 +334,7 @@
         </button>
         <button type="button" class="btn hidden" id="btnBack">Go Back</button>
         <button type="button" class="btn" id="btnHome">Start Page</button>
+        <button type="button" class="btn danger hidden" id="btnProceed">Advanced: Proceed anyway</button>
       </div>
     </section>
   </main>
@@ -708,6 +746,36 @@
     const btnRetryLabel = document.getElementById('btnRetryLabel');
     const btnBack = document.getElementById('btnBack');
     const btnHome = document.getElementById('btnHome');
+    const btnProceed = document.getElementById('btnProceed');
+    const proceedWarning = document.getElementById('proceedWarning');
+
+    // "Proceed anyway" is offered ONLY for certificate errors, and only
+    // as a two-step confirm: first click reveals the warning, second
+    // click proceeds. The exception is session-only (see
+    // src/main/cert-exceptions.js) and covers just this site's origin.
+    const isCertError =
+      (presentation.codeLabel || '').startsWith('ERR_CERT_') ||
+      (Number(errorCode) <= -200 && Number(errorCode) >= -219);
+    if (isCertError && failedUrl) {
+      btnProceed.classList.remove('hidden');
+    }
+    let proceedArmed = false;
+    btnProceed.addEventListener('click', () => {
+      if (!failedUrl || btnProceed.disabled) return;
+      if (!proceedArmed) {
+        proceedArmed = true;
+        proceedWarning.classList.remove('hidden');
+        btnProceed.textContent = 'Proceed anyway — I understand the risk';
+        return;
+      }
+      btnProceed.disabled = true;
+      btnProceed.textContent = 'Proceeding...';
+      if (window.gxErrorPageAPI?.proceedAnyway) {
+        window.gxErrorPageAPI.proceedAnyway(failedUrl);
+      } else {
+        window.location.href = failedUrl;
+      }
+    });
 
     if (!failedUrl) {
       btnRetry.classList.add('hidden');

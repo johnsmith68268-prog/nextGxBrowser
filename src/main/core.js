@@ -8,10 +8,12 @@ const TOP_CHROME_HEIGHT = 82;
 const BOOKMARKS_BAR_HEIGHT = 30;
 const SIDEBAR_ICON_WIDTH = 50;
 const SIDEBAR_PANEL_HEADER_HEIGHT = 44; // Keep in sync with .sidebar-panel-header in src/ui/styles.css and .drawer-header in src/ui/sidebar-panel-chrome.html
-const SIDEBAR_PANEL_RESIZER_WIDTH = 7; // 6px drag handle + 1px neon right border
+const SIDEBAR_PANEL_RESIZER_WIDTH = 12; // 11px drag hit-area + 1px neon right border (UX phase: was 7px, too hard to grab)
 const SIDEBAR_PANEL_DEFAULT_WIDTH = 380;
-const SIDEBAR_PANEL_MIN_WIDTH = 320;
-const SIDEBAR_PANEL_MAX_WIDTH = 640;
+const SIDEBAR_PANEL_MIN_WIDTH = 260;
+const SIDEBAR_PANEL_MAX_WIDTH = 800;
+// Rail expand width (labels shown) — see src/ui/styles.css .nx-sidebar.expanded
+const SIDEBAR_ICON_WIDTH_EXPANDED = 184;
 const PRIVATE_WINDOW_TITLE = 'nextGx Private';
 
 const SRC_DIR = path.resolve(__dirname, '..');
@@ -88,6 +90,7 @@ module.exports = {
   SIDEBAR_PANEL_DEFAULT_WIDTH,
   SIDEBAR_PANEL_MIN_WIDTH,
   SIDEBAR_PANEL_MAX_WIDTH,
+  SIDEBAR_ICON_WIDTH_EXPANDED,
   PRIVATE_WINDOW_TITLE,
   SRC_DIR,
   APP_ICON_FILE,

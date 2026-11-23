@@ -1,5 +1,98 @@
 const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
+// NOTE: this preload runs sandboxed (webPreferences.sandbox: true), so
+// it may ONLY require('electron') — a relative require such as
+// require('./youtube-adstrip') fails with "module not found" and the
+// ENTIRE preload fails to load (which silently kills every API the WebUI
+// and media observer expose). The YouTube stripping logic below is
+// therefore inlined here, copied verbatim from src/youtube-adstrip.js
+// (the unit-tested module — keep the two in sync; tests/coding-phase.test.js
+// GX-7 asserts this file has no relative requires).
+const YT_AD_FIELD_NAMES = [
+  'adPlacements',
+  'adSlots',
+  'playerAds',
+  'adBreaks',
+  'adBreak',
+  'adInfo',
+  'adSlotLoggingData',
+  'adPlacementsRenderer'
+];
+
+function isYouTubeHost(hostname) {
+  if (!hostname || typeof hostname !== 'string') return false;
+  const host = hostname.toLowerCase().replace(/\.$/, '');
+  return (
+    host === 'youtube.com' ||
+    host === 'www.youtube.com' ||
+    host === 'm.youtube.com' ||
+    host === 'music.youtube.com' ||
+    host === 'youtube-nocookie.com' ||
+    host === 'www.youtube-nocookie.com' ||
+    host.endsWith('.youtube.com') ||
+    host.endsWith('.youtube-nocookie.com')
+  );
+}
+
+function stripYouTubePlayerResponse(input) {
+  let stripped = 0;
+  if (!input || typeof input !== 'object') {
+    return { data: input, stripped: 0 };
+  }
+  function stripValue(value, depth) {
+    if (!value || typeof value !== 'object' || depth > 24) return value;
+    if (Array.isArray(value)) {
+      for (let i = 0; i < value.length; i++) {
+        value[i] = stripValue(value[i], depth + 1);
+      }
+      return value;
+    }
+    for (const key of Object.keys(value)) {
+      if (YT_AD_FIELD_NAMES.indexOf(key) !== -1) {
+        const removed = value[key];
+        if (Array.isArray(removed)) stripped += removed.length;
+        else if (removed) stripped += 1;
+        delete value[key];
+        continue;
+      }
+      if (key === 'adTrackingParams' || key === 'adInfoRenderer') {
+        stripped += 1;
+        delete value[key];
+        continue;
+      }
+      value[key] = stripValue(value[key], depth + 1);
+    }
+    return value;
+  }
+  let data = input;
+  try {
+    data = stripValue(input, 0);
+  } catch (_) {
+    return { data: input, stripped: 0 };
+  }
+  return { data, stripped };
+}
+
+function stripYouTubePlayerResponseText(text) {
+  if (!text || typeof text !== 'string') return { text, stripped: 0 };
+  if (text.indexOf('adPlacement') === -1 && text.indexOf('playerAds') === -1) {
+    return { text, stripped: 0 };
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (_) {
+    return { text, stripped: 0 };
+  }
+  const result = stripYouTubePlayerResponse(parsed);
+  if (!result.stripped) return { text, stripped: 0 };
+  try {
+    return { text: JSON.stringify(result.data), stripped: result.stripped };
+  } catch (_) {
+    return { text, stripped: 0 };
+  }
+}
+
 function normalizeHost(raw) {
   if (!raw || typeof raw !== 'string') return '';
   const input = raw.trim().toLowerCase();
@@ -40,6 +133,7 @@ if (internalPageKind === 'newtab') {
     getHistory: () => ipcRenderer.invoke('history:get'),
     navigate: (urlOrQuery) => ipcRenderer.invoke('tabs:navigate', urlOrQuery),
     addSpeedDial: (item) => ipcRenderer.invoke('newtab:add-dial', item),
+    updateSpeedDial: (id, item) => ipcRenderer.invoke('newtab:update-dial', { id, ...(item || {}) }),
     removeSpeedDial: (id) => ipcRenderer.invoke('newtab:remove-dial', id),
     sleepBackgroundTabs: () => ipcRenderer.invoke('tabs:sleep-background'),
     saveNote: (text) => ipcRenderer.invoke('notes:save', text),
@@ -130,6 +224,8 @@ if (internalPageKind === 'webui') {
       ),
     deleteProfile: (id) => ipcRenderer.invoke('profiles:delete', id),
     switchProfile: (id) => ipcRenderer.invoke('profiles:switch', id),
+    // UX phase: Settings (a tab view) asks the shell to open the shared modal.
+    openCreateProfileModal: () => ipcRenderer.invoke('profiles:open-create-modal'),
     onProfilesUpdate: (cb) => ipcRenderer.on('profiles:update', (_e, data) => cb(data)),
     // Extensions
     getExtensions: () => ipcRenderer.invoke('extensions:list'),
@@ -190,6 +286,7 @@ if (internalPageKind === 'error') {
     retry: (url) => ipcRenderer.invoke('tabs:retry-failed', url),
     goBack: () => ipcRenderer.invoke('tabs:back'),
     goHome: () => ipcRenderer.invoke('tabs:home'),
+    proceedAnyway: (url) => ipcRenderer.invoke('tabs:proceed-insecure', url),
     getSettings: () => ipcRenderer.invoke('settings:get'),
     onSettingsUpdate: (cb) => ipcRenderer.on('settings:update', (_e, data) => cb(data))
   });
@@ -206,6 +303,126 @@ if (internalPageKind === 'player') {
     onSettingsUpdate: (cb) => ipcRenderer.on('settings:update', (_e, data) => cb(data))
   });
 }
+
+// ---------------------------------------------------------------------------
+// YouTube video-ad scriptlet (P0).
+// Domain blocking cannot stop YouTube video ads: the ads and the video
+// come from the same googlevideo.com hosts, so blocking that host would
+// break playback. Instead this hook runs in the page's main world and
+// strips the ad schedule (adPlacements / adSlots / playerAds) out of the
+// /youtubei/v1/player and /youtubei/v1/next JSON responses before the
+// player reads them, and drops the /api/stats/ads beacons. The pure
+// The stripping logic is inlined in this file (sandboxed preloads cannot
+// require() relative modules — see the note at the top of this file) and
+// duplicated in src/youtube-adstrip.js, which is the unit-tested copy;
+// keep the two in sync. Only the functions' source is injected into the
+// page, so the page never sees the preload's Node APIs.
+// If any step fails, the original response is passed through untouched —
+// ads may show again, but playback never breaks because of this hook.
+// Top frame + YouTube hosts only; internal pages and other sites are
+// untouched. See src/youtube-adstrip.js for the honest limits (notably:
+// ads baked into the initial page HTML are not reachable from here).
+// ---------------------------------------------------------------------------
+(function initYouTubeAdStrip() {
+  if (window !== window.top || internalPageKind) return;
+  const proto = window.location.protocol;
+  if (proto !== 'http:' && proto !== 'https:') return;
+  let host = '';
+  try {
+    host = window.location.hostname || '';
+  } catch (_) {
+    return;
+  }
+  if (!isYouTubeHost(host)) return;
+  if (!webFrame || typeof webFrame.executeJavaScript !== 'function') return;
+
+  function buildMainWorldYouTubeHook() {
+    return `(() => {
+      try {
+        const sym = Symbol.for('__nx_yt_adstrip__');
+        if (window[sym]) return true;
+        window[sym] = { stripped: 0 };
+        const YT_AD_FIELD_NAMES = ${JSON.stringify(YT_AD_FIELD_NAMES)};
+        const stripYouTubePlayerResponse = ${stripYouTubePlayerResponse.toString()};
+        const stripYouTubePlayerResponseText = ${stripYouTubePlayerResponseText.toString()};
+        const isPlayerEndpoint = (url) => typeof url === 'string' && (url.indexOf('/youtubei/v1/player') !== -1 || url.indexOf('/youtubei/v1/next') !== -1);
+        const isAdStats = (url) => typeof url === 'string' && (url.indexOf('/api/stats/ads') !== -1 || url.indexOf('/pagead/') !== -1);
+        const getUrl = (input) => {
+          try {
+            if (typeof input === 'string') return input;
+            if (input && typeof input.url === 'string') return input.url;
+          } catch (_) {}
+          return '';
+        };
+
+        if (typeof window.fetch === 'function') {
+          const origFetch = window.fetch.bind(window);
+          window.fetch = function (...args) {
+            const url = getUrl(args[0]);
+            if (isAdStats(url)) {
+              return Promise.resolve(new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+            }
+            if (!isPlayerEndpoint(url)) return origFetch(...args);
+            return origFetch(...args).then(async (res) => {
+              try {
+                const ct = (res.headers && res.headers.get('content-type')) || '';
+                if (ct.indexOf('json') === -1) return res;
+                const text = await res.clone().text();
+                const stripped = stripYouTubePlayerResponseText(text);
+                if (!stripped.stripped) return res;
+                window[sym].stripped += stripped.stripped;
+                return new Response(stripped.text, { status: res.status, statusText: res.statusText, headers: res.headers });
+              } catch (_) {
+                return res;
+              }
+            });
+          };
+        }
+
+        if (typeof XMLHttpRequest !== 'undefined' && XMLHttpRequest.prototype) {
+          const origOpen = XMLHttpRequest.prototype.open;
+          const origSend = XMLHttpRequest.prototype.send;
+          XMLHttpRequest.prototype.open = function (method, url) {
+            try { this.__nx_yt_url = getUrl(url); } catch (_) {}
+            return origOpen.apply(this, arguments);
+          };
+          XMLHttpRequest.prototype.send = function () {
+            const xhr = this;
+            const url = xhr.__nx_yt_url || '';
+            if (isAdStats(url)) {
+              // Drop the beacon without ever hitting the network.
+              try { xhr.abort(); } catch (_) {}
+              return undefined;
+            }
+            if (isPlayerEndpoint(url)) {
+              xhr.addEventListener('load', function () {
+                try {
+                  const raw = xhr.responseText;
+                  if (!raw) return;
+                  const stripped = stripYouTubePlayerResponseText(raw);
+                  if (!stripped.stripped) return;
+                  window[sym].stripped += stripped.stripped;
+                  Object.defineProperty(xhr, 'responseText', { value: stripped.text, configurable: true });
+                  try {
+                    Object.defineProperty(xhr, 'response', { value: stripped.text, configurable: true });
+                  } catch (_) {}
+                } catch (_) {}
+              });
+            }
+            return origSend.apply(this, arguments);
+          };
+        }
+        return true;
+      } catch (_) {
+        return false;
+      }
+    })()`;
+  }
+
+  try {
+    webFrame.executeJavaScript(buildMainWorldYouTubeHook()).catch(() => {});
+  } catch (_) {}
+})();
 
 // Media Observer (Video Pop-Out PiP + Sidebar Player MediaSession & Element Sync)
 (function initMediaObserver() {

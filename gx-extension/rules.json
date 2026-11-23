@@ -166,5 +166,23 @@
       "urlFilter": "||amazon-adsystem.com^",
       "resourceTypes": ["script", "image", "sub_frame", "xmlhttprequest", "other"]
     }
+  },
+  {
+    "id": 19,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "youtube.com/api/stats/ads",
+      "resourceTypes": ["xmlhttprequest", "ping", "other"]
+    }
+  },
+  {
+    "id": 20,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "youtube.com/pagead/",
+      "resourceTypes": ["script", "image", "sub_frame", "xmlhttprequest", "other"]
+    }
   }
 ]

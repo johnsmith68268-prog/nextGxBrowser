@@ -100,7 +100,14 @@ const AD_URL_PATTERNS = [
   /\/pbar\.js/i,
   /\/prebid(\.min)?\.js/i,
   /\/gpt\.js/i,
-  /[?&](?:ad_id|ad_type|ad_slot|adunit|banner_id)=/i
+  /[?&](?:ad_id|ad_type|ad_slot|adunit|banner_id)=/i,
+  // YouTube ad telemetry beacons (no video data — safe to drop).
+  // Video ads themselves are NOT blocked here: they are served from the
+  // same googlevideo.com hosts as the video, so blocking that host would
+  // break playback. They are handled by the player-response scriptlet in
+  // src/youtube-adstrip.js (hooked from src/tab-preload.js).
+  /\/api\/stats\/ads/i,
+  /\/api\/stats\/qoe\?/i
 ];
 
 const TRACKER_URL_PATTERNS = [

@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('gxAPI', {
   openGxCorner: () => ipcRenderer.invoke('tabs:open-corner'),
   switchTab: (tabId) => ipcRenderer.invoke('tabs:switch', tabId),
   closeTab: (tabId) => ipcRenderer.invoke('tabs:close', tabId),
+  reopenLastClosedTab: () => ipcRenderer.invoke('tabs:reopen-closed'),
   closeOtherTabs: (tabId) => ipcRenderer.invoke('tabs:close-others', tabId),
   duplicateTab: (tabId) => ipcRenderer.invoke('tabs:duplicate', tabId),
   reorderTab: (options) => ipcRenderer.invoke('tabs:reorder', options),
@@ -246,6 +247,8 @@ contextBridge.exposeInMainWorld('gxAPI', {
     ),
   deleteProfile: (id) => ipcRenderer.invoke('profiles:delete', id),
   switchProfile: (id) => ipcRenderer.invoke('profiles:switch', id),
+  // UX phase: ask main to open the ONE shared "New Profile" modal in the shell.
+  openCreateProfileModal: () => ipcRenderer.invoke('profiles:open-create-modal'),
 
   // Window Controls
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
@@ -265,6 +268,7 @@ contextBridge.exposeInMainWorld('gxAPI', {
   onPermissionPromptState: (cb) => ipcRenderer.on('permission-prompt:state', (_e, data) => cb(data)),
   onTabMuteState: (cb) => ipcRenderer.on('tabs:mute-state', (_e, data) => cb(data)),
   onProfilesUpdate: (cb) => ipcRenderer.on('profiles:update', (_e, data) => cb(data)),
+  onOpenCreateProfileModal: (cb) => ipcRenderer.on('profiles:open-create-modal', (_e, data) => cb(data)),
   onShortcutAction: (cb) => ipcRenderer.on('shortcut:action', (_e, action) => cb(action)),
   onPopoverData: (cb) => ipcRenderer.on('popover:data', (_e, data) => cb(data)),
   onFindResult: (cb) => ipcRenderer.on('find:result', (_e, data) => cb(data)),

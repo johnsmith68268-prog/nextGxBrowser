@@ -49,7 +49,20 @@ function getMaxEffectiveSidebarPanelWidth(ctx) {
     EFFECTIVE_PANEL_MIN_FLOOR,
     Math.floor(contentWidth - SIDEBAR_ICON_WIDTH - rightOffset - MIN_TAB_VIEWPORT_WIDTH)
   );
-  return Math.min(SIDEBAR_PANEL_MAX_WIDTH, maxAvail);
+  // UX phase: panel may grow to 800px OR 50% of the window, whichever is smaller,
+  // so a wide panel can never squeeze the tab viewport below its minimum.
+  const halfWindow = Math.floor(contentWidth / 2);
+  return Math.min(SIDEBAR_PANEL_MAX_WIDTH, halfWindow, maxAvail);
+}
+
+// Pure, unit-testable form of the 50%-of-window cap (no BrowserWindow needed).
+function clampSidebarPanelWidthForWindow(rawWidth, contentWidth) {
+  const base = Math.max(
+    SIDEBAR_PANEL_MIN_WIDTH,
+    Math.min(SIDEBAR_PANEL_MAX_WIDTH, Math.round(Number(rawWidth) || SIDEBAR_PANEL_DEFAULT_WIDTH))
+  );
+  if (!Number.isFinite(contentWidth) || contentWidth <= 0) return base;
+  return Math.min(base, Math.floor(contentWidth / 2));
 }
 
 function getEffectiveSidebarPanelWidth(ctx, rawWidth) {
@@ -217,6 +230,7 @@ function updateActiveViewBounds(ctx) {
 module.exports = {
   getMaxEffectiveSidebarPanelWidth,
   getEffectiveSidebarPanelWidth,
+  clampSidebarPanelWidthForWindow,
   setViewVisible,
   hideView,
   showView,

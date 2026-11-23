@@ -287,6 +287,9 @@ function buildWebContentsViewForTab(ctx, tab) {
     state.adBlocker.clearCosmeticKeys(wc);
     player.onTabNavigated(ctx, tab);
     handleUrlChange(url);
+    // Same rule as a tab switch: an unpinned sidebar panel must not
+    // stick open over a freshly navigated page.
+    sidebarMod().closeSidebarIfUnpinned(ctx, { restoreFocus: false });
     gxControl.onTabNavigated(ctx, tab, { forceReapply: true });
   });
   wc.on('did-navigate-in-page', (_e, url, isMainFrame) => {
@@ -589,6 +592,12 @@ function switchTab(ctx, tabId) {
     }
   }
   ctx.activeTabId = tabId;
+  // Unpinned sidebar panels do not survive a tab switch: previously the
+  // panel stayed open over the new tab's page (Settings / History /
+  // Downloads). Pinned panels are unaffected (closeSidebarIfUnpinned
+  // is a no-op for them), and the grace period is bypassed here because
+  // a deliberate tab switch is not an accidental click.
+  sidebarMod().closeSidebarIfUnpinned(ctx, { restoreFocus: false, ignoreGrace: true });
   // [TABS-W2] MRU order for Ctrl+Tab (gap 5.1): most recently activated first.
   if (!Array.isArray(ctx._mruTabIds)) ctx._mruTabIds = [];
   const mruIdx = ctx._mruTabIds.indexOf(tabId);

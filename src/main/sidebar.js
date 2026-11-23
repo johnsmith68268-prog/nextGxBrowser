@@ -541,6 +541,19 @@ function openSidebarPanel(ctx, keyOrOpts) {
     activeMeta.suspended = false;
   }
 
+  // RAM: only one external sidebar service view stays live at a time.
+  // Opening a service suspends every other non-audible service view
+  // (its URL is saved and it is re-created lazily on next open), so the
+  // sidebar cannot accumulate a WebContentsView per service and the
+  // ~400 MB jump the run report saw from two open sidebar tabs goes
+  // away. Audible services (background music) are never suspended.
+  for (const otherKey of Array.from(panel.views.keys())) {
+    if (otherKey === service.key) continue;
+    const otherMeta = panel.meta.get(otherKey);
+    if (otherMeta && (otherMeta.audible || otherMeta.rawAudible)) continue;
+    suspendSidebarServiceView(ctx, otherKey);
+  }
+
   syncSidebarLayoutLeft(ctx);
   updateActiveViewBounds(ctx);
   if (view && view.webContents && !view.webContents.isDestroyed()) {

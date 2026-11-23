@@ -220,62 +220,66 @@
     <aside class="nx-sidebar">
       <div class="sidebar-group">
         <!-- Visible by default: YouTube, YouTube Music, Spotify, Twitch, ChatGPT -->
-        <button class="sidebar-btn" data-service-url="https://www.youtube.com" data-sidebar-item="youtube" title="YouTube"></button>
-        <button class="sidebar-btn" data-service-url="https://music.youtube.com" data-sidebar-item="youtubeMusic" title="YouTube Music"></button>
-        <button class="sidebar-btn" data-service-url="https://open.spotify.com" data-sidebar-item="spotify" title="Spotify"></button>
+        <button class="sidebar-btn" data-label="YouTube" data-service-url="https://www.youtube.com" data-sidebar-item="youtube" title="YouTube"><span class="sidebar-label">YouTube</span></button>
+        <button class="sidebar-btn" data-label="YouTube Music" data-service-url="https://music.youtube.com" data-sidebar-item="youtubeMusic" title="YouTube Music"><span class="sidebar-label">YouTube Music</span></button>
+        <button class="sidebar-btn" data-label="Spotify" data-service-url="https://open.spotify.com" data-sidebar-item="spotify" title="Spotify"><span class="sidebar-label">Spotify</span></button>
 
         <!-- Hidden by default music services (toggleable in Customize Dock) -->
-        <button class="sidebar-btn hidden" data-service-url="https://music.apple.com" data-sidebar-item="appleMusic" title="Apple Music"></button>
-        <button class="sidebar-btn hidden" data-service-url="https://soundcloud.com" data-sidebar-item="soundcloud" title="SoundCloud"></button>
-        <button class="sidebar-btn hidden" data-service-url="https://www.deezer.com" data-sidebar-item="deezer" title="Deezer"></button>
-        <button class="sidebar-btn hidden" data-service-url="https://listen.tidal.com" data-sidebar-item="tidal" title="Tidal"></button>
+        <button class="sidebar-btn hidden" data-label="Apple Music" data-service-url="https://music.apple.com" data-sidebar-item="appleMusic" title="Apple Music"><span class="sidebar-label">Apple Music</span></button>
+        <button class="sidebar-btn hidden" data-label="SoundCloud" data-service-url="https://soundcloud.com" data-sidebar-item="soundcloud" title="SoundCloud"><span class="sidebar-label">SoundCloud</span></button>
+        <button class="sidebar-btn hidden" data-label="Deezer" data-service-url="https://www.deezer.com" data-sidebar-item="deezer" title="Deezer"><span class="sidebar-label">Deezer</span></button>
+        <button class="sidebar-btn hidden" data-label="Tidal" data-service-url="https://listen.tidal.com" data-sidebar-item="tidal" title="Tidal"><span class="sidebar-label">Tidal</span></button>
 
-        <button class="sidebar-btn" data-service-url="https://www.twitch.tv" data-sidebar-item="twitch" title="Twitch"></button>
-        <button class="sidebar-btn" data-service-url="https://chatgpt.com" data-sidebar-item="chatgpt" title="ChatGPT"></button>
+        <button class="sidebar-btn" data-label="Twitch" data-service-url="https://www.twitch.tv" data-sidebar-item="twitch" title="Twitch"><span class="sidebar-label">Twitch</span></button>
+        <button class="sidebar-btn" data-label="ChatGPT" data-service-url="https://chatgpt.com" data-sidebar-item="chatgpt" title="ChatGPT"><span class="sidebar-label">ChatGPT</span></button>
 
         <!-- Hidden by default AI & messaging services (toggleable in Customize Dock) -->
-        <button class="sidebar-btn hidden" data-service-url="https://claude.ai" data-sidebar-item="claude" title="Claude"></button>
-        <button class="sidebar-btn hidden" data-service-url="https://gemini.google.com" data-sidebar-item="gemini" title="Gemini"></button>
-        <button class="sidebar-btn hidden" data-service-url="https://www.perplexity.ai" data-sidebar-item="perplexity" title="Perplexity"></button>
-        <button class="sidebar-btn hidden" data-service-url="https://web.whatsapp.com" data-sidebar-item="whatsapp" title="WhatsApp"></button>
-        <button class="sidebar-btn hidden" data-service-url="https://discord.com/app" data-sidebar-item="discord" title="Discord"></button>
+        <button class="sidebar-btn hidden" data-label="Claude" data-service-url="https://claude.ai" data-sidebar-item="claude" title="Claude"><span class="sidebar-label">Claude</span></button>
+        <button class="sidebar-btn hidden" data-label="Gemini" data-service-url="https://gemini.google.com" data-sidebar-item="gemini" title="Gemini"><span class="sidebar-label">Gemini</span></button>
+        <button class="sidebar-btn hidden" data-label="Perplexity" data-service-url="https://www.perplexity.ai" data-sidebar-item="perplexity" title="Perplexity"><span class="sidebar-label">Perplexity</span></button>
+        <button class="sidebar-btn hidden" data-label="WhatsApp" data-service-url="https://web.whatsapp.com" data-sidebar-item="whatsapp" title="WhatsApp"><span class="sidebar-label">WhatsApp</span></button>
+        <button class="sidebar-btn hidden" data-label="Discord" data-service-url="https://discord.com/app" data-sidebar-item="discord" title="Discord"><span class="sidebar-label">Discord</span></button>
 
         <div class="sidebar-divider"></div>
 
         <!-- GX Corner Gaming Hub (opens full page in a new tab) -->
-        <button class="sidebar-btn" data-sidebar-tab="nextgx://corner" data-sidebar-item="gxCorner" id="btnSidebarCorner" title="GX Corner — Gaming News, Releases &amp; Deals" aria-label="GX Corner">
+        <button class="sidebar-btn" data-label="GX Corner" data-sidebar-tab="nextgx://corner" data-sidebar-item="gxCorner" id="btnSidebarCorner" title="GX Corner — Gaming News, Releases &amp; Deals" aria-label="GX Corner">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
             <rect x="2" y="6" width="20" height="12" rx="4" />
             <path d="M6 12h4M8 10v4" />
             <circle cx="15.5" cy="11" r="1" fill="currentColor" stroke="none" />
             <circle cx="18" cy="13" r="1" fill="currentColor" stroke="none" />
           </svg>
-        </button>
+        <span class="sidebar-label">GX Corner</span></button>
 
         <!-- Unified Media Player Panel -->
-        <button class="sidebar-btn" data-sidebar-panel="player" data-sidebar-item="player" id="btnSidebarPlayer" title="Player — Unified Media Controls" aria-label="Player">
+        <button class="sidebar-btn" data-label="Player" data-sidebar-panel="player" data-sidebar-item="player" id="btnSidebarPlayer" title="Player — Unified Media Controls" aria-label="Player">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="9" />
             <polygon points="10 8.5 16 12 10 15.5 10 8.5" fill="currentColor" stroke="none" />
           </svg>
-        </button>
+        <span class="sidebar-label">Player</span></button>
 
         <!-- System Memory & Performance (GX Control) -->
-        <button class="sidebar-btn" data-left-tool="gxControl" data-sidebar-item="gxControl" title="GX Control — RAM, CPU & Network Limiters">
+        <button class="sidebar-btn" data-label="GX Control" data-left-tool="gxControl" data-sidebar-item="gxControl" title="GX Control — RAM, CPU & Network Limiters">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>
-        </button>
+        <span class="sidebar-label">GX Control</span></button>
 
         <!-- Privacy Cleaner -->
-        <button class="sidebar-btn" data-left-tool="gxCleaner" data-sidebar-item="gxCleaner" title="Instant Cache & Privacy Cleaner">
+        <button class="sidebar-btn" data-label="GX Cleaner" data-left-tool="gxCleaner" data-sidebar-item="gxCleaner" title="Instant Cache & Privacy Cleaner">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
-        </button>
+        <span class="sidebar-label">GX Cleaner</span></button>
       </div>
 
       <!-- Bottom Dock Setup -->
       <div class="sidebar-group bottom">
-        <button class="sidebar-btn" data-left-tool="sidebarSetup" title="Customize Dock Icons">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>
+        <button class="sidebar-btn" id="btnRailExpand" title="Expand sidebar — show labels" aria-label="Expand sidebar" aria-pressed="false" data-label="Expand">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+          <span class="sidebar-label">Expand</span>
         </button>
+        <button class="sidebar-btn" data-label="Customize Dock" data-left-tool="sidebarSetup" title="Customize Dock Icons">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>
+        <span class="sidebar-label">Customize Dock</span></button>
       </div>
     </aside>
 
@@ -329,6 +333,13 @@
         <div class="bento-grid-two">
           <div class="bento-box">
             <span class="bento-label">Browser RAM</span>
+            <div class="gx-gauge-wrap">
+              <svg class="gx-gauge" viewBox="0 0 72 72" width="72" height="72" aria-hidden="true">
+                <circle class="gx-gauge-track" cx="36" cy="36" r="30" />
+                <circle class="gx-gauge-arc" id="perfRamGaugeArc" cx="36" cy="36" r="30" />
+              </svg>
+              <span class="gx-gauge-val" id="perfRamGaugeText">--</span>
+            </div>
             <strong class="bento-val" id="perfBrowserRam">-- MB</strong>
             <div class="nx-meter"><div class="nx-meter-fill" id="perfBrowserRamBar"></div></div>
             <span class="bento-sub" id="perfBrowserRamSub">Cap: Off</span>
@@ -442,6 +453,9 @@
 
         <div class="nx-card">
           <div class="card-title">Open Tabs Resource Monitor</div>
+          <button class="nx-primary-btn" id="btnHotTabKiller" title="Hibernate the background tab using the most RAM">
+            Hot Tab Killer — Hibernate Hungriest Tab
+          </button>
           <div class="scroll-list" id="perfTabsList"></div>
         </div>
       </div>
@@ -834,6 +848,46 @@
       </div>
     </aside>
   </div>
+
+  <!-- UX phase: ONE shared "New Profile" modal (Chrome-style). Opened from the
+       toolbar avatar menu, Settings, and the profile popover via
+       gxAPI.openCreateProfileModal(). -->
+  <div class="nx-modal-backdrop hidden" id="profileModalBackdrop">
+    <div class="nx-modal nx-profile-modal" id="profileModal" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
+      <div class="nx-modal-header">
+        <h2 class="nx-heading" id="profileModalTitle">Create a new profile</h2>
+        <button type="button" class="panel-hdr-btn" id="btnProfileModalClose" title="Close (Esc)" aria-label="Close">✕</button>
+      </div>
+      <p class="nx-modal-sub">Profiles keep cookies, history, bookmarks, passwords and themes separate — all on this device, nothing is synced.</p>
+      <div class="nx-profile-preview">
+        <span class="nx-profile-preview-avatar" id="profileModalAvatar" data-profile-color="gx-violet">P</span>
+        <div class="nx-profile-preview-text">
+          <div class="nx-profile-preview-name" id="profileModalPreviewName">Your profile</div>
+          <div class="nx-profile-preview-sub" id="profileModalPreviewSub">New profile • This device only</div>
+        </div>
+      </div>
+      <form id="profileModalForm" novalidate>
+        <label class="nx-field-label" for="profileModalName">Profile name</label>
+        <input type="text" id="profileModalName" class="nx-input" placeholder="e.g. Work, Gaming" maxlength="40" autocomplete="off" />
+        <div class="nx-field-hint"><span id="profileModalCount">0 / 40</span></div>
+        <div class="nx-modal-error hidden" id="profileModalError" role="alert"></div>
+        <div class="nx-field-label" id="profileModalColorLabel">Colour</div>
+        <div class="nx-profile-swatches" id="profileModalSwatches" role="radiogroup" aria-labelledby="profileModalColorLabel"></div>
+        <div class="nx-field-label" id="profileModalAvatarLabel">Avatar</div>
+        <div class="nx-profile-avatars" id="profileModalAvatars" role="radiogroup" aria-labelledby="profileModalAvatarLabel"></div>
+        <label class="nx-check-row">
+          <input type="checkbox" id="profileModalSwitchAfter" checked />
+          <span>Switch to this profile after creating it</span>
+        </label>
+        <div class="nx-modal-actions">
+          <button type="button" class="nx-btn nx-btn-ghost" id="btnProfileModalCancel">Cancel</button>
+          <button type="submit" class="nx-btn nx-btn-primary" id="btnProfileModalCreate">Create &amp; Switch</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <!-- UX phase: live sidebar width readout while dragging the panel resizer -->
+  <div class="nx-resize-badge hidden" id="sidebarResizeBadge" aria-hidden="true">380 px</div>
 
   <script src="sounds.js"></script>
   <script src="renderer.js"></script>
