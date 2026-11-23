@@ -1,5 +1,7 @@
 const {
   WebContentsView,
+  app,
+  dialog,
   ipcMain,
   session,
   nativeImage
@@ -25,13 +27,15 @@ const {
   normalizeAutofillHost,
   isAutofillHostMatch,
   isErrorPageUrl,
-  getInternalUiQuery
+  getInternalUiQuery,
+  getOriginForUrl
 } = require('./utils');
 const {
   getFailedUrlFromErrorPage,
   formatDisplayUrl,
   getConfiguredHomepageUrl
 } = require('./navigation');
+const { registerPasskeyIpcHandlers } = require('./passkeys'); // worker C: software passkey authenticator (gaps 4.1-4.3)
 const {
   getCtxFromSender,
   serializeTabs,
@@ -133,6 +137,209 @@ const {
   createTabInGroup
 } = require('./workspaces');
 
+// ---------------------------------------------------------------------------
+// [Wave2-D] Settings-driven browser behaviour (Chrome parity, gaps 5.2/5.4/5.5/5.9).
+// These helpers live here because ipc.js is the one main-process module this
+// worker may extend; they apply stored settings to live Electron sessions.
+// ---------------------------------------------------------------------------
+
+// [Wave2-D] Registrable-domain (eTLD+1) heuristic for third-party checks and
+// search grouping. A small suffix list covers the common two-label public
+// suffixes; anything else uses the last two labels. Rough but safe: when in
+// doubt a host is treated as first-party (never blocked).
+const TP_COOKIE_TWO_LABEL_SUFFIXES = new Set([
+  'co.uk', 'org.uk', 'ac.uk', 'gov.uk', 'com.au', 'net.au', 'org.au', 'co.jp',
+  'co.kr', 'co.nz', 'com.br', 'com.cn', 'co.in', 'co.za', 'com.mx', 'com.tw',
+  'com.hk', 'co.il', 'com.sg', 'com.ar', 'com.co', 'com.pl', 'co.th'
+]);
+
+function getRegistrableDomain(host) {
+  const h = String(host || '').toLowerCase().replace(/^\.+|\.+$/g, '');
+  if (!h) return '';
+  const parts = h.split('.').filter(Boolean);
+  if (parts.length <= 2) return h;
+  const lastTwo = parts.slice(-2).join('.');
+  if (TP_COOKIE_TWO_LABEL_SUFFIXES.has(lastTwo) && parts.length >= 3) {
+    return parts.slice(-3).join('.');
+  }
+  return lastTwo;
+}
+
+// [Wave2-D] Third-party cookie blocking (gap 5.9), enforced at the network
+// level: Cookie request headers and Set-Cookie response headers are stripped
+// for cross-site requests. Listeners are attached once per session and read
+// the live mode, so toggling the setting needs no re-attach. Limitation:
+// `document.cookie` access from third-party iframes is NOT blocked by this;
+// full parity would need Chromium cookie-policy support Electron lacks.
+let tpCookieMode = 'block-incognito';
+const tpCookieSessions = new Map(); // session -> isIncognito
+
+function isThirdPartyRequest(details) {
+  try {
+    const reqHost = new URL(details.url).hostname.toLowerCase();
+    const ref = typeof details.referrer === 'string' ? details.referrer : '';
+    if (!ref) return false; // top-level navigation: first-party
+    const refHost = new URL(ref).hostname.toLowerCase();
+    if (!reqHost || !refHost) return false;
+    return getRegistrableDomain(reqHost) !== getRegistrableDomain(refHost);
+  } catch (_) {
+    return false;
+  }
+}
+
+function shouldBlockThirdPartyCookies(ses, details) {
+  if (tpCookieMode === 'allow') return false;
+  if (tpCookieMode === 'block-incognito' && !tpCookieSessions.get(ses)) return false;
+  return isThirdPartyRequest(details);
+}
+
+function ensureThirdPartyCookieListeners(ses, isIncognito) {
+  if (!ses || !ses.webRequest) return;
+  if (tpCookieSessions.has(ses)) {
+    tpCookieSessions.set(ses, Boolean(isIncognito));
+    return;
+  }
+  tpCookieSessions.set(ses, Boolean(isIncognito));
+  try {
+    ses.webRequest.onBeforeSendHeaders({ urls: ['<all_urls>'] }, (details, callback) => {
+      try {
+        if (shouldBlockThirdPartyCookies(ses, details)) {
+          const headers = { ...(details.requestHeaders || {}) };
+          for (const k of Object.keys(headers)) {
+            if (k.toLowerCase() === 'cookie') delete headers[k];
+          }
+          callback({ requestHeaders: headers });
+          return;
+        }
+      } catch (_) {}
+      callback({});
+    });
+    ses.webRequest.onHeadersReceived({ urls: ['<all_urls>'] }, (details, callback) => {
+      try {
+        if (shouldBlockThirdPartyCookies(ses, details)) {
+          const headers = { ...(details.responseHeaders || {}) };
+          for (const k of Object.keys(headers)) {
+            if (k.toLowerCase() === 'set-cookie') delete headers[k];
+          }
+          callback({ responseHeaders: headers });
+          return;
+        }
+      } catch (_) {}
+      callback({});
+    });
+  } catch (_) {}
+}
+
+function applyThirdPartyCookieMode(mode) {
+  tpCookieMode = ['allow', 'block-incognito', 'block'].includes(mode) ? mode : 'block-incognito';
+  ensureThirdPartyCookieListeners(session.defaultSession, false);
+  try {
+    const ses = getSessionForProfile(state.storage.getActiveProfileId());
+    if (ses) ensureThirdPartyCookieListeners(ses, false);
+  } catch (_) {}
+  for (const ctx of windowContexts.values()) {
+    if (ctx && ctx.session) ensureThirdPartyCookieListeners(ctx.session, Boolean(ctx.incognito));
+  }
+}
+
+// [Wave2-D] Spellcheck (gap 5.4): preferredLanguages drives the Chromium
+// spellchecker for every live session; an empty list disables checking.
+function applySpellcheckSettings(settings) {
+  const enabled = !settings || settings.spellcheckEnabled !== false;
+  const langs =
+    settings && Array.isArray(settings.preferredLanguages) && settings.preferredLanguages.length
+      ? settings.preferredLanguages
+      : ['en-US'];
+  const applyTo = (ses) => {
+    try {
+      if (ses && typeof ses.setSpellCheckerLanguages === 'function') {
+        ses.setSpellCheckerLanguages(enabled ? langs : []);
+      }
+    } catch (_) {}
+  };
+  applyTo(session.defaultSession);
+  try {
+    applyTo(getSessionForProfile(state.storage.getActiveProfileId()));
+  } catch (_) {}
+  for (const ctx of windowContexts.values()) {
+    if (ctx && ctx.session) applyTo(ctx.session);
+  }
+}
+
+// [Wave2-D] Download location (gap 5.5): sets the session default download
+// path. NOTE: downloads.js's will-download handler calls setSavePath() with
+// its own path, which overrides this — the location setting only takes full
+// effect once that handler reads settings.downloadPath (see the work log).
+function applyDownloadPathSetting(settings) {
+  let target = '';
+  try {
+    target =
+      settings && typeof settings.downloadPath === 'string' && settings.downloadPath.trim()
+        ? settings.downloadPath.trim()
+        : app.getPath('downloads');
+  } catch (_) {
+    return;
+  }
+  const applyTo = (ses) => {
+    try {
+      if (ses && typeof ses.setDownloadPath === 'function') ses.setDownloadPath(target);
+    } catch (_) {}
+  };
+  applyTo(session.defaultSession);
+  try {
+    applyTo(getSessionForProfile(state.storage.getActiveProfileId()));
+  } catch (_) {}
+  for (const ctx of windowContexts.values()) {
+    if (ctx && ctx.session) applyTo(ctx.session);
+  }
+}
+
+// [Wave2-D] Address-bar search resolution (gap 5.2). Mirrors the URL-vs-query
+// detection in navigation.js: URLs, domains, localhost and internal schemes
+// pass through untouched (return null); anything else is a search query,
+// resolved against the editable engine list (keyword prefix first, then the
+// default engine). Called from the tabs:navigate handler so custom engines
+// actually drive searches without touching navigation.js.
+function buildSearchUrl(template, query) {
+  const t = typeof template === 'string' && template.includes('%s') ? template : 'https://www.google.com/search?q=%s';
+  return t.replace('%s', encodeURIComponent(query));
+}
+
+function resolveAddressBarSearch(input, settings) {
+  const trimmed = String(input || '').trim();
+  if (!trimmed) return null;
+  if (/^(https?:\/\/|nextgx:\/\/|gx:\/\/|chrome:\/\/|file:\/\/|view-source:|data:|about:|blob:)/i.test(trimmed)) return null;
+  if (
+    /^(localhost|127\.\d{1,3}\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}|\[::1\])(:\d+)?(\/.*)?$/i.test(trimmed) &&
+    !trimmed.includes(' ')
+  ) {
+    return null;
+  }
+  if (
+    /^((\d{1,3}\.){3}\d{1,3}(:\d+)?|([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(:\d+)?)(\/.*)?$/i.test(trimmed) &&
+    !trimmed.includes(' ')
+  ) {
+    return null;
+  }
+  // Search query.
+  const engines = settings && Array.isArray(settings.searchEngines) ? settings.searchEngines : [];
+  const defaultEngine =
+    engines.find((e) => e && e.id === settings?.searchEngine && !e.siteSearch) || null;
+  const defaultUrl = defaultEngine ? defaultEngine.url : 'https://www.google.com/search?q=%s';
+  const spaceIdx = trimmed.indexOf(' ');
+  if (spaceIdx > 0) {
+    const keyword = trimmed.slice(0, spaceIdx).toLowerCase();
+    const kwEngine = engines.find(
+      (e) => e && typeof e.keyword === 'string' && e.keyword && e.keyword.toLowerCase() === keyword
+    );
+    if (kwEngine) {
+      const query = trimmed.slice(spaceIdx + 1).trim();
+      if (query) return buildSearchUrl(kwEngine.url, query);
+    }
+  }
+  return buildSearchUrl(defaultUrl, trimmed);
+}
+
 function registerIpcHandlers() {
   const handleInternal = (channel, handler) => {
     ipcMain.handle(channel, (e, ...args) => {
@@ -191,6 +398,44 @@ function registerIpcHandlers() {
     } catch (_) {
       return [];
     }
+  });
+
+  // [FIXUP-5] (Chrome parity gaps 6.2/6.3) Page fill engine channels.
+  // Same gates as 'autofill:get' (top-level mainFrame, HTTPS or
+  // localhost/127.0.0.1 only), but these are plain handles the TAB PRELOAD
+  // may invoke — the 'autofill:get-addresses' / 'autofill:get-payment-methods'
+  // channels above are handleInternal (internal UI only) and the tab preload
+  // cannot call them. Incognito windows get [] (never expose stored
+  // addresses/cards to a private window). Cards come back with the full
+  // decrypted number (getPaymentMethodsForAutofill — same trust level as
+  // passwords:get); the masked getPaymentMethods is for settings UI only.
+  const pageAutofillGate = (e) => {
+    if (!e?.sender || !e?.senderFrame || e.senderFrame !== e.sender.mainFrame) return null;
+    const frameUrl = e.senderFrame.url;
+    if (!frameUrl) return null;
+    try {
+      const u = new URL(frameUrl);
+      const rawHost = (u.hostname || '').toLowerCase();
+      const isLocalDev = rawHost === 'localhost' || rawHost === '127.0.0.1';
+      if (u.protocol !== 'https:' && !(u.protocol === 'http:' && isLocalDev)) return null;
+      if (!u.hostname) return null;
+      if (getCtxFromSender(e.sender)?.incognito) return [];
+      return getSenderProfileId(e);
+    } catch (_) {
+      return null;
+    }
+  };
+
+  ipcMain.handle('autofill:page-addresses', (e) => {
+    const pid = pageAutofillGate(e);
+    if (typeof pid !== 'string' || !pid) return [];
+    return state.storage.getAddresses(pid) || [];
+  });
+
+  ipcMain.handle('autofill:page-payment-methods', (e) => {
+    const pid = pageAutofillGate(e);
+    if (typeof pid !== 'string' || !pid) return [];
+    return state.storage.getPaymentMethodsForAutofill(pid) || [];
   });
 
   ipcMain.handle('autofill:save', (e, { username, password } = {}) => {
@@ -283,7 +528,16 @@ function registerIpcHandlers() {
   handleInternal('tabs:get-state', (e) => serializeTabs(getCtxFromSender(e.sender)));
   handleInternal('tabs:navigate', (e, input) => {
     const ctx = getCtxFromSender(e.sender);
-    navigateActiveTab(ctx, input);
+    // [Wave2-D] Custom search engines (gap 5.2): resolve address-bar search
+    // queries against the editable engine list before navigating, so a
+    // chosen custom engine (or a `keyword query`) actually drives the search.
+    // URLs pass through untouched; navigateActiveTab resolves them as before.
+    let resolved = input;
+    try {
+      const searchUrl = resolveAddressBarSearch(input, state.storage.getSettings(getSenderProfileId(e)));
+      if (searchUrl) resolved = searchUrl;
+    } catch (_) {}
+    navigateActiveTab(ctx, resolved);
     return serializeTabs(ctx);
   });
   handleInternal('tabs:back', (e) => {
@@ -385,7 +639,77 @@ function registerIpcHandlers() {
   });
   handleInternal('tabs:devtools', (e) => toggleActiveTabDevTools(getCtxFromSender(e.sender)));
 
-  handleInternal('tabs:zoom', (e, action) => applyZoomAction(getCtxFromSender(e.sender), action));
+  // [URLBAR-9.2] Persist the active tab's zoom per origin after any zoom change
+  // (menu/bubble buttons go through here; keyboard shortcuts are persisted by the
+  // renderer-side zoom watcher via 'zoom:save-site' below).
+  const persistActiveTabZoom = (ctx, profileId) => {
+    try {
+      const tab = ctx?.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
+      const origin = getOriginForUrl(tab?.url || '');
+      if (!origin || !tab) return;
+      state.storage.setSiteZoom(origin, tab.zoomFactor || 1, profileId);
+    } catch (_) {}
+  };
+
+  handleInternal('tabs:zoom', (e, action) => {
+    const ctx = getCtxFromSender(e.sender);
+    const pid = getSenderProfileId(e);
+    // [URLBAR-3.5/9.2] Numeric action = set an exact zoom factor (used by the
+    // omnibox zoom bubble and by the per-site zoom restore on navigation).
+    if (typeof action === 'number' && Number.isFinite(action)) {
+      const tab = ctx?.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
+      if (!tab || !tab.view || !tab.view.webContents || tab.view.webContents.isDestroyed()) {
+        return Math.round((tab?.zoomFactor || 1.0) * 100);
+      }
+      const factor = Math.max(0.3, Math.min(3.0, Math.round(action * 100) / 100));
+      tab.zoomFactor = factor;
+      tab.view.webContents.setZoomFactor(factor);
+      const zoomPercent = Math.round(factor * 100);
+      broadcastState(ctx);
+      persistActiveTabZoom(ctx, pid);
+      return zoomPercent;
+    }
+    const zoomPercent = applyZoomAction(ctx, action);
+    persistActiveTabZoom(ctx, pid);
+    return zoomPercent;
+  });
+
+  // [URLBAR-9.2] Per-site zoom store access for the renderer.
+  handleInternal('zoom:get-site', (e, origin) =>
+    state.storage.getSiteZoom(origin, getSenderProfileId(e))
+  );
+  handleInternal('zoom:save-site', (e, { origin, factor } = {}) => {
+    const cleanFactor = Number(factor);
+    if (!origin || !Number.isFinite(cleanFactor)) return null;
+    return state.storage.setSiteZoom(origin, cleanFactor, getSenderProfileId(e));
+  });
+
+  // [URLBAR-3.3] Certificate of the active tab's page, when Electron exposes it.
+  // Returns { available: false } when the API is absent (e.g. non-https pages) —
+  // the bubble then says certificate detail is unavailable instead of faking it.
+  handleInternal('site:certificate', (e) => {
+    const ctx = getCtxFromSender(e.sender);
+    try {
+      const tab = ctx?.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
+      const wc = tab?.view?.webContents;
+      if (!wc || wc.isDestroyed() || typeof wc.getCertificate !== 'function') {
+        return { available: false };
+      }
+      const cert = wc.getCertificate();
+      if (!cert) return { available: false };
+      return {
+        available: true,
+        subjectName: cert.subjectName || '',
+        issuerName: cert.issuerName || '',
+        validStart: cert.validStart || 0,
+        validExpiry: cert.validExpiry || 0,
+        fingerprint: cert.fingerprint || '',
+        serialNumber: cert.serialNumber || ''
+      };
+    } catch (_) {
+      return { available: false };
+    }
+  });
 
   handleInternal('tabs:print', (e) => {
     const ctx = getCtxFromSender(e.sender);
@@ -563,11 +887,17 @@ function registerIpcHandlers() {
       }
       return null;
     }
+    // [URLBAR-9.1] A repeat search for the SAME text in the same tab (Enter /
+    // up-down arrows) must continue from the current match (findNext: true);
+    // with findNext: false every call restarts at match 1 and the counter
+    // never advances past 1/N. A new query (or a new tab) starts fresh.
+    const isRepeatSearch = tab.lastFindText === text;
     const requestId = tab.view.webContents.findInPage(text, {
       forward: Boolean(forward),
-      findNext: false
+      findNext: isRepeatSearch
     });
     tab.lastFindRequestId = requestId;
+    tab.lastFindText = text;
     return { requestId };
   });
 
@@ -576,6 +906,7 @@ function registerIpcHandlers() {
     const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
     if (tab) {
       tab.lastFindRequestId = null;
+      tab.lastFindText = null;
       if (tab.view && tab.view.webContents && !tab.view.webContents.isDestroyed()) {
         tab.view.webContents.stopFindInPage('clearSelection');
       }
@@ -599,22 +930,52 @@ function registerIpcHandlers() {
     return toggleWindowFullscreen(ctx);
   });
 
-  handleInternal('cleaner:run', async (e, { cache = true, cookies = false, history = false } = {}) => {
+  // [Wave2-D] Delete browsing data (gap 5.11): time range + full data-type
+  // checklist. The range applies to history (storage.clearHistory); cookies
+  // and cache have no time-range API in Electron so they are always cleared
+  // for all time — the UI says so.
+  handleInternal('cleaner:run', async (e, { cache = true, cookies = false, history = false, range = 'all', downloads = false, passwords = false, autofill = false, siteSettings = false } = {}) => {
     const ctx = getCtxFromSender(e.sender);
     const pid = ctx?.profileId || state.storage.getActiveProfileId();
     const targetSession =
       ctx && !ctx.incognito && ctx.session ? ctx.session : getSessionForProfile(pid) || session.defaultSession;
-    if (cache) await targetSession.clearCache();
+    const cleared = {};
+    if (cache) {
+      await targetSession.clearCache();
+      cleared.cache = true;
+    }
     if (cookies) {
       await targetSession.clearStorageData({ storages: ['cookies', 'localstorage'] });
       await targetSession.cookies.flushStore().catch(() => {});
       broadcastCookiesUpdate({ immediate: true, profileId: pid });
+      cleared.cookies = true;
     }
     if (history) {
-      state.storage.clearHistory('all', pid);
+      state.storage.clearHistory(range || 'all', pid);
       broadcastHistoryUpdate({ profileId: pid });
+      cleared.history = range || 'all';
     }
-    return { cleanedAt: Date.now() };
+    if (downloads) {
+      state.storage.clearDownloads(pid);
+      broadcastDownloadsUpdate(state.storage.getDownloads(pid), { profileId: pid });
+      cleared.downloads = true;
+    }
+    if (passwords) {
+      state.storage.clearPasswords(pid);
+      broadcastPasswordsUpdate({ profileId: pid });
+      cleared.passwords = true;
+    }
+    if (autofill) {
+      state.storage.clearAddresses(pid);
+      state.storage.clearPaymentMethods(pid);
+      cleared.autofill = true;
+    }
+    if (siteSettings) {
+      state.storage.clearAllSitePermissions(pid);
+      broadcastPermissionsUpdate({ profileId: pid });
+      cleared.siteSettings = true;
+    }
+    return { cleanedAt: Date.now(), cleared };
   });
 
   handleInternal('popover:open', (e, opts) => openPopover(getCtxFromSender(e.sender), opts || {}));
@@ -867,6 +1228,17 @@ function registerIpcHandlers() {
   registerPrivacyAndPasswordIpcHandlers(handleInternal, { getSenderProfileId });
   registerSplitIpcHandlers(handleInternal);
 
+  // Passkeys (software authenticator) — worker C, gaps 4.1-4.3. The ceremony
+  // channel is deliberately NOT internal-UI gated (web pages call it); the
+  // handler itself enforces top-frame + origin + secure-context + rp.id.
+  registerPasskeyIpcHandlers({
+    handleInternal,
+    handleWeb: (channel, handler) => ipcMain.handle(channel, handler),
+    getSenderProfileId,
+    getCtxFromSender,
+    getStorage: () => state.storage
+  });
+
   handleInternal('passwords:get', (e) => state.storage.getPasswords(getSenderProfileId(e)));
   handleInternal('passwords:encryption-status', () => ({
     available: Boolean(state.storage?.isPasswordEncryptionAvailable?.())
@@ -947,6 +1319,17 @@ function registerIpcHandlers() {
     const pid = getSenderProfileId(e);
     const prev = state.storage.getSettings(pid);
     const s = state.storage.updateSettings(partial || {}, pid);
+    // [Wave2-D] Apply stored settings that drive live browser behaviour.
+    const changedKeys = Object.keys(partial || {});
+    if (changedKeys.includes('spellcheckEnabled') || changedKeys.includes('preferredLanguages')) {
+      applySpellcheckSettings(s);
+    }
+    if (changedKeys.includes('thirdPartyCookies')) {
+      applyThirdPartyCookieMode(s.thirdPartyCookies);
+    }
+    if (changedKeys.includes('downloadPath')) {
+      applyDownloadPathSetting(s);
+    }
     const prevWallpaperFile = prev.wallpaper?.file || '';
     const nextWallpaperFile = s.wallpaper?.file || '';
     const wallpaperFileChanged =
@@ -1027,6 +1410,88 @@ function registerIpcHandlers() {
     else win.maximize();
   });
   handleInternal('window:close', (e) => getCtxFromSender(e.sender)?.win?.close());
+
+  // [Wave2-D] Autofill management (gaps 6.2/6.3): addresses + payment methods.
+  // Internal-UI only; the settings page manages entries here. The page fill
+  // engine itself (tab-preload) is a later round and will read the same
+  // storage via its own channels.
+  handleInternal('autofill:get-addresses', (e) => state.storage.getAddresses(getSenderProfileId(e)));
+  handleInternal('autofill:add-address', (e, entry) =>
+    state.storage.addAddress(entry || {}, getSenderProfileId(e))
+  );
+  handleInternal('autofill:update-address', (e, payload) =>
+    state.storage.updateAddress(payload?.id, payload || {}, getSenderProfileId(e))
+  );
+  handleInternal('autofill:remove-address', (e, id) => state.storage.removeAddress(id, getSenderProfileId(e)));
+  handleInternal('autofill:get-payment-methods', (e) =>
+    state.storage.getPaymentMethods(getSenderProfileId(e))
+  );
+  handleInternal('autofill:add-payment-method', (e, entry) =>
+    state.storage.addPaymentMethod(entry || {}, getSenderProfileId(e))
+  );
+  handleInternal('autofill:update-payment-method', (e, payload) =>
+    state.storage.updatePaymentMethod(payload?.id, payload || {}, getSenderProfileId(e))
+  );
+  handleInternal('autofill:remove-payment-method', (e, id) =>
+    state.storage.removePaymentMethod(id, getSenderProfileId(e))
+  );
+
+  // [Wave2-D] Downloads settings (gap 5.5): native folder picker for the
+  // download location. The chosen path is stored via settings:update (which
+  // also applies it with session.setDownloadPath).
+  handleInternal('downloads:choose-location', async (e) => {
+    const win = getCtxFromSender(e.sender)?.win;
+    try {
+      const res = await dialog.showOpenDialog(win || undefined, {
+        title: 'Choose download location',
+        properties: ['openDirectory', 'createDirectory']
+      });
+      if (res.canceled || !res.filePaths || !res.filePaths[0]) return { canceled: true };
+      return { canceled: false, path: res.filePaths[0] };
+    } catch (err) {
+      return { canceled: false, ok: false, error: err?.message || String(err) };
+    }
+  });
+
+  // [Wave2-D] Reset settings (gap 5.14) + About (gap 5.14) + Default browser.
+  handleInternal('settings:reset', (e) => {
+    const pid = getSenderProfileId(e);
+    const s = state.storage.resetSettings(pid);
+    applySpellcheckSettings(s);
+    applyThirdPartyCookieMode(s.thirdPartyCookies);
+    applyDownloadPathSetting(s);
+    broadcastSettingsUpdate(s, { profileId: pid });
+    return s;
+  });
+  handleInternal('app:version', () => ({
+    app: app.getVersion(),
+    electron: process.versions.electron,
+    chrome: process.versions.chrome,
+    node: process.versions.node,
+    platform: process.platform
+  }));
+  handleInternal('app:set-default-browser', () => {
+    // Electron has no "default browser" API; registering the http(s) protocol
+    // handlers is the closest equivalent (on Linux this writes the MIME
+    // association so links open in nextGx).
+    try {
+      const http = app.setAsDefaultProtocolClient('http');
+      const https = app.setAsDefaultProtocolClient('https');
+      return { ok: Boolean(http && https), http: Boolean(http), https: Boolean(https) };
+    } catch (err) {
+      return { ok: false, error: err?.message || String(err) };
+    }
+  });
+
+  // [Wave2-D] Apply stored spellcheck / third-party-cookie / download-path
+  // settings to the live sessions at startup (settings:update re-applies
+  // them whenever they change).
+  try {
+    const bootSettings = state.storage.getSettings();
+    applySpellcheckSettings(bootSettings);
+    applyThirdPartyCookieMode(bootSettings.thirdPartyCookies);
+    applyDownloadPathSetting(bootSettings);
+  } catch (_) {}
 }
 
 module.exports = {

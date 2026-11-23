@@ -1051,6 +1051,11 @@
       color: var(--accent);
       font-weight: bold;
     }
+
+    /* [FIXUP-6] (gap 9.8) Third-party-cookies card spans both columns. */
+    .private-box-wide {
+      grid-column: 1 / -1;
+    }
   </style>
 </head>
 <body data-wallpaper-mode="preset">
@@ -1209,6 +1214,16 @@
           <li>Your employer or school network</li>
           <li>Your internet service provider (ISP)</li>
           <li>Files you download remain on your device</li>
+        </ul>
+      </div>
+      <!-- [FIXUP-6] (gap 9.8) Third-party cookies are blocked in Private
+           windows (default setting 'block-incognito'); hidden by script when
+           the user sets third-party cookies to 'allow'. -->
+      <div class="private-box private-box-wide" id="tpCookiesCard">
+        <h4 class="nx-heading">Third-party cookies are blocked</h4>
+        <ul>
+          <li>Sites can't use third-party cookies to track you across the web in this Private window.</li>
+          <li>First-party cookies still work, so the sites you visit keep working normally.</li>
         </ul>
       </div>
     </div>
@@ -1738,7 +1753,14 @@
         document.title = 'Private Browsing — nextGx';
         document.getElementById('searchInput').placeholder = 'Search privately...';
         if (window.gxNewTabAPI?.getSettings) {
-          window.gxNewTabAPI.getSettings().then((s) => applyTheme(s?.theme)).catch(() => {});
+          window.gxNewTabAPI.getSettings().then((s) => {
+            applyTheme(s?.theme);
+            // [FIXUP-6] Hide the third-party-cookies card when the user
+            // allows third-party cookies (default is 'block-incognito').
+            if (s && s.thirdPartyCookies === 'allow') {
+              document.getElementById('tpCookiesCard')?.classList.add('hidden');
+            }
+          }).catch(() => {});
         }
         return;
       }

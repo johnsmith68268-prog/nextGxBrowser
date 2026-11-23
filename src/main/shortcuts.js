@@ -1,5 +1,8 @@
 const { broadcastState } = require('./broadcast');
 const { toggleWindowFullscreen } = require('./fullscreen');
+// [TABS-W2] Lazy requires avoid cycles (tabs.js requires this module).
+const tabsMod = () => require('./tabs');
+const coreMod = () => require('./core');
 
 let shortcutDeps = {};
 
@@ -46,7 +49,24 @@ function attachKeyboardShortcuts(ctx, webContents) {
     const key = (input.key || '').toLowerCase();
     const code = input.code || '';
 
-    if (ctrl && !shift && key === 't') {
+    // [TABS-W2] Gap 8.1 — tab search (Ctrl+Shift+A). Gap 5.1 — Ctrl+Tab:
+    // MRU switch when the setting is on (Chrome default: off, plain cycle),
+    // otherwise cycle in strip order. Gap 9.6 — reading mode (Alt+Shift+R).
+    if (ctrl && shift && key === 'a') {
+      event.preventDefault();
+      sendChromeInputShortcut(ctx, 'open-tab-search');
+    } else if (ctrl && input.key === 'Tab') {
+      event.preventDefault();
+      let mruOn = false;
+      try {
+        mruOn = coreMod().state?.storage?.getSettings?.(ctx.profileId)?.ctrlTabMru === true;
+      } catch (_) {}
+      if (mruOn) tabsMod().switchToMruTab(ctx);
+      else tabsMod().cycleTab(ctx, shift ? -1 : 1);
+    } else if (alt && shift && key === 'r') {
+      event.preventDefault();
+      sendChromeInputShortcut(ctx, 'toggle-reader-mode');
+    } else if (ctrl && !shift && key === 't') {
       event.preventDefault();
       shortcutDeps.createTab(ctx, { url: 'nextgx://newtab', active: true });
     } else if (ctrl && shift && key === 't') {

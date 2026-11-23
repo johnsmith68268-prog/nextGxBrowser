@@ -38,12 +38,26 @@ const POPOVER_KIND_SPECS = {
   'permission-prompt': {
     isMenu: false,
     align: 'left',
-    defaultW: 332,
-    defaultH: 176,
-    minW: 300,
+    // Chrome parity (worker A): grown for the reworked prompt — three
+    // full-width pills plus a live camera preview and device dropdowns.
+    defaultW: 360,
+    defaultH: 300,
+    minW: 320,
     maxW: 390,
-    minH: 140,
-    maxH: 280
+    minH: 180,
+    maxH: 560
+  },
+  // Chrome parity (worker A): centred screen-share picker (Tab / Window /
+  // Entire Screen) with thumbnails. Opened centred by permissions.js.
+  'share-picker': {
+    isMenu: false,
+    align: 'left',
+    defaultW: 640,
+    defaultH: 560,
+    minW: 480,
+    maxW: 680,
+    minH: 420,
+    maxH: 640
   },
   'bookmark-folder': {
     isMenu: true,
@@ -104,6 +118,29 @@ const POPOVER_KIND_SPECS = {
     maxW: 380,
     minH: 92,
     maxH: 460
+  },
+  // [FIXUP-1] Site-info bubble + zoom bubble (Chrome parity gaps 3.3/3.4/3.5):
+  // moved from renderer-side fixed panels — the tab's WebContentsView covers
+  // any fixed panel below the top chrome, so only the header showed.
+  'site-info': {
+    isMenu: false,
+    align: 'left',
+    defaultW: 320,
+    defaultH: 424,
+    minW: 300,
+    maxW: 360,
+    minH: 220,
+    maxH: 560
+  },
+  'zoom-bubble': {
+    isMenu: false,
+    align: 'left',
+    defaultW: 320,
+    defaultH: 100,
+    minW: 280,
+    maxW: 360,
+    minH: 84,
+    maxH: 160
   }
 };
 
@@ -384,7 +421,7 @@ function openPopover(ctx, { kind, x, y, width, height, payload }) {
     const items = Array.isArray(effectivePayload?.items) ? effectivePayload.items : [];
     const rawH = items.length === 0 ? 96 : 54 + items.length * 33;
     estimatedHeight = Math.max(84, Math.min(560, height || rawH));
-  } else if (kind === 'menu' || kind === 'tab-context' || kind === 'screenshot' || kind === 'shield' || kind === 'permissions' || kind === 'permission-prompt') {
+  } else if (kind === 'menu' || kind === 'tab-context' || kind === 'screenshot' || kind === 'shield' || kind === 'permissions' || kind === 'permission-prompt' || kind === 'site-info' || kind === 'zoom-bubble') {
     estimatedWidth = spec.defaultW;
     estimatedHeight = spec.defaultH;
   }

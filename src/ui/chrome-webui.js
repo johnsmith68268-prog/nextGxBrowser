@@ -6,6 +6,9 @@ const topRightActions = document.getElementById('topRightActions');
 let currentPage = 'history';
 let searchQuery = '';
 let dlFilterCat = 'all';
+// [Wave2-D] Downloads page search (gap 7.3): local filter on top of the
+// global search box; applied in the DOM so typing never loses focus.
+let dlSearchText = '';
 let renderSeq = 0;
 let lastHistoryRenderKey = '';
 let lastDownloadsRenderKey = '';
@@ -56,6 +59,10 @@ function switchPage(page) {
     addingBookmarkError = '';
     bookmarksIoBanner = null;
   }
+  if (page !== 'history') {
+    histSelected.clear();
+    closeHistEntryMenu();
+  }
   if (page !== 'passwords') {
     passwordsIoBanner = null;
     passwordsExportConfirmOpen = false;
@@ -64,6 +71,13 @@ function switchPage(page) {
     revealedPasswordIds.clear();
     pwGenState.error = '';
     pwGenState.feedback = '';
+    // [Wave2-D] Autofill forms (gaps 6.2/6.3)
+    addrFormOpen = false;
+    addrEditingId = null;
+    addrFormError = '';
+    cardFormOpen = false;
+    cardEditingId = null;
+    cardFormError = '';
   }
   if (page !== 'settings') {
     settingsProfileCreateOpen = false;
@@ -117,6 +131,123 @@ async function renderCurrentPage() {
 // 1. HISTORY (Recently Closed + Today / Yesterday / Older Grouping + Visit Counts + Favicons + Time Range Clear)
 let historyVisibleLimit = 100;
 let lastHistorySearchKey = '';
+// [Wave2-D] History By-group view (gap 7.1) + multi-select/bulk delete +
+// per-entry menu (gap 7.2). Selection survives re-renders via this Set.
+let histViewMode = 'date'; // 'date' | 'group'
+let histSelected = new Set();
+let histMenuEntryId = null;
+
+// [Wave2-D] Registrable-domain (eTLD+1) heuristic for By-group view. Small
+// public-suffix list; rough grouping — sub-domains of one site land together,
+// unrelated sites sharing a suffix do not. Mirrors the ipc.js helper.
+const HIST_TWO_LABEL_SUFFIXES = new Set([
+  'co.uk', 'org.uk', 'ac.uk', 'gov.uk', 'com.au', 'net.au', 'org.au', 'co.jp',
+  'co.kr', 'co.nz', 'com.br', 'com.cn', 'co.in', 'co.za', 'com.mx', 'com.tw',
+  'com.hk', 'co.il', 'com.sg', 'com.ar', 'com.co', 'com.pl', 'co.th'
+]);
+
+function histRegistrableDomain(rawUrl) {
+  try {
+    const u = new URL(rawUrl || '');
+    if (!/^https?:$/.test(u.protocol)) return 'nextGx pages';
+    const h = u.hostname.toLowerCase();
+    const parts = h.split('.').filter(Boolean);
+    if (parts.length <= 2) return h;
+    const lastTwo = parts.slice(-2).join('.');
+    if (HIST_TWO_LABEL_SUFFIXES.has(lastTwo) && parts.length >= 3) return parts.slice(-3).join('.');
+    return lastTwo;
+  } catch (_) {
+    return 'Other pages';
+  }
+}
+
+function histRowHtml(item, timeStr) {
+  const favHtml = item.favicon
+    ? `<img src="${escapeHtml(item.favicon)}" width="16" height="16" style="border-radius:3px;flex-shrink:0;" onerror="this.style.display='none'" />`
+    : SVG_GLOBE;
+  const visitCount = Math.max(1, Number(item.visitCount) || 1);
+  const visitLabel = `${visitCount} ${visitCount === 1 ? 'visit' : 'visits'}`;
+  const checked = histSelected.has(item.id) ? ' checked' : '';
+  return `
+    <div class="card-row history-item-row" data-id="${escapeHtml(item.id)}">
+      <input type="checkbox" class="hist-select" data-id="${escapeHtml(item.id)}"${checked} aria-label="Select history entry" style="accent-color:var(--accent);flex-shrink:0;" />
+      <span style="color:var(--text-secondary);font-size:12px;min-width:65px;">${escapeHtml(timeStr)}</span>
+      ${favHtml}
+      <div class="row-info">
+        <div class="row-title open-link" data-url="${escapeHtml(item.url)}">${escapeHtml(item.title)}</div>
+        <div class="row-sub">${escapeHtml(item.url)}</div>
+      </div>
+      <span class="visit-count-badge" style="font-size:11.5px;color:var(--text-secondary);background:var(--bg-input);border:1px solid var(--border);padding:3px 9px;border-radius:999px;flex-shrink:0;">${escapeHtml(visitLabel)}</span>
+      <button type="button" class="btn hist-entry-menu-btn" data-id="${escapeHtml(item.id)}" aria-label="More actions" aria-haspopup="menu">⋮</button>
+    </div>
+  `;
+}
+
+function closeHistEntryMenu() {
+  const menu = document.getElementById('histEntryMenu');
+  if (menu) menu.remove();
+  histMenuEntryId = null;
+}
+
+function openHistEntryMenu(btn, entryId) {
+  closeHistEntryMenu();
+  histMenuEntryId = entryId;
+  const rect = btn.getBoundingClientRect();
+  const menu = document.createElement('div');
+  menu.id = 'histEntryMenu';
+  menu.setAttribute('role', 'menu');
+  menu.style.cssText = 'position:fixed;z-index:60;min-width:210px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;box-shadow:var(--nx-shadow-lg);padding:5px;';
+  menu.innerHTML = `
+    <button type="button" class="btn hist-menu-item" data-action="open" style="display:block;width:100%;text-align:left;border:none;background:transparent;box-shadow:none;">Open in new tab</button>
+    <button type="button" class="btn hist-menu-item" data-action="copy" style="display:block;width:100%;text-align:left;border:none;background:transparent;box-shadow:none;">Copy link address</button>
+    <button type="button" class="btn danger hist-menu-item" data-action="remove" style="display:block;width:100%;text-align:left;border:none;background:transparent;box-shadow:none;">Remove from history</button>
+  `;
+  document.body.appendChild(menu);
+  const menuW = menu.offsetWidth;
+  const menuH = menu.offsetHeight;
+  menu.style.left = `${Math.max(8, Math.min(rect.right - menuW, window.innerWidth - menuW - 8))}px`;
+  menu.style.top = `${Math.min(rect.bottom + 4, window.innerHeight - menuH - 8)}px`;
+  menu.querySelectorAll('.hist-menu-item').forEach((item) => {
+    item.addEventListener('click', async () => {
+      const action = item.dataset.action;
+      const row = mainContainer.querySelector(`.history-item-row[data-id="${CSS.escape(entryId)}"] .open-link`);
+      const url = row?.dataset.url || '';
+      if (action === 'open' && url) {
+        await window.gxChromePagesAPI.createTab({ url, active: true });
+      } else if (action === 'copy' && url) {
+        try {
+          await navigator.clipboard.writeText(url);
+          item.textContent = 'Copied!';
+        } catch (_) {}
+      } else if (action === 'remove') {
+        await window.gxChromePagesAPI.removeHistoryItem(entryId);
+        histSelected.delete(entryId);
+        renderHistoryPage();
+      }
+      if (action !== 'remove') closeHistEntryMenu();
+    });
+  });
+}
+
+function syncHistorySelectionUI() {
+  const bar = document.getElementById('histBulkBar');
+  if (bar) {
+    bar.style.display = histSelected.size ? 'flex' : 'none';
+    const countEl = document.getElementById('histBulkCount');
+    if (countEl) countEl.textContent = `${histSelected.size} selected`;
+  }
+  mainContainer.querySelectorAll('.hist-select').forEach((chk) => {
+    chk.checked = histSelected.has(chk.dataset.id);
+  });
+}
+
+document.addEventListener('click', (e) => {
+  if (e.target.closest && (e.target.closest('#histEntryMenu') || e.target.closest('.hist-entry-menu-btn'))) return;
+  closeHistEntryMenu();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeHistEntryMenu();
+});
 
 async function renderHistoryPage({ force = true } = {}) {
   const seq = ++renderSeq;
@@ -133,6 +264,7 @@ async function renderHistoryPage({ force = true } = {}) {
   const renderKey = JSON.stringify({
     day: new Date().toDateString(),
     q: searchQuery,
+    view: histViewMode,
     limit: historyVisibleLimit,
     closed: closedTabs || [],
     history: list || []
@@ -142,6 +274,10 @@ async function renderHistoryPage({ force = true } = {}) {
   const prevScrollY = force ? 0 : window.scrollY;
 
   topRightActions.innerHTML = `
+    <div class="nx-segmented" id="histViewSeg" role="radiogroup" aria-label="History view">
+      <button class="seg-btn ${histViewMode === 'date' ? 'active' : ''}" data-view="date">By date</button>
+      <button class="seg-btn ${histViewMode === 'group' ? 'active' : ''}" data-view="group">By group</button>
+    </div>
     <div class="nx-segmented" id="histClearRange">
       <button class="seg-btn" data-range="hour">Clear 1h</button>
       <button class="seg-btn" data-range="day">Clear 24h</button>
@@ -149,6 +285,13 @@ async function renderHistoryPage({ force = true } = {}) {
     </div>
     <button class="btn danger" id="btnClearAllHistory">Clear All</button>
   `;
+
+  topRightActions.querySelectorAll('#histViewSeg [data-view]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      histViewMode = btn.dataset.view === 'group' ? 'group' : 'date';
+      renderHistoryPage();
+    });
+  });
 
   topRightActions.querySelectorAll('[data-range]').forEach((btn) => {
     btn.addEventListener('click', async () => {
@@ -222,43 +365,56 @@ async function renderHistoryPage({ force = true } = {}) {
 
     const visibleItems = filtered.slice(0, historyVisibleLimit);
     const remainingCount = Math.max(0, filtered.length - visibleItems.length);
-    const groups = { Today: [], Yesterday: [], Older: [] };
-    for (const item of visibleItems) {
-      const t = item.visitedAt || 0;
-      if (t >= todayMs) groups.Today.push(item);
-      else if (t >= yesterdayMs) groups.Yesterday.push(item);
-      else groups.Older.push(item);
-    }
+    const timeStrFor = (item) =>
+      new Date(item.visitedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    for (const [label, items] of Object.entries(groups)) {
-      if (!items.length) continue;
-      let rowsHtml = '';
-      for (const item of items) {
-        const timeStr = new Date(item.visitedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        const favHtml = item.favicon
-          ? `<img src="${escapeHtml(item.favicon)}" width="16" height="16" style="border-radius:3px;flex-shrink:0;" onerror="this.style.display='none'" />`
-          : SVG_GLOBE;
-        const visitCount = Math.max(1, Number(item.visitCount) || 1);
-        const visitLabel = `${visitCount} ${visitCount === 1 ? 'visit' : 'visits'}`;
-        rowsHtml += `
-          <div class="card-row history-item-row" data-id="${escapeHtml(item.id)}">
-            <span style="color:var(--text-secondary);font-size:12px;min-width:65px;">${escapeHtml(timeStr)}</span>
-            ${favHtml}
-            <div class="row-info">
-              <div class="row-title open-link" data-url="${escapeHtml(item.url)}">${escapeHtml(item.title)}</div>
-              <div class="row-sub">${escapeHtml(item.url)}</div>
+    if (histViewMode === 'group') {
+      // [Wave2-D] By group (gap 7.1): local grouping by website domain
+      // (registrable domain). Groups sort by most recent visit.
+      const groupMap = new Map();
+      for (const item of visibleItems) {
+        const domain = histRegistrableDomain(item.url);
+        if (!groupMap.has(domain)) groupMap.set(domain, []);
+        groupMap.get(domain).push(item);
+      }
+      const sortedGroups = [...groupMap.entries()].sort(
+        (a, b) =>
+          Math.max(...b[1].map((i) => i.visitedAt || 0)) - Math.max(...a[1].map((i) => i.visitedAt || 0))
+      );
+      historyHtml += `<div style="font-size:12px;color:var(--text-secondary);margin:0 2px 12px;">Grouped by website domain.</div>`;
+      for (const [domain, items] of sortedGroups) {
+        items.sort((a, b) => (b.visitedAt || 0) - (a.visitedAt || 0));
+        const totalVisits = items.reduce((n, i) => n + Math.max(1, Number(i.visitCount) || 1), 0);
+        const rowsHtml = items.map((item) => histRowHtml(item, timeStrFor(item))).join('');
+        historyHtml += `
+          <div class="section-card">
+            <div class="card-header">
+              <h2 class="nx-heading">${escapeHtml(domain)} (${items.length})</h2>
+              <span style="font-size:12px;color:var(--text-secondary);">${totalVisits} ${totalVisits === 1 ? 'visit' : 'visits'}</span>
             </div>
-            <span class="visit-count-badge" style="font-size:11.5px;color:var(--text-secondary);background:var(--bg-input);border:1px solid var(--border);padding:3px 9px;border-radius:999px;flex-shrink:0;">${escapeHtml(visitLabel)}</span>
-            <button class="btn danger del-item">Delete</button>
+            ${rowsHtml}
           </div>
         `;
       }
-      historyHtml += `
-        <div class="section-card">
-          <div class="card-header"><h2 class="nx-heading">${escapeHtml(label)} (${items.length})</h2></div>
-          ${rowsHtml}
-        </div>
-      `;
+    } else {
+      const groups = { Today: [], Yesterday: [], Older: [] };
+      for (const item of visibleItems) {
+        const t = item.visitedAt || 0;
+        if (t >= todayMs) groups.Today.push(item);
+        else if (t >= yesterdayMs) groups.Yesterday.push(item);
+        else groups.Older.push(item);
+      }
+
+      for (const [label, items] of Object.entries(groups)) {
+        if (!items.length) continue;
+        const rowsHtml = items.map((item) => histRowHtml(item, timeStrFor(item))).join('');
+        historyHtml += `
+          <div class="section-card">
+            <div class="card-header"><h2 class="nx-heading">${escapeHtml(label)} (${items.length})</h2></div>
+            ${rowsHtml}
+          </div>
+        `;
+      }
     }
     if (remainingCount > 0) {
       historyHtml += `
@@ -269,7 +425,19 @@ async function renderHistoryPage({ force = true } = {}) {
     }
   }
 
-  mainContainer.innerHTML = closedSectionHtml + historyHtml;
+  // [Wave2-D] Bulk-selection bar (gap 7.2): appears when entries are checked.
+  const bulkBarHtml = `
+    <div id="histBulkBar" style="display:${histSelected.size ? 'flex' : 'none'};align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 16px;margin-bottom:20px;background:var(--bg-card);border:1px solid var(--accent);border-radius:12px;">
+      <span id="histBulkCount" style="font-size:13px;font-weight:600;">${histSelected.size} selected</span>
+      <span style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button type="button" class="btn" id="btnHistSelectAll">Select all on page</button>
+        <button type="button" class="btn" id="btnHistClearSelection">Cancel</button>
+        <button type="button" class="btn danger" id="btnHistBulkDelete">Delete selected</button>
+      </span>
+    </div>
+  `;
+
+  mainContainer.innerHTML = closedSectionHtml + bulkBarHtml + historyHtml;
   if (!force && prevScrollY > 0) window.scrollTo(0, prevScrollY);
 
   const btnLoadMoreHistory = document.getElementById('btnLoadMoreHistory');
@@ -305,12 +473,49 @@ async function renderHistoryPage({ force = true } = {}) {
     el.addEventListener('click', () => window.gxChromePagesAPI.navigate(el.dataset.url));
   });
 
-  mainContainer.querySelectorAll('.del-item').forEach((btn) => {
-    btn.addEventListener('click', async (e) => {
-      const id = e.target.closest('.card-row').dataset.id;
-      await window.gxChromePagesAPI.removeHistoryItem(id);
-      renderHistoryPage();
+  // [Wave2-D] Multi-select checkboxes (gap 7.2) + per-entry ⋮ menu.
+  mainContainer.querySelectorAll('.hist-select').forEach((chk) => {
+    chk.addEventListener('change', () => {
+      if (chk.checked) histSelected.add(chk.dataset.id);
+      else histSelected.delete(chk.dataset.id);
+      syncHistorySelectionUI();
     });
+  });
+
+  mainContainer.querySelectorAll('.hist-entry-menu-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      if (histMenuEntryId === id) {
+        closeHistEntryMenu();
+        return;
+      }
+      openHistEntryMenu(btn, id);
+    });
+  });
+
+  document.getElementById('btnHistSelectAll')?.addEventListener('click', () => {
+    mainContainer.querySelectorAll('.history-item-row').forEach((row) => {
+      if (row.dataset.id) histSelected.add(row.dataset.id);
+    });
+    syncHistorySelectionUI();
+  });
+
+  document.getElementById('btnHistClearSelection')?.addEventListener('click', () => {
+    histSelected.clear();
+    syncHistorySelectionUI();
+  });
+
+  document.getElementById('btnHistBulkDelete')?.addEventListener('click', async () => {
+    const ids = [...histSelected];
+    if (!ids.length) return;
+    const btn = document.getElementById('btnHistBulkDelete');
+    if (btn) btn.disabled = true;
+    for (const id of ids) {
+      await window.gxChromePagesAPI.removeHistoryItem(id);
+    }
+    histSelected.clear();
+    renderHistoryPage();
   });
 }
 
@@ -323,6 +528,7 @@ async function renderDownloadsPage({ force = true } = {}) {
   const renderKey = JSON.stringify({
     cat: dlFilterCat,
     q: searchQuery,
+    dlq: dlSearchText,
     list: list || []
   });
   if (!force && renderKey === lastDownloadsRenderKey) return;
@@ -351,14 +557,44 @@ async function renderDownloadsPage({ force = true } = {}) {
     renderDownloadsPage();
   });
 
+  const dlQ = dlSearchText.trim().toLowerCase();
   const filtered = (list || []).filter(
     (d) =>
       (dlFilterCat === 'all' || d.category === dlFilterCat) &&
-      (!searchQuery || (d.filename && d.filename.toLowerCase().includes(searchQuery)))
+      (!searchQuery || (d.filename && d.filename.toLowerCase().includes(searchQuery))) &&
+      (!dlQ || `${d.filename || ''} ${d.url || ''}`.toLowerCase().includes(dlQ))
   );
 
   if (!filtered.length) {
-    mainContainer.innerHTML = `<div class="section-card"><div class="empty-state">No downloads in this category.</div></div>`;
+    mainContainer.innerHTML = `
+      <div class="section-card">
+        <div class="card-header" style="flex-wrap:wrap;">
+          <h2 class="nx-heading">Downloads (0)</h2>
+          <input
+            type="text"
+            id="dlSearchInput"
+            class="input-box"
+            placeholder="Search downloads..."
+            value="${escapeHtml(dlSearchText)}"
+            style="width:230px;padding:6px 10px;font-size:12.5px;"
+            aria-label="Search downloads"
+          />
+        </div>
+        <div class="empty-state">${dlSearchText ? `No downloads match "${escapeHtml(dlSearchText)}".` : 'No downloads in this category.'}</div>
+      </div>
+    `;
+    const emptyDlSearch = document.getElementById('dlSearchInput');
+    if (emptyDlSearch) {
+      emptyDlSearch.addEventListener('input', (e) => {
+        dlSearchText = e.target.value;
+        renderDownloadsPage();
+        const again = document.getElementById('dlSearchInput');
+        if (again) {
+          again.focus();
+          again.setSelectionRange(again.value.length, again.value.length);
+        }
+      });
+    }
     return;
   }
 
@@ -371,7 +607,7 @@ async function renderDownloadsPage({ force = true } = {}) {
     const etaStr = isProgressing && d.etaSeconds > 0 ? `• ${d.etaSeconds}s remaining` : '';
 
     rowsHtml += `
-      <div class="card-row" data-id="${escapeHtml(d.id)}">
+      <div class="card-row dl-item-row" data-id="${escapeHtml(d.id)}" data-dl-search="${escapeHtml(`${d.filename || ''} ${d.url || ''}`.toLowerCase())}">
         <div class="ext-icon">${SVG_DOWNLOAD}</div>
         <div class="row-info">
           <div class="row-title open-file" data-path="${escapeHtml(d.savePath)}">${escapeHtml(d.filename)}</div>
@@ -393,8 +629,47 @@ async function renderDownloadsPage({ force = true } = {}) {
     `;
   }
 
-  mainContainer.innerHTML = `<div class="section-card"><div class="card-header"><h2 class="nx-heading">Downloads (${filtered.length})</h2></div>${rowsHtml}</div>`;
+  mainContainer.innerHTML = `
+    <div class="section-card">
+      <div class="card-header" style="flex-wrap:wrap;">
+        <h2 class="nx-heading" id="dlCountHeading">Downloads (${filtered.length})</h2>
+        <input
+          type="text"
+          id="dlSearchInput"
+          class="input-box"
+          placeholder="Search downloads..."
+          value="${escapeHtml(dlSearchText)}"
+          style="width:230px;padding:6px 10px;font-size:12.5px;"
+          aria-label="Search downloads"
+        />
+      </div>
+      ${rowsHtml}
+    </div>
+  `;
   if (!force && prevScrollY > 0) window.scrollTo(0, prevScrollY);
+
+  // [Wave2-D] Downloads search (gap 7.3): filter rows in place so the input
+  // keeps focus while typing.
+  const applyDlSearchFilter = () => {
+    const q = dlSearchText.trim().toLowerCase();
+    let visible = 0;
+    mainContainer.querySelectorAll('.dl-item-row').forEach((row) => {
+      const hay = row.dataset.dlSearch || '';
+      const show = !q || hay.includes(q);
+      row.style.display = show ? '' : 'none';
+      if (show) visible += 1;
+    });
+    const heading = document.getElementById('dlCountHeading');
+    if (heading) heading.textContent = `Downloads (${visible})`;
+  };
+  const dlSearchInput = document.getElementById('dlSearchInput');
+  if (dlSearchInput) {
+    dlSearchInput.addEventListener('input', (e) => {
+      dlSearchText = e.target.value;
+      applyDlSearchFilter();
+    });
+    if (dlSearchText) applyDlSearchFilter();
+  }
 
   mainContainer.querySelectorAll('.open-file').forEach((el) => {
     el.addEventListener('click', () => window.gxChromePagesAPI.openDownloadItem(el.dataset.path));
@@ -910,6 +1185,125 @@ const pwGenState = {
 
 const PW_MASK_PLACEHOLDER = '••••••••••••';
 
+// [Wave2-D] Autofill management (gaps 6.2/6.3): addresses + payment methods.
+// Lists are fetched with the passwords page; card numbers are never shown in
+// full (only brand + last 4 digits) and are encrypted at rest.
+let addrList = [];
+let cardList = [];
+let addrFormOpen = false;
+let addrEditingId = null;
+let addrFormError = '';
+let cardFormOpen = false;
+let cardEditingId = null;
+let cardFormError = '';
+
+function formatAddressSummary(a) {
+  const parts = [a.addressLine1, a.addressLine2, a.city, a.region, a.postalCode, a.country]
+    .map((v) => (typeof v === 'string' ? v.trim() : ''))
+    .filter(Boolean);
+  return parts.join(', ');
+}
+
+function renderAddressRowHtml(a) {
+  if (addrEditingId === a.id) {
+    const field = (label, name, value, extra = '') =>
+      `<label class="bm-edit-field"><span class="bm-field-label">${label}</span><input type="text" class="input-box addr-edit-${name}" value="${escapeHtml(value || '')}" ${extra} /></label>`;
+    return `
+      <div class="card-row bm-editing" data-id="${escapeHtml(a.id)}">
+        <form class="bm-edit-form addr-edit-form" data-id="${escapeHtml(a.id)}">
+          <div class="bm-edit-grid">
+            ${field('Label', 'label', a.label)}
+            ${field('Full name', 'fullName', a.fullName)}
+            ${field('Organization', 'organization', a.organization)}
+            ${field('Street address', 'addressLine1', a.addressLine1)}
+            ${field('Address line 2', 'addressLine2', a.addressLine2)}
+            ${field('City', 'city', a.city)}
+            ${field('Region / State', 'region', a.region)}
+            ${field('Postal code', 'postalCode', a.postalCode)}
+            ${field('Country', 'country', a.country)}
+            ${field('Phone', 'phone', a.phone)}
+            ${field('Email', 'email', a.email)}
+          </div>
+          <div class="bm-edit-footer">
+            <span class="bm-form-error addr-edit-error">${escapeHtml(addrFormError)}</span>
+            <div class="bm-actions">
+              <button type="button" class="btn cancel-edit-addr">Cancel</button>
+              <button type="submit" class="btn primary save-edit-addr">Save</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    `;
+  }
+  const contact = [a.phone, a.email].filter(Boolean).join(' · ');
+  return `
+    <div class="card-row addr-entry-row" data-id="${escapeHtml(a.id)}">
+      <div class="row-info">
+        <div class="row-title" style="cursor:default;">${escapeHtml(a.fullName || a.label || 'Address')}${a.label ? ` <span style="color:var(--text-secondary);font-weight:400;">(${escapeHtml(a.label)})</span>` : ''}</div>
+        <div class="row-sub">${escapeHtml(formatAddressSummary(a) || 'No street address saved')}</div>
+        ${contact ? `<div class="row-sub">${escapeHtml(contact)}</div>` : ''}
+      </div>
+      <div class="pw-row-actions">
+        <button type="button" class="btn edit-addr">Edit</button>
+        <button type="button" class="btn danger del-addr">Delete</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderCardRowHtml(c) {
+  if (cardEditingId === c.id) {
+    return `
+      <div class="card-row bm-editing" data-id="${escapeHtml(c.id)}">
+        <form class="bm-edit-form card-edit-form" data-id="${escapeHtml(c.id)}">
+          <div class="bm-edit-grid">
+            <label class="bm-edit-field">
+              <span class="bm-field-label">Label</span>
+              <input type="text" class="input-box card-edit-label" value="${escapeHtml(c.label || '')}" placeholder="e.g. Personal Visa" />
+            </label>
+            <label class="bm-edit-field">
+              <span class="bm-field-label">Cardholder name</span>
+              <input type="text" class="input-box card-edit-name" value="${escapeHtml(c.cardholderName || '')}" required />
+            </label>
+            <label class="bm-edit-field">
+              <span class="bm-field-label">Card number (blank = keep •••• ${escapeHtml(c.last4 || '')})</span>
+              <input type="text" class="input-box card-edit-number" value="" placeholder="•••• •••• •••• ${escapeHtml(c.last4 || '')}" inputmode="numeric" autocomplete="cc-number" />
+            </label>
+            <label class="bm-edit-field">
+              <span class="bm-field-label">Expiry month</span>
+              <input type="number" class="input-box card-edit-month" value="${escapeHtml(String(c.expiryMonth || ''))}" min="1" max="12" required />
+            </label>
+            <label class="bm-edit-field">
+              <span class="bm-field-label">Expiry year</span>
+              <input type="number" class="input-box card-edit-year" value="${escapeHtml(String(c.expiryYear || ''))}" min="2026" max="2046" required />
+            </label>
+          </div>
+          <div class="bm-edit-footer">
+            <span class="bm-form-error card-edit-error">${escapeHtml(cardFormError)}</span>
+            <div class="bm-actions">
+              <button type="button" class="btn cancel-edit-card">Cancel</button>
+              <button type="submit" class="btn primary save-edit-card">Save</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    `;
+  }
+  const exp = c.expiryMonth && c.expiryYear ? `Expires ${String(c.expiryMonth).padStart(2, '0')}/${c.expiryYear}` : '';
+  return `
+    <div class="card-row card-entry-row" data-id="${escapeHtml(c.id)}">
+      <div class="row-info">
+        <div class="row-title" style="cursor:default;">${escapeHtml(c.brand || 'Card')} •••• •••• •••• ${escapeHtml(c.last4 || '')}${c.label ? ` <span style="color:var(--text-secondary);font-weight:400;">(${escapeHtml(c.label)})</span>` : ''}</div>
+        <div class="row-sub">${escapeHtml(c.cardholderName || '')}${exp ? ` · ${escapeHtml(exp)}` : ''}</div>
+      </div>
+      <div class="pw-row-actions">
+        <button type="button" class="btn edit-card">Edit</button>
+        <button type="button" class="btn danger del-card">Delete</button>
+      </div>
+    </div>
+  `;
+}
+
 function renderPasswordRowHtml(pw) {
   if (editingPasswordId === pw.id) {
     return `
@@ -970,12 +1364,59 @@ function renderPasswordRowHtml(pw) {
 
 async function renderPasswordsPage() {
   const seq = ++renderSeq;
-  const [listRaw, encStatus] = await Promise.all([
+  // Passkeys (software authenticator) — worker C, gap 4.2. Fetched with the
+  // passwords so the Passkeys card below renders in the same pass.
+  const [listRaw, encStatus, passkeysRaw, pkEncStatus, addrRaw, cardsRaw] = await Promise.all([
     window.gxChromePagesAPI.getPasswords(),
     window.gxChromePagesAPI.getPasswordEncryptionStatus
       ? window.gxChromePagesAPI.getPasswordEncryptionStatus().catch(() => ({ available: true }))
-      : Promise.resolve({ available: true })
+      : Promise.resolve({ available: true }),
+    window.gxChromePagesAPI.getPasskeys
+      ? window.gxChromePagesAPI.getPasskeys().catch(() => [])
+      : Promise.resolve([]),
+    window.gxChromePagesAPI.getPasskeyEncryptionStatus
+      ? window.gxChromePagesAPI.getPasskeyEncryptionStatus().catch(() => ({ available: true }))
+      : Promise.resolve({ available: true }),
+    // [Wave2-D] Autofill (gaps 6.2/6.3): addresses + payment methods.
+    window.gxChromePagesAPI.getAddresses
+      ? window.gxChromePagesAPI.getAddresses().catch(() => [])
+      : Promise.resolve([]),
+    window.gxChromePagesAPI.getPaymentMethods
+      ? window.gxChromePagesAPI.getPaymentMethods().catch(() => [])
+      : Promise.resolve([])
   ]);
+  addrList = Array.isArray(addrRaw) ? addrRaw : [];
+  cardList = Array.isArray(cardsRaw) ? cardsRaw : [];
+  const passkeysList = Array.isArray(passkeysRaw) ? passkeysRaw : [];
+  const passkeysFiltered = passkeysList.filter(
+    (p) =>
+      !searchQuery ||
+      (p.rpId && p.rpId.toLowerCase().includes(searchQuery)) ||
+      (p.rpName && p.rpName.toLowerCase().includes(searchQuery)) ||
+      (p.username && p.username.toLowerCase().includes(searchQuery))
+  );
+  const passkeysRowsHtml = passkeysFiltered
+    .map((pk) => {
+      const created = pk.createdAt ? new Date(pk.createdAt).toLocaleDateString() : '';
+      const label = pk.rpName && pk.rpName !== pk.rpId ? `${pk.rpName} (${pk.rpId})` : pk.rpId;
+      return `
+    <div class="card-row pk-entry-row" data-id="${escapeHtml(pk.id)}">
+      <div class="row-info">
+        <div class="row-title" style="cursor:default;">${escapeHtml(label || pk.rpId || 'Passkey')}</div>
+        <div class="row-sub">Username: <strong>${escapeHtml(pk.username || pk.displayName || '')}</strong>${created ? ` · Created ${escapeHtml(created)}` : ''}</div>
+        <div class="row-sub">Passkey · ES256 · Sign-ins: ${Number(pk.counter || 0)}</div>
+      </div>
+      <div class="pw-row-actions">
+        <button type="button" class="btn danger del-pk">Delete</button>
+      </div>
+    </div>
+  `;
+    })
+    .join('');
+  const passkeysEncWarningHtml =
+    pkEncStatus && pkEncStatus.available === false
+      ? `<div class="io-banner-detail" style="margin-bottom:10px;">OS keyring encryption is unavailable, so passkey private keys are stored unencrypted in this profile until OS keyring support is enabled.</div>`
+      : '';
   const list = listRaw || [];
   if (seq !== renderSeq || currentPage !== 'passwords') return;
   const encryptionWarningHtml =
@@ -1041,6 +1482,101 @@ async function renderPasswordsPage() {
   );
 
   const rowsHtml = filtered.map(renderPasswordRowHtml).join('');
+
+  // [Wave2-D] Autofill (gaps 6.2/6.3): addresses + payment methods cards.
+  const addrFiltered = addrList.filter(
+    (a) =>
+      !searchQuery ||
+      [a.label, a.fullName, a.organization, a.addressLine1, a.city, a.region, a.postalCode, a.country, a.phone, a.email]
+        .join(' ')
+        .toLowerCase()
+        .includes(searchQuery)
+  );
+  const cardFiltered = cardList.filter(
+    (c) =>
+      !searchQuery ||
+      [c.label, c.cardholderName, c.brand, c.last4].join(' ').toLowerCase().includes(searchQuery)
+  );
+
+  const addrAddFormHtml = addrFormOpen
+    ? `
+      <div class="card-row bm-editing">
+        <form id="addrAddForm" class="bm-edit-form">
+          <div class="bm-edit-grid">
+            <label class="bm-edit-field"><span class="bm-field-label">Label</span><input type="text" id="addrAddLabel" class="input-box" placeholder="e.g. Home" /></label>
+            <label class="bm-edit-field"><span class="bm-field-label">Full name</span><input type="text" id="addrAddFullName" class="input-box" placeholder="Full name" required /></label>
+            <label class="bm-edit-field"><span class="bm-field-label">Organization</span><input type="text" id="addrAddOrganization" class="input-box" placeholder="Company (optional)" /></label>
+            <label class="bm-edit-field"><span class="bm-field-label">Street address</span><input type="text" id="addrAddLine1" class="input-box" placeholder="Street and number" /></label>
+            <label class="bm-edit-field"><span class="bm-field-label">Address line 2</span><input type="text" id="addrAddLine2" class="input-box" placeholder="Apartment, suite (optional)" /></label>
+            <label class="bm-edit-field"><span class="bm-field-label">City</span><input type="text" id="addrAddCity" class="input-box" placeholder="City" /></label>
+            <label class="bm-edit-field"><span class="bm-field-label">Region / State</span><input type="text" id="addrAddRegion" class="input-box" placeholder="Region" /></label>
+            <label class="bm-edit-field"><span class="bm-field-label">Postal code</span><input type="text" id="addrAddPostal" class="input-box" placeholder="Postal code" /></label>
+            <label class="bm-edit-field"><span class="bm-field-label">Country</span><input type="text" id="addrAddCountry" class="input-box" placeholder="Country" /></label>
+            <label class="bm-edit-field"><span class="bm-field-label">Phone</span><input type="text" id="addrAddPhone" class="input-box" placeholder="Phone (optional)" /></label>
+            <label class="bm-edit-field"><span class="bm-field-label">Email</span><input type="text" id="addrAddEmail" class="input-box" placeholder="Email (optional)" /></label>
+          </div>
+          <div class="bm-edit-footer">
+            <span class="bm-form-error" id="addrAddError">${escapeHtml(addrFormError)}</span>
+            <div class="bm-actions">
+              <button type="button" class="btn" id="btnCancelAddAddr">Cancel</button>
+              <button type="submit" class="btn primary">Save address</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    `
+    : '';
+
+  const addrCardHtml = `
+    <div class="section-card" id="addressesCard">
+      <div class="card-header">
+        <h2 class="nx-heading">Addresses (${addrFiltered.length})</h2>
+        <button type="button" class="btn primary" id="btnToggleAddAddr">${addrFormOpen ? 'Close' : '+ Add address'}</button>
+      </div>
+      <div class="card-row">
+        <div class="row-sub" style="margin-top:0;">Saved addresses fill shipping and billing forms on websites. Stored locally in this profile.</div>
+      </div>
+      ${addrAddFormHtml}
+      ${addrFiltered.map(renderAddressRowHtml).join('') || '<div class="empty-state">No addresses saved yet.</div>'}
+    </div>
+  `;
+
+  const cardAddFormHtml = cardFormOpen
+    ? `
+      <div class="card-row bm-editing">
+        <form id="cardAddForm" class="bm-edit-form">
+          <div class="bm-edit-grid">
+            <label class="bm-edit-field"><span class="bm-field-label">Label</span><input type="text" id="cardAddLabel" class="input-box" placeholder="e.g. Personal Visa" /></label>
+            <label class="bm-edit-field"><span class="bm-field-label">Cardholder name</span><input type="text" id="cardAddName" class="input-box" placeholder="Name on card" required /></label>
+            <label class="bm-edit-field"><span class="bm-field-label">Card number</span><input type="text" id="cardAddNumber" class="input-box" placeholder="1234 5678 9012 3456" inputmode="numeric" autocomplete="cc-number" required /></label>
+            <label class="bm-edit-field"><span class="bm-field-label">Expiry month</span><input type="number" id="cardAddMonth" class="input-box" placeholder="MM" min="1" max="12" required /></label>
+            <label class="bm-edit-field"><span class="bm-field-label">Expiry year</span><input type="number" id="cardAddYear" class="input-box" placeholder="YYYY" min="2026" max="2046" required /></label>
+          </div>
+          <div class="bm-edit-footer">
+            <span class="bm-form-error" id="cardAddError">${escapeHtml(cardFormError)}</span>
+            <div class="bm-actions">
+              <button type="button" class="btn" id="btnCancelAddCard">Cancel</button>
+              <button type="submit" class="btn primary">Save card</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    `
+    : '';
+
+  const cardCardHtml = `
+    <div class="section-card" id="paymentMethodsCard">
+      <div class="card-header">
+        <h2 class="nx-heading">Payment methods (${cardFiltered.length})</h2>
+        <button type="button" class="btn primary" id="btnToggleAddCard">${cardFormOpen ? 'Close' : '+ Add card'}</button>
+      </div>
+      <div class="card-row">
+        <div class="row-sub" style="margin-top:0;">Card numbers are encrypted with the OS keyring when available and are never shown in full. Form fill on web pages arrives with the autofill engine update.</div>
+      </div>
+      ${cardAddFormHtml}
+      ${cardFiltered.map(renderCardRowHtml).join('') || '<div class="empty-state">No payment methods saved yet.</div>'}
+    </div>
+  `;
 
   const exportWarningHtml = passwordsExportConfirmOpen
     ? `
@@ -1164,6 +1700,18 @@ async function renderPasswordsPage() {
         <h2 class="nx-heading">Saved Logins (${filtered.length})</h2>
       </div>
       ${rowsHtml || '<div class="empty-state">Logins you save or submit on websites appear here and auto-fill automatically.</div>'}
+    </div>
+
+    ${addrCardHtml}
+    ${cardCardHtml}
+
+    <div class="section-card" id="passkeysCard">
+      <div class="card-header">
+        <h2 class="nx-heading">Passkeys (${passkeysFiltered.length})</h2>
+        <span class="priv-status-pill accent">Software authenticator</span>
+      </div>
+      ${passkeysEncWarningHtml}
+      ${passkeysRowsHtml || '<div class="empty-state">No passkeys yet. When a site offers "Sign in with a passkey", nextGx will create one here — no security key or Windows Hello needed. Passkeys never sync to a Google account.</div>'}
     </div>
   `;
 
@@ -1403,6 +1951,197 @@ async function renderPasswordsPage() {
     });
   });
 
+  // Passkey row controls: Delete (worker C, gap 4.2)
+  mainContainer.querySelectorAll('.del-pk').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.closest('.card-row')?.dataset.id;
+      if (!id || !window.gxChromePagesAPI.deletePasskey) return;
+      btn.disabled = true;
+      await window.gxChromePagesAPI.deletePasskey(id);
+      renderPasswordsPage();
+    });
+  });
+
+  // [Wave2-D] Addresses (gap 6.3): add / edit / delete.
+  document.getElementById('btnToggleAddAddr')?.addEventListener('click', () => {
+    addrFormOpen = !addrFormOpen;
+    addrFormError = '';
+    addrEditingId = null;
+    renderPasswordsPage();
+  });
+  document.getElementById('btnCancelAddAddr')?.addEventListener('click', () => {
+    addrFormOpen = false;
+    addrFormError = '';
+    renderPasswordsPage();
+  });
+  const addrAddForm = document.getElementById('addrAddForm');
+  if (addrAddForm) {
+    addrAddForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!window.gxChromePagesAPI.addAddress) return;
+      const val = (id) => document.getElementById(id)?.value.trim() || '';
+      const res = await window.gxChromePagesAPI.addAddress({
+        label: val('addrAddLabel'),
+        fullName: val('addrAddFullName'),
+        organization: val('addrAddOrganization'),
+        addressLine1: val('addrAddLine1'),
+        addressLine2: val('addrAddLine2'),
+        city: val('addrAddCity'),
+        region: val('addrAddRegion'),
+        postalCode: val('addrAddPostal'),
+        country: val('addrAddCountry'),
+        phone: val('addrAddPhone'),
+        email: val('addrAddEmail')
+      });
+      if (!res || res.ok === false) {
+        addrFormError = res?.error || 'Could not save address.';
+        const errEl = document.getElementById('addrAddError');
+        if (errEl) errEl.textContent = addrFormError;
+        return;
+      }
+      addrFormOpen = false;
+      addrFormError = '';
+      renderPasswordsPage();
+    });
+  }
+  mainContainer.querySelectorAll('.edit-addr').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      addrEditingId = btn.closest('.card-row')?.dataset.id || null;
+      addrFormError = '';
+      addrFormOpen = false;
+      renderPasswordsPage();
+    });
+  });
+  mainContainer.querySelectorAll('.del-addr').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.closest('.card-row')?.dataset.id;
+      if (!id || !window.gxChromePagesAPI.removeAddress) return;
+      await window.gxChromePagesAPI.removeAddress(id);
+      renderPasswordsPage();
+    });
+  });
+  const addrEditForm = mainContainer.querySelector('.addr-edit-form[data-id]');
+  if (addrEditForm) {
+    const q = (name) => addrEditForm.querySelector(`.addr-edit-${name}`);
+    addrEditForm.querySelector('.cancel-edit-addr')?.addEventListener('click', () => {
+      addrEditingId = null;
+      addrFormError = '';
+      renderPasswordsPage();
+    });
+    addrEditForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!window.gxChromePagesAPI.updateAddress) return;
+      const res = await window.gxChromePagesAPI.updateAddress({
+        id: addrEditForm.dataset.id,
+        label: q('label')?.value.trim() || '',
+        fullName: q('fullName')?.value.trim() || '',
+        organization: q('organization')?.value.trim() || '',
+        addressLine1: q('addressLine1')?.value.trim() || '',
+        addressLine2: q('addressLine2')?.value.trim() || '',
+        city: q('city')?.value.trim() || '',
+        region: q('region')?.value.trim() || '',
+        postalCode: q('postalCode')?.value.trim() || '',
+        country: q('country')?.value.trim() || '',
+        phone: q('phone')?.value.trim() || '',
+        email: q('email')?.value.trim() || ''
+      });
+      if (!res || res.ok === false) {
+        addrFormError = res?.error || 'Could not update address.';
+        const errEl = addrEditForm.querySelector('.addr-edit-error');
+        if (errEl) errEl.textContent = addrFormError;
+        return;
+      }
+      addrEditingId = null;
+      addrFormError = '';
+      renderPasswordsPage();
+    });
+  }
+
+  // [Wave2-D] Payment methods (gap 6.2): add / edit / delete.
+  document.getElementById('btnToggleAddCard')?.addEventListener('click', () => {
+    cardFormOpen = !cardFormOpen;
+    cardFormError = '';
+    cardEditingId = null;
+    renderPasswordsPage();
+  });
+  document.getElementById('btnCancelAddCard')?.addEventListener('click', () => {
+    cardFormOpen = false;
+    cardFormError = '';
+    renderPasswordsPage();
+  });
+  const cardAddForm = document.getElementById('cardAddForm');
+  if (cardAddForm) {
+    cardAddForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!window.gxChromePagesAPI.addPaymentMethod) return;
+      const val = (id) => document.getElementById(id)?.value.trim() || '';
+      const res = await window.gxChromePagesAPI.addPaymentMethod({
+        label: val('cardAddLabel'),
+        cardholderName: val('cardAddName'),
+        number: val('cardAddNumber'),
+        expiryMonth: Number(val('cardAddMonth')),
+        expiryYear: Number(val('cardAddYear'))
+      });
+      if (!res || res.ok === false) {
+        cardFormError = res?.error || 'Could not save card.';
+        const errEl = document.getElementById('cardAddError');
+        if (errEl) errEl.textContent = cardFormError;
+        return;
+      }
+      cardFormOpen = false;
+      cardFormError = '';
+      renderPasswordsPage();
+    });
+  }
+  mainContainer.querySelectorAll('.edit-card').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      cardEditingId = btn.closest('.card-row')?.dataset.id || null;
+      cardFormError = '';
+      cardFormOpen = false;
+      renderPasswordsPage();
+    });
+  });
+  mainContainer.querySelectorAll('.del-card').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.closest('.card-row')?.dataset.id;
+      if (!id || !window.gxChromePagesAPI.removePaymentMethod) return;
+      await window.gxChromePagesAPI.removePaymentMethod(id);
+      renderPasswordsPage();
+    });
+  });
+  const cardEditForm = mainContainer.querySelector('.card-edit-form[data-id]');
+  if (cardEditForm) {
+    const q = (name) => cardEditForm.querySelector(`.card-edit-${name}`);
+    cardEditForm.querySelector('.cancel-edit-card')?.addEventListener('click', () => {
+      cardEditingId = null;
+      cardFormError = '';
+      renderPasswordsPage();
+    });
+    cardEditForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!window.gxChromePagesAPI.updatePaymentMethod) return;
+      const payload = {
+        id: cardEditForm.dataset.id,
+        label: q('label')?.value.trim() || '',
+        cardholderName: q('name')?.value.trim() || '',
+        expiryMonth: Number(q('month')?.value),
+        expiryYear: Number(q('year')?.value)
+      };
+      const numVal = q('number')?.value.trim() || '';
+      if (numVal) payload.number = numVal;
+      const res = await window.gxChromePagesAPI.updatePaymentMethod(payload);
+      if (!res || res.ok === false) {
+        cardFormError = res?.error || 'Could not update card.';
+        const errEl = cardEditForm.querySelector('.card-edit-error');
+        if (errEl) errEl.textContent = cardFormError;
+        return;
+      }
+      cardEditingId = null;
+      cardFormError = '';
+      renderPasswordsPage();
+    });
+  }
+
   const pwEditForm = mainContainer.querySelector('.pw-edit-form[data-id]');
   if (pwEditForm) {
     const editId = pwEditForm.dataset.id;
@@ -1473,6 +2212,86 @@ const PRIVACY_PERMISSION_LABELS = {
   notifications: 'Notifications'
 };
 
+// [Wave2-D] Site settings defaults (gap 5.12) + Safety Check (gap 5.8).
+const SITE_DEFAULT_PERMISSION_LABELS = {
+  camera: 'Camera',
+  microphone: 'Microphone',
+  geolocation: 'Location',
+  notifications: 'Notifications',
+  'clipboard-read': 'Clipboard',
+  'screen-share': 'Screen sharing'
+};
+let safetyCheckResults = null;
+let safetyCheckRunAt = 0;
+
+function computeSafetyCheck(dash, full, extList) {
+  const ad = dash.adblock || {};
+  const adblockOn = Boolean(ad.enabled);
+  const trackerOn = Boolean(adblockOn && ad.trackerBlockEnabled);
+  const tpMode = full.thirdPartyCookies || 'block-incognito';
+  const encryptionAvailable = Boolean(dash.security && dash.security.passwordEncryptionAvailable);
+  const exts = Array.isArray(extList) ? extList : [];
+  const warned = exts.filter((e) => Array.isArray(e.warnings) && e.warnings.length);
+  const results = [];
+  results.push({
+    id: 'adblock',
+    label: 'Ad blocker',
+    detail: adblockOn ? 'On — ads and trackers are filtered at the network layer.' : 'Off — ads and trackers are not being blocked.',
+    status: adblockOn ? 'pass' : 'attention',
+    action: adblockOn ? null : { id: 'adblock-on', label: 'Turn on' }
+  });
+  results.push({
+    id: 'tracker',
+    label: 'Tracker blocking',
+    detail: trackerOn
+      ? 'On — analytics, telemetry and tracking pixels are blocked.'
+      : adblockOn
+        ? 'Off — analytics and trackers are allowed through.'
+        : 'Off — needs the ad blocker to be on.',
+    status: trackerOn ? 'pass' : 'attention',
+    action: !trackerOn && adblockOn ? { id: 'tracker-on', label: 'Turn on' } : null
+  });
+  results.push({
+    id: 'cookies',
+    label: 'Third-party cookies',
+    detail:
+      tpMode === 'block'
+        ? 'Blocked — sites cannot use cookies from other sites.'
+        : tpMode === 'block-incognito'
+          ? 'Blocked in Private windows — allowed in regular windows.'
+          : 'Allowed — sites can use cookies from other sites.',
+    status: tpMode === 'allow' ? 'attention' : 'pass',
+    action: tpMode === 'allow' ? { id: 'tp-incognito', label: 'Block in Private windows' } : null
+  });
+  results.push({
+    id: 'encryption',
+    label: 'Password encryption at rest',
+    detail: encryptionAvailable
+      ? 'On — saved passwords are encrypted with the OS keyring.'
+      : 'Unavailable — the OS keyring is not reachable, so saved passwords are stored unencrypted.',
+    status: encryptionAvailable ? 'pass' : 'attention',
+    action: null
+  });
+  results.push({
+    id: 'extensions',
+    label: 'Extensions',
+    detail:
+      warned.length > 0
+        ? `${warned.length} ${warned.length === 1 ? 'extension has' : 'extensions have'} compatibility warnings: ${warned.map((e) => e.name || e.id).join(', ')}.`
+        : `${exts.length} ${exts.length === 1 ? 'extension' : 'extensions'} installed, no warnings reported.`,
+    status: warned.length > 0 ? 'attention' : 'info',
+    action: null
+  });
+  results.push({
+    id: 'passwords',
+    label: 'Saved logins',
+    detail: `${Number(dash.security?.savedPasswordsCount || 0)} saved ${Number(dash.security?.savedPasswordsCount || 0) === 1 ? 'login' : 'logins'} in this profile.`,
+    status: 'info',
+    action: null
+  });
+  return results;
+}
+
 function navigateToSettingsTarget(elementId) {
   pendingSettingsScrollTarget = elementId || '';
   switchPage('settings');
@@ -1480,21 +2299,33 @@ function navigateToSettingsTarget(elementId) {
 
 async function renderPrivacyPage({ force = true } = {}) {
   const seq = ++renderSeq;
-  const [dash, cookiesList] = await Promise.all([
+  // [Wave2-D] Full settings + extensions feed the Safety Check, third-party
+  // cookie control and site-permission defaults below.
+  const [dash, cookiesList, fullSettings, extList] = await Promise.all([
     window.gxChromePagesAPI.getPrivacyDashboard
       ? window.gxChromePagesAPI.getPrivacyDashboard()
       : Promise.resolve(null),
     window.gxChromePagesAPI.getCookies
       ? window.gxChromePagesAPI.getCookies()
+      : Promise.resolve([]),
+    window.gxChromePagesAPI.getSettings
+      ? window.gxChromePagesAPI.getSettings().catch(() => ({}))
+      : Promise.resolve({}),
+    window.gxChromePagesAPI.getExtensions
+      ? window.gxChromePagesAPI.getExtensions().catch(() => [])
       : Promise.resolve([])
   ]);
   if (seq !== renderSeq || currentPage !== 'privacy' || !dash) return;
 
   const cookiesCount = Array.isArray(cookiesList) ? cookiesList.length : 0;
+  const full = fullSettings && typeof fullSettings === 'object' ? fullSettings : {};
   const renderKey = JSON.stringify({
     q: searchQuery,
     dash,
-    cookiesCount
+    cookiesCount,
+    tp: full.thirdPartyCookies,
+    defaults: full.sitePermissionDefaults,
+    safety: safetyCheckResults
   });
   if (!force && renderKey === lastPrivacyRenderKey) return;
   lastPrivacyRenderKey = renderKey;
@@ -1684,8 +2515,34 @@ async function renderPrivacyPage({ force = true } = {}) {
       </div>
     `;
   } else {
+    // [Wave2-D] Per-site cookie counts (gap 5.12): match stored cookie
+    // domains against each permission origin's host.
+    const cookieCountByOrigin = {};
+    const cookieDomains = (Array.isArray(cookiesList) ? cookiesList : [])
+      .map((c) => String(c.domain || '').trim().toLowerCase().replace(/^\.+/, ''))
+      .filter(Boolean);
+    for (const entry of filteredPermissions) {
+      let host = '';
+      try {
+        host = new URL(entry.origin).hostname.toLowerCase();
+      } catch (_) {}
+      if (!host) continue;
+      cookieCountByOrigin[entry.origin] = cookieDomains.filter(
+        (d) => d === host || host.endsWith(`.${d}`)
+      ).length;
+    }
+
     for (const entry of filteredPermissions) {
       const perms = entry.permissions || {};
+      // [Wave2-D] Recent-activity summary (gap 5.12), Chrome-style.
+      const allowedList = trackedKeys
+        .filter((k) => (perms[k] || 'ask') === 'allow')
+        .map((k) => PRIVACY_PERMISSION_LABELS[k] || k);
+      const blockedList = trackedKeys
+        .filter((k) => (perms[k] || 'ask') === 'block')
+        .map((k) => PRIVACY_PERMISSION_LABELS[k] || k);
+      const recentSummary = `Allowed: ${allowedList.join(', ') || '—'} · Blocked: ${blockedList.join(', ') || '—'}`;
+      const siteCookieCount = cookieCountByOrigin[entry.origin] || 0;
       const chipsHtml = trackedKeys
         .map((key) => {
           const val = perms[key] || 'ask';
@@ -1714,6 +2571,7 @@ async function renderPrivacyPage({ force = true } = {}) {
           <div class="priv-perm-top">
             <div class="row-info">
               <div class="row-title" style="cursor:default;">${escapeHtml(entry.origin)}</div>
+              <div class="row-sub">Recent activity: ${escapeHtml(recentSummary)}${siteCookieCount ? ` · ${siteCookieCount} ${siteCookieCount === 1 ? 'cookie' : 'cookies'} stored` : ''}</div>
             </div>
             <button type="button" class="btn danger priv-reset-site-perms" data-origin="${escapeHtml(entry.origin)}">Reset Site</button>
           </div>
@@ -1722,6 +2580,104 @@ async function renderPrivacyPage({ force = true } = {}) {
       `;
     }
   }
+
+  // [Wave2-D] Safety Check (gap 5.8), site defaults + third-party cookies (5.9/5.12).
+  const safetyPassed = safetyCheckResults ? safetyCheckResults.filter((r) => r.status === 'pass').length : 0;
+  const safetyAttention = safetyCheckResults ? safetyCheckResults.filter((r) => r.status === 'attention').length : 0;
+  const safetyRowsHtml = safetyCheckResults
+    ? safetyCheckResults
+        .map(
+          (r) => `
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title" style="cursor:default;">${escapeHtml(r.label)}</div>
+          <div class="row-sub">${escapeHtml(r.detail)}</div>
+        </div>
+        <div class="priv-checklist-right">
+          <span class="priv-status-pill ${r.status === 'pass' ? 'on' : r.status === 'attention' ? 'warn' : ''}">${
+            r.status === 'pass' ? 'Looks good' : r.status === 'attention' ? 'Needs attention' : 'Info'
+          }</span>
+          ${r.action ? `<button type="button" class="btn safety-action" data-action="${escapeHtml(r.action.id)}">${escapeHtml(r.action.label)}</button>` : ''}
+        </div>
+      </div>
+    `
+        )
+        .join('')
+    : '';
+  const safetyCardHtml = `
+    <div class="section-card" id="safetyCheckCard">
+      <div class="card-header">
+        <h2 class="nx-heading">Safety Check</h2>
+        <button type="button" class="btn primary" id="btnRunSafetyCheck">Run Safety Check</button>
+      </div>
+      ${
+        safetyCheckResults
+          ? `
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title" style="cursor:default;">${safetyPassed} passed · ${safetyAttention} need${safetyAttention === 1 ? 's' : ''} attention</div>
+          <div class="row-sub">Checked locally — nothing is sent to Google or any server. Last run ${escapeHtml(new Date(safetyCheckRunAt).toLocaleTimeString())}.</div>
+        </div>
+      </div>
+      ${safetyRowsHtml}`
+          : `
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-sub" style="margin-top:0;">A quick local audit: ad blocker, tracker blocking, third-party cookies, password encryption and extensions. Nothing leaves this browser.</div>
+        </div>
+      </div>`
+      }
+    </div>
+  `;
+
+  const siteDefaults = full.sitePermissionDefaults && typeof full.sitePermissionDefaults === 'object' ? full.sitePermissionDefaults : {};
+  const siteDefaultsRowsHtml = Object.entries(SITE_DEFAULT_PERMISSION_LABELS)
+    .map(([key, label]) => {
+      const val = siteDefaults[key] === 'block' ? 'block' : 'ask';
+      return `
+    <div class="card-row">
+      <div class="row-info">
+        <div class="row-title" style="cursor:default;">${escapeHtml(label)}</div>
+        <div class="row-sub">${val === 'ask' ? `Sites can ask to use your ${escapeHtml(label.toLowerCase())}` : `Sites cannot use your ${escapeHtml(label.toLowerCase())}`}</div>
+      </div>
+      <select class="priv-perm-select site-default-select" data-perm-key="${escapeHtml(key)}" aria-label="${escapeHtml(label)} default">
+        <option value="ask"${val === 'ask' ? ' selected' : ''}>Sites can ask</option>
+        <option value="block"${val === 'block' ? ' selected' : ''}>Don&apos;t allow</option>
+      </select>
+    </div>`;
+    })
+    .join('');
+  const siteDefaultsCardHtml = `
+    <div class="section-card" id="siteDefaultsCard">
+      <div class="card-header">
+        <h2 class="nx-heading">Site settings — defaults for new sites</h2>
+        <button type="button" class="btn" id="btnViewSiteData">View permissions and data stored across sites</button>
+      </div>
+      <div class="card-row">
+        <div class="row-sub" style="margin-top:0;">These defaults apply to sites you haven&apos;t set a choice for yet. A per-site choice above always wins.</div>
+      </div>
+      ${siteDefaultsRowsHtml}
+    </div>
+  `;
+
+  const tpMode = full.thirdPartyCookies || 'block-incognito';
+  const tpOption = (value, title, sub) => `
+    <label class="card-row" style="cursor:pointer;">
+      <div class="row-info">
+        <div class="row-title" style="cursor:pointer;">${title}</div>
+        <div class="row-sub">${sub}</div>
+      </div>
+      <input type="radio" name="tpCookies" value="${value}" ${tpMode === value ? 'checked' : ''} style="accent-color:var(--accent);flex-shrink:0;" />
+    </label>`;
+  const tpCookiesCardHtml = `
+    <div class="section-card" id="thirdPartyCookiesCard">
+      <div class="card-header"><h2 class="nx-heading">Third-party cookies</h2></div>
+      ${tpOption('allow', 'Allow third-party cookies', 'Sites can use cookies from other sites.')}
+      ${tpOption('block-incognito', 'Block third-party cookies in Incognito mode', 'Third-party cookies are blocked in Private windows.')}
+      ${tpOption('block', 'Block third-party cookies', 'Sites can&apos;t use cookies from other sites. Some sites may break.')}
+      <div class="card-row"><div class="row-sub" style="margin-top:0;">Blocking works at the network level: cookie headers from other sites are stripped before they are sent or stored.</div></div>
+    </div>
+  `;
 
   mainContainer.innerHTML = `
     <div class="priv-profile-bar" id="privProfileBar">
@@ -1773,6 +2729,8 @@ async function renderPrivacyPage({ force = true } = {}) {
       </div>
     </div>
 
+    ${safetyCardHtml}
+
     <div class="section-card" id="privPerSiteCard">
       <div class="card-header">
         <h2 class="nx-heading">Per-Site Ad &amp; Tracker Breakdown (${perSiteRows.length})</h2>
@@ -1788,6 +2746,9 @@ async function renderPrivacyPage({ force = true } = {}) {
       </div>
       ${permissionsHtml}
     </div>
+
+    ${siteDefaultsCardHtml}
+    ${tpCookiesCardHtml}
 
     <div class="section-card" id="privPostureCard">
       <div class="card-header">
@@ -1993,6 +2954,57 @@ async function renderPrivacyPage({ force = true } = {}) {
   document.getElementById('btnPrivGoHistory')?.addEventListener('click', () => {
     switchPage('history');
   });
+
+  // [Wave2-D] Safety Check (gap 5.8): local audit, re-runnable.
+  document.getElementById('btnRunSafetyCheck')?.addEventListener('click', () => {
+    safetyCheckResults = computeSafetyCheck(dash, full, extList);
+    safetyCheckRunAt = Date.now();
+    renderPrivacyPage({ force: true });
+  });
+  mainContainer.querySelectorAll('.safety-action').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const action = btn.dataset.action;
+      if (action === 'adblock-on') {
+        await window.gxChromePagesAPI.toggleAdblock(true);
+      } else if (action === 'tracker-on') {
+        if (window.gxChromePagesAPI.toggleTrackerBlock) {
+          await window.gxChromePagesAPI.toggleTrackerBlock(true);
+        } else {
+          await window.gxChromePagesAPI.updateSettings({ trackerBlockEnabled: true });
+        }
+      } else if (action === 'tp-incognito') {
+        await window.gxChromePagesAPI.updateSettings({ thirdPartyCookies: 'block-incognito' });
+      }
+      safetyCheckResults = null;
+      renderPrivacyPage({ force: true });
+    });
+  });
+
+  // [Wave2-D] Site settings defaults (gap 5.12). Send only the changed key;
+  // the storage layer merges it onto the current map, so two quick changes
+  // in a row compose instead of clobbering each other.
+  mainContainer.querySelectorAll('.site-default-select').forEach((sel) => {
+    sel.addEventListener('change', async () => {
+      const key = sel.dataset.permKey;
+      if (!key) return;
+      await window.gxChromePagesAPI.updateSettings({
+        sitePermissionDefaults: { [key]: sel.value === 'block' ? 'block' : 'ask' }
+      });
+      renderPrivacyPage({ force: true });
+    });
+  });
+  document.getElementById('btnViewSiteData')?.addEventListener('click', () => {
+    navigateToSettingsTarget('cookiesSettingsCard');
+  });
+
+  // [Wave2-D] Third-party cookies (gap 5.9): wired to the session cookie
+  // controls (network-level blocking) via settings:update.
+  mainContainer.querySelectorAll('input[name="tpCookies"]').forEach((radio) => {
+    radio.addEventListener('change', async () => {
+      await window.gxChromePagesAPI.updateSettings({ thirdPartyCookies: radio.value });
+      renderPrivacyPage({ force: true });
+    });
+  });
 }
 
 // 5. EXTENSIONS
@@ -2195,6 +3207,19 @@ async function renderExtensionsPage() {
     const lastErrorHtml = ext.lastError
       ? `<div class="ext-note error">${escapeHtml(ext.lastError)}</div>`
       : '';
+    // [Wave2-D] Details (gap 10.1): ID, source path, version and manifest
+    // version, available whether or not Developer mode is on. When dev mode
+    // is on the card already shows ID + Source above, so the panel only adds
+    // the version line there (no duplicated rows).
+    const detailsHtml = `
+      <div class="ext-details" data-id="${escapeHtml(ext.id)}" style="display:none;">
+        <div class="ext-dev-meta">
+          ${devMode ? '' : `<div>ID: ${escapeHtml(ext.id)}</div>`}
+          ${devMode || !ext.path ? '' : `<div>Source: ${escapeHtml(ext.path)}</div>`}
+          <div>Version: ${escapeHtml(ext.version || '1.0')}${mvLabel ? ` · ${escapeHtml(mvLabel)}` : ''} · Unpacked extension</div>
+        </div>
+      </div>
+    `;
 
     userExtsHtml += `
       <div class="ext-card user-ext-card ${isEnabled ? '' : 'disabled'}" data-id="${escapeHtml(ext.id)}">
@@ -2213,8 +3238,10 @@ async function renderExtensionsPage() {
             ${lastErrorHtml}
           </div>
         </div>
+        ${detailsHtml}
         <div class="ext-bottom">
           <div class="ext-actions">
+            <button class="btn ext-details-btn" data-id="${escapeHtml(ext.id)}">Details</button>
             <button class="btn danger remove-ext" data-id="${escapeHtml(ext.id)}">Remove</button>
             ${devMode && ext.path ? `<button class="btn reload-ext" data-id="${escapeHtml(ext.id)}">Reload</button>` : ''}
           </div>
@@ -2232,7 +3259,48 @@ async function renderExtensionsPage() {
       ? `<div class="ext-grid">${builtInHtml}${userExtsHtml}</div>`
       : `<div class="section-card"><div class="empty-state">No extensions match "${escapeHtml(searchQuery)}".</div></div>`;
 
-  mainContainer.innerHTML = `${bannersHtml}${gridHtml}`;
+  // [Wave2-D] Keyboard shortcuts (gap 10.1): the browser shortcuts, listed
+  // from the real shortcut map. Extensions don't define custom shortcuts in
+  // nextGx yet, so there are no per-extension bindings to show.
+  const shortcutRows = [
+    ['New tab', 'Ctrl+T'],
+    ['Reopen closed tab', 'Ctrl+Shift+T'],
+    ['New window', 'Ctrl+N'],
+    ['New Private window', 'Ctrl+Shift+N'],
+    ['Close tab', 'Ctrl+W'],
+    ['Reload page', 'Ctrl+R / F5'],
+    ['Focus address bar', 'Ctrl+L'],
+    ['Bookmark this page', 'Ctrl+D'],
+    ['History', 'Ctrl+H'],
+    ['Downloads', 'Ctrl+J'],
+    ['Find in page', 'Ctrl+F'],
+    ['Print', 'Ctrl+P'],
+    ['Zoom reset / in / out', 'Ctrl+0 / Ctrl++ / Ctrl+−'],
+    ['Fullscreen', 'F11'],
+    ['Developer tools', 'F12'],
+    ['Search tabs', 'Ctrl+Shift+A'],
+    ['Switch tabs', 'Ctrl+Tab'],
+    ['Reading mode', 'Alt+Shift+R']
+  ];
+  const shortcutsCardHtml = `
+    <div class="section-card" id="extShortcutsCard">
+      <div class="card-header">
+        <h2 class="nx-heading">Keyboard shortcuts</h2>
+        <span style="font-size:12px;color:var(--text-secondary);">Extensions don&apos;t define custom shortcuts in nextGx yet</span>
+      </div>
+      ${shortcutRows
+        .map(
+          ([label, keys]) => `
+        <div class="card-row" style="padding:9px 20px;">
+          <div class="row-info"><div class="row-title" style="cursor:default;font-weight:400;">${escapeHtml(label)}</div></div>
+          <span style="font-family:var(--nx-font-mono);font-size:12px;color:var(--accent-bright);background:var(--bg-input);border:1px solid var(--border);padding:3px 9px;border-radius:6px;white-space:nowrap;">${escapeHtml(keys)}</span>
+        </div>`
+        )
+        .join('')}
+    </div>
+  `;
+
+  mainContainer.innerHTML = `${bannersHtml}${shortcutsCardHtml}${gridHtml}`;
 
   const btnDismiss = document.getElementById('btnDismissExtBanner');
   if (btnDismiss) {
@@ -2282,6 +3350,17 @@ async function renderExtensionsPage() {
         };
       }
       renderExtensionsPage();
+    });
+  });
+
+  // [Wave2-D] Details toggle (gap 10.1).
+  mainContainer.querySelectorAll('.ext-details-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const panel = mainContainer.querySelector(`.ext-details[data-id="${CSS.escape(btn.dataset.id)}"]`);
+      if (!panel) return;
+      const isOpen = panel.style.display !== 'none';
+      panel.style.display = isOpen ? 'none' : 'block';
+      btn.textContent = isOpen ? 'Details' : 'Hide details';
     });
   });
 
@@ -2658,6 +3737,330 @@ function renderSettingsProfilesSection() {
   });
 }
 
+// [Wave2-D] Settings page state (gaps 5.1–5.9, 5.11, 5.13, 5.14).
+let searchEngineFormOpen = false;
+let searchEngineEditingId = null;
+let searchEngineError = '';
+let langAddSelected = 'es-ES';
+let aboutVersionInfo = null;
+let defaultBrowserMsg = '';
+let defaultBrowserMsgKind = '';
+let resetConfirmOpen = false;
+let clearDataRange = 'hour';
+let clearDataMsg = '';
+
+const SEARCH_ENGINE_DEFAULTS = [
+  { id: 'google', name: 'Google', url: 'https://www.google.com/search?q=%s', keyword: '', siteSearch: false, builtin: true },
+  { id: 'bing', name: 'Bing', url: 'https://www.bing.com/search?q=%s', keyword: 'bing', siteSearch: false, builtin: true },
+  { id: 'duckduckgo', name: 'DuckDuckGo', url: 'https://duckduckgo.com/?q=%s', keyword: 'ddg', siteSearch: false, builtin: true },
+  { id: 'brave', name: 'Brave', url: 'https://search.brave.com/search?q=%s', keyword: 'brave', siteSearch: false, builtin: true },
+  { id: 'ecosia', name: 'Ecosia', url: 'https://www.ecosia.org/search?q=%s', keyword: 'ecosia', siteSearch: false, builtin: true }
+];
+
+const PREFERRED_LANGUAGE_OPTIONS = [
+  ['en-US', 'English (United States)'],
+  ['en-GB', 'English (United Kingdom)'],
+  ['bn-BD', 'Bengali (Bangladesh)'],
+  ['hi-IN', 'Hindi (India)'],
+  ['es-ES', 'Spanish (Spain)'],
+  ['es-MX', 'Spanish (Mexico)'],
+  ['fr-FR', 'French (France)'],
+  ['de-DE', 'German (Germany)'],
+  ['pt-BR', 'Portuguese (Brazil)'],
+  ['ar-EG', 'Arabic (Egypt)'],
+  ['zh-CN', 'Chinese (Simplified)'],
+  ['ja-JP', 'Japanese'],
+  ['ko-KR', 'Korean'],
+  ['ru-RU', 'Russian'],
+  ['it-IT', 'Italian'],
+  ['nl-NL', 'Dutch'],
+  ['tr-TR', 'Turkish'],
+  ['vi-VN', 'Vietnamese'],
+  ['id-ID', 'Indonesian'],
+  ['ms-MY', 'Malay'],
+  ['ur-PK', 'Urdu (Pakistan)'],
+  ['fa-IR', 'Persian (Iran)'],
+  ['uk-UA', 'Ukrainian'],
+  ['pl-PL', 'Polish']
+];
+
+function languageDisplayName(tag) {
+  const found = PREFERRED_LANGUAGE_OPTIONS.find(([t]) => t === tag);
+  return found ? found[1] : tag;
+}
+
+function validateSearchEngineInput(name, url, keyword, engines, excludeId) {
+  const cleanName = String(name || '').trim();
+  if (!cleanName) return { ok: false, error: 'Engine name cannot be empty.' };
+  const cleanUrl = String(url || '').trim();
+  if (!/^https?:\/\//i.test(cleanUrl)) return { ok: false, error: 'URL template must start with http:// or https://.' };
+  if (!cleanUrl.includes('%s')) return { ok: false, error: 'URL template must contain %s where the search terms go.' };
+  try {
+    const test = new URL(cleanUrl.replace('%s', 'test'));
+    if (!test.hostname) return { ok: false, error: 'URL template is not a valid web address.' };
+  } catch (_) {
+    return { ok: false, error: 'URL template is not a valid web address.' };
+  }
+  const cleanKeyword = String(keyword || '').trim().toLowerCase().replace(/\s+/g, '');
+  if (cleanKeyword) {
+    const clash = (engines || []).some(
+      (e) => e && e.id !== excludeId && typeof e.keyword === 'string' && e.keyword.toLowerCase() === cleanKeyword
+    );
+    if (clash) return { ok: false, error: `Keyword "${cleanKeyword}" is already used by another engine.` };
+  }
+  return { ok: true, name: cleanName, url: cleanUrl, keyword: cleanKeyword };
+}
+
+// [Wave2-D] Search engine manager card (gap 5.2): editable engine list,
+// site search entries, default picker, shortcut mode.
+function renderSearchEngineCardHtml(s) {
+  const engines = Array.isArray(s.searchEngines) ? s.searchEngines : [];
+  const defaultId = s.searchEngine || 'google';
+  const defaultEngines = engines.filter((e) => !e.siteSearch);
+  const siteEngines = engines.filter((e) => e.siteSearch);
+
+  const engineRow = (e) => {
+    const isDefault = e.id === defaultId;
+    if (searchEngineEditingId === e.id) {
+      return `
+      <div class="card-row bm-editing" data-id="${escapeHtml(e.id)}">
+        <form class="bm-edit-form search-engine-edit-form" data-id="${escapeHtml(e.id)}">
+          <div class="bm-edit-grid">
+            <label class="bm-edit-field">
+              <span class="bm-field-label">Name</span>
+              <input type="text" class="input-box se-edit-name" value="${escapeHtml(e.name)}" required />
+            </label>
+            <label class="bm-edit-field">
+              <span class="bm-field-label">URL template (%s = search terms)</span>
+              <input type="text" class="input-box se-edit-url" value="${escapeHtml(e.url)}" required />
+            </label>
+            <label class="bm-edit-field">
+              <span class="bm-field-label">Shortcut keyword</span>
+              <input type="text" class="input-box se-edit-keyword" value="${escapeHtml(e.keyword || '')}" placeholder="e.g. ddg" />
+            </label>
+          </div>
+          <div class="bm-edit-footer">
+            <span class="bm-form-error se-edit-error">${escapeHtml(searchEngineError)}</span>
+            <div class="bm-actions">
+              <button type="button" class="btn cancel-edit-se">Cancel</button>
+              <button type="submit" class="btn primary save-edit-se">Save</button>
+            </div>
+          </div>
+        </form>
+      </div>`;
+    }
+    return `
+      <div class="card-row" data-id="${escapeHtml(e.id)}">
+        <div class="row-info">
+          <div class="row-title" style="cursor:default;">${escapeHtml(e.name)}${isDefault ? ' <span class="priv-status-pill accent" style="margin-left:6px;">Default</span>' : ''}</div>
+          <div class="row-sub">${escapeHtml(e.url)}${e.keyword ? ` · Keyword: ${escapeHtml(e.keyword)}` : ''}</div>
+        </div>
+        <div class="pw-row-actions">
+          ${!e.siteSearch && !isDefault ? `<button type="button" class="btn se-make-default" data-id="${escapeHtml(e.id)}">Make default</button>` : ''}
+          <button type="button" class="btn se-edit" data-id="${escapeHtml(e.id)}">Edit</button>
+          ${!isDefault ? `<button type="button" class="btn danger se-remove" data-id="${escapeHtml(e.id)}">Remove</button>` : ''}
+        </div>
+      </div>`;
+  };
+
+  const addFormHtml = searchEngineFormOpen
+    ? `
+      <div class="card-row bm-editing">
+        <form id="searchEngineAddForm" class="bm-edit-form">
+          <div class="bm-edit-grid">
+            <label class="bm-edit-field">
+              <span class="bm-field-label">Name</span>
+              <input type="text" id="seAddName" class="input-box" placeholder="e.g. Wikipedia" required />
+            </label>
+            <label class="bm-edit-field">
+              <span class="bm-field-label">URL template (%s = search terms)</span>
+              <input type="text" id="seAddUrl" class="input-box" placeholder="https://en.wikipedia.org/w/index.php?search=%s" required />
+            </label>
+            <label class="bm-edit-field">
+              <span class="bm-field-label">Shortcut keyword</span>
+              <input type="text" id="seAddKeyword" class="input-box" placeholder="e.g. wiki" />
+            </label>
+          </div>
+          <div class="bm-edit-footer">
+            <span class="bm-form-error" id="seAddError">${escapeHtml(searchEngineError)}</span>
+            <div class="bm-actions" style="align-items:center;">
+              <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer;">
+                <input type="checkbox" id="seAddSiteSearch" style="accent-color:var(--accent);" /> Site search only (keyword only, never the default)
+              </label>
+              <button type="button" class="btn" id="btnCancelAddEngine">Cancel</button>
+              <button type="submit" class="btn primary">Add engine</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    `
+    : '';
+
+  const shortcutMode = s.searchShortcutMode === 'tab' ? 'tab' : 'space-or-tab';
+  return `
+    <div class="section-card" id="searchEngineCard">
+      <div class="card-header">
+        <h2 class="nx-heading">Search Engine</h2>
+        <span style="display:flex;gap:8px;">
+          <button type="button" class="btn" id="btnRestoreSearchDefaults">Restore defaults</button>
+          <button type="button" class="btn primary" id="btnToggleAddEngine">${searchEngineFormOpen ? 'Close' : '+ Add search engine'}</button>
+        </span>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Default search engine</div>
+          <div class="row-sub">Address bar searches use the default engine. Type a keyword, then a space, then your query to search with a site search engine.</div>
+        </div>
+      </div>
+      ${defaultEngines.map(engineRow).join('') || '<div class="empty-state">No search engines configured.</div>'}
+      <div class="card-header" style="border-top:1px solid var(--border);">
+        <h2 class="nx-heading">Site search</h2>
+        <span style="font-size:12px;color:var(--text-secondary);">Keyword only</span>
+      </div>
+      ${siteEngines.map(engineRow).join('') || '<div class="empty-state" style="padding:20px;">No site search engines yet. Add one with a keyword above.</div>'}
+      ${addFormHtml}
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Keyboard shortcut to search</div>
+          <div class="row-sub">How a site search keyword is triggered from the address bar</div>
+        </div>
+        <div class="nx-segmented" id="setSearchShortcutSeg">
+          <button type="button" class="seg-btn ${shortcutMode === 'space-or-tab' ? 'active' : ''}" data-mode="space-or-tab">Space or Tab</button>
+          <button type="button" class="seg-btn ${shortcutMode === 'tab' ? 'active' : ''}" data-mode="tab">Tab</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function bindSearchEngineCard(s) {
+  const engines = Array.isArray(s.searchEngines) ? s.searchEngines : [];
+  // [Wave2-D] saveEngines always transforms the LIVE engine list (fresh
+  // settings read): two quick edits in a row must not clobber each other
+  // (a render-time snapshot would resurrect a just-removed engine).
+  const saveEngines = async (transform) => {
+    const fresh = (await window.gxChromePagesAPI.getSettings?.()) || {};
+    const live = Array.isArray(fresh.searchEngines) ? fresh.searchEngines : engines;
+    const nextList = transform(live);
+    await window.gxChromePagesAPI.updateSettings({ searchEngines: nextList });
+    renderSettingsPage();
+  };
+
+  mainContainer.querySelectorAll('.se-make-default').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      await window.gxChromePagesAPI.updateSettings({ searchEngine: btn.dataset.id });
+      renderSettingsPage();
+    });
+  });
+
+  mainContainer.querySelectorAll('.se-edit').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      searchEngineEditingId = btn.dataset.id;
+      searchEngineError = '';
+      searchEngineFormOpen = false;
+      renderSettingsPage();
+    });
+  });
+
+  mainContainer.querySelectorAll('.se-remove').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      await saveEngines((live) => live.filter((e) => e.id !== btn.dataset.id));
+    });
+  });
+
+  document.getElementById('btnToggleAddEngine')?.addEventListener('click', () => {
+    searchEngineFormOpen = !searchEngineFormOpen;
+    searchEngineError = '';
+    searchEngineEditingId = null;
+    renderSettingsPage();
+  });
+  document.getElementById('btnCancelAddEngine')?.addEventListener('click', () => {
+    searchEngineFormOpen = false;
+    searchEngineError = '';
+    renderSettingsPage();
+  });
+  document.getElementById('btnRestoreSearchDefaults')?.addEventListener('click', async () => {
+    searchEngineEditingId = null;
+    searchEngineFormOpen = false;
+    searchEngineError = '';
+    await window.gxChromePagesAPI.updateSettings({
+      searchEngines: JSON.parse(JSON.stringify(SEARCH_ENGINE_DEFAULTS)),
+      searchEngine: 'google'
+    });
+    renderSettingsPage();
+  });
+
+  mainContainer.querySelectorAll('#setSearchShortcutSeg .seg-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      await window.gxChromePagesAPI.updateSettings({ searchShortcutMode: btn.dataset.mode });
+      renderSettingsPage();
+    });
+  });
+
+  const addForm = document.getElementById('searchEngineAddForm');
+  if (addForm) {
+    addForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('seAddName')?.value || '';
+      const url = document.getElementById('seAddUrl')?.value || '';
+      const keyword = document.getElementById('seAddKeyword')?.value || '';
+      const siteSearch = document.getElementById('seAddSiteSearch')?.checked || false;
+      const check = validateSearchEngineInput(name, url, keyword, engines, null);
+      if (!check.ok) {
+        searchEngineError = check.error;
+        const errEl = document.getElementById('seAddError');
+        if (errEl) errEl.textContent = check.error;
+        return;
+      }
+      const idBase = check.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'custom';
+      let id = idBase;
+      let n = 2;
+      while (engines.some((x) => x.id === id)) {
+        id = `${idBase}-${n}`;
+        n += 1;
+      }
+      await saveEngines((live) => [
+        ...live,
+        { id, name: check.name, url: check.url, keyword: check.keyword, siteSearch, builtin: false }
+      ]);
+      searchEngineFormOpen = false;
+      searchEngineError = '';
+    });
+  }
+
+  const editForm = mainContainer.querySelector('.search-engine-edit-form[data-id]');
+  if (editForm) {
+    editForm.querySelector('.cancel-edit-se')?.addEventListener('click', () => {
+      searchEngineEditingId = null;
+      searchEngineError = '';
+      renderSettingsPage();
+    });
+    editForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = editForm.dataset.id;
+      const target = engines.find((x) => x.id === id);
+      if (!target) return;
+      const name = editForm.querySelector('.se-edit-name')?.value || '';
+      const url = editForm.querySelector('.se-edit-url')?.value || '';
+      const keyword = editForm.querySelector('.se-edit-keyword')?.value || '';
+      const check = validateSearchEngineInput(name, url, keyword, engines, id);
+      if (!check.ok) {
+        searchEngineError = check.error;
+        const errEl = editForm.querySelector('.se-edit-error');
+        if (errEl) errEl.textContent = check.error;
+        return;
+      }
+      await saveEngines((live) =>
+        live.map((x) =>
+          x.id === id ? { ...x, name: check.name, url: check.url, keyword: check.keyword } : x
+        )
+      );
+      searchEngineEditingId = null;
+      searchEngineError = '';
+    });
+  }
+}
+
 function validateHomepageInput(raw) {
   const trimmed = String(raw || '').trim();
   if (!trimmed || /^(?:nextgx|gx|chrome):\/\/newtab\/?$/i.test(trimmed)) {
@@ -2760,16 +4163,21 @@ async function refreshSettingsCookies({ force = false } = {}) {
 
 async function renderSettingsPage() {
   const seq = ++renderSeq;
-  const [s, sys, ad, allCookies, adblockSites, profData] = await Promise.all([
+  const [s, sys, ad, allCookies, adblockSites, profData, versionInfo] = await Promise.all([
     window.gxChromePagesAPI.getSettings(),
     window.gxChromePagesAPI.getSystemStats(),
     window.gxChromePagesAPI.getAdblockStats(),
     window.gxChromePagesAPI.getCookies ? window.gxChromePagesAPI.getCookies() : Promise.resolve([]),
     window.gxChromePagesAPI.getAdblockSites ? window.gxChromePagesAPI.getAdblockSites() : Promise.resolve({}),
-    window.gxChromePagesAPI.listProfiles ? window.gxChromePagesAPI.listProfiles() : Promise.resolve(null)
+    window.gxChromePagesAPI.listProfiles ? window.gxChromePagesAPI.listProfiles() : Promise.resolve(null),
+    // [Wave2-D] About page version (gap 5.14).
+    window.gxChromePagesAPI.getAppVersion
+      ? window.gxChromePagesAPI.getAppVersion().catch(() => null)
+      : Promise.resolve(null)
   ]);
   if (seq !== renderSeq || currentPage !== 'settings') return;
   settingsProfilesData = profData;
+  if (versionInfo) aboutVersionInfo = versionInfo;
 
   settingsCookies = Array.isArray(allCookies) ? allCookies : [];
   const masterAdblockOn = ad ? ad.enabled !== false : s.adblockEnabled !== false;
@@ -2828,6 +4236,137 @@ async function renderSettingsPage() {
     `
     : '';
 
+  // [Wave2-D] Search engine manager (gap 5.2) + startup options (gap 5.3).
+  const searchEngineCardHtml = renderSearchEngineCardHtml(s);
+  const startupMode = s.startupMode || (s.restoreSession !== false ? 'restore' : 'newtab');
+  const startupRadio = (value, title, sub) => `
+    <label class="card-row" style="cursor:pointer;">
+      <div class="row-info">
+        <div class="row-title" style="cursor:pointer;">${title}</div>
+        <div class="row-sub">${sub}</div>
+      </div>
+      <input type="radio" name="startupMode" value="${value}" ${startupMode === value ? 'checked' : ''} style="accent-color:var(--accent);flex-shrink:0;" />
+    </label>`;
+  const startupUrlsHtml =
+    startupMode === 'urls'
+      ? `
+    <div class="card-row" style="flex-direction:column;align-items:stretch;gap:10px;">
+      <div class="row-info">
+        <div class="row-title">Pages to open on startup</div>
+        <div class="row-sub">Each page opens in its own tab when nextGx launches</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        ${(s.startupUrls || [])
+          .map(
+            (u, i) => `
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:12.5px;flex:1;word-break:break-all;">${escapeHtml(u)}</span>
+            <button type="button" class="btn danger startup-url-remove" data-index="${i}">Remove</button>
+          </div>`
+          )
+          .join('') || '<div class="row-sub">No pages yet — add one below.</div>'}
+      </div>
+      <form id="startupAddUrlForm" style="display:flex;gap:8px;flex-wrap:wrap;">
+        <input type="text" id="startupAddUrlInput" class="input-box" placeholder="https://example.com" style="flex:1;min-width:220px;" autocomplete="off" spellcheck="false" />
+        <button type="submit" class="btn primary">Add page</button>
+      </form>
+      <span class="settings-form-msg error" id="startupAddUrlError"></span>
+    </div>`
+      : '';
+
+  // [Wave2-D] Languages (gap 5.4) + Downloads settings (gap 5.5) cards.
+  const languages = Array.isArray(s.preferredLanguages) ? s.preferredLanguages : ['en-US'];
+  const languagesCardHtml = `
+    <div class="section-card" id="languagesSettingsCard">
+      <div class="card-header"><h2 class="nx-heading">Languages</h2></div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Preferred languages</div>
+          <div class="row-sub">Websites show content in these languages when available, and spell check uses them</div>
+        </div>
+      </div>
+      ${languages
+        .map(
+          (tag) => `
+      <div class="card-row" style="padding:9px 20px;">
+        <div class="row-info">
+          <div class="row-title" style="cursor:default;font-weight:400;">${escapeHtml(languageDisplayName(tag))}</div>
+          <div class="row-sub">${escapeHtml(tag)}</div>
+        </div>
+        <button type="button" class="btn danger lang-remove" data-tag="${escapeHtml(tag)}"${languages.length <= 1 ? ' disabled title="Keep at least one language"' : ''}>Remove</button>
+      </div>`
+        )
+        .join('')}
+      <div class="card-row" style="flex-wrap:wrap;">
+        <div class="row-info" style="min-width:180px;">
+          <div class="row-title">Add a language</div>
+        </div>
+        <form id="langAddForm" style="display:flex;gap:8px;flex-wrap:wrap;">
+          <select id="langAddSelect" class="priv-perm-select" style="padding:7px 10px;">
+            ${PREFERRED_LANGUAGE_OPTIONS.filter(([tag]) => !languages.includes(tag))
+              .map(([tag, name]) => `<option value="${escapeHtml(tag)}"${tag === langAddSelected ? ' selected' : ''}>${escapeHtml(name)}</option>`)
+              .join('')}
+          </select>
+          <button type="submit" class="btn primary">Add language</button>
+        </form>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Check spelling as you type</div>
+          <div class="row-sub">Underline misspelled words in text fields, using your preferred languages</div>
+        </div>
+        <label class="nx-switch">
+          <input type="checkbox" id="setSpellcheckChk" ${s.spellcheckEnabled !== false ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
+      <div class="card-row">
+        <div class="row-sub" style="margin-top:0;">Google Translate isn&apos;t available in nextGx — it needs a Google service.</div>
+      </div>
+    </div>
+  `;
+
+  const downloadsCardHtml = `
+    <div class="section-card" id="downloadsSettingsCard">
+      <div class="card-header"><h2 class="nx-heading">Downloads</h2></div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Download location</div>
+          <div class="row-sub">${escapeHtml(s.downloadPath || 'System default (Downloads folder)')}</div>
+        </div>
+        <div class="io-actions-group">
+          <button type="button" class="btn primary" id="btnChangeDownloadPath">Change…</button>
+          ${s.downloadPath ? '<button type="button" class="btn" id="btnResetDownloadPath">Use default</button>' : ''}
+        </div>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Ask where to save each file before downloading</div>
+          <div class="row-sub">Show a save dialog for every download</div>
+        </div>
+        <label class="nx-switch">
+          <input type="checkbox" id="setDownloadAskWhereChk" ${s.downloadAskWhere ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Show downloads when they&apos;re done</div>
+          <div class="row-sub">Open the downloads list when a download finishes</div>
+        </div>
+        <label class="nx-switch">
+          <input type="checkbox" id="setDownloadShowDoneChk" ${s.downloadShowWhenDone !== false ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
+    </div>
+  `;
+
+  // [Wave2-D] About (gap 5.14): live version from the app when available.
+  const aboutTitle = aboutVersionInfo
+    ? `nextGx Browser v${aboutVersionInfo.app} (64-bit) — Electron ${aboutVersionInfo.electron} · Chromium ${aboutVersionInfo.chrome}`
+    : 'nextGx Browser v3.0.0 (64-bit) — Powered by Chromium Engine v156.0.8078.100';
+
   mainContainer.innerHTML = `
     <div class="section-card" id="profilesSettingsCard">
       <div class="card-header">
@@ -2862,6 +4401,46 @@ async function renderSettingsPage() {
         </div>
         <label class="nx-switch">
           <input type="checkbox" id="setBookmarksBarChk" ${s.showBookmarksBar !== false ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Show Home Button</div>
+          <div class="row-sub">Show a Home button in the toolbar that opens your homepage</div>
+        </div>
+        <label class="nx-switch">
+          <input type="checkbox" id="setHomeButtonChk" ${s.showHomeButton !== false ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Show Tab Search Button</div>
+          <div class="row-sub">Show the tab search button (Ctrl+Shift+A) at the top of the tab strip</div>
+        </div>
+        <label class="nx-switch">
+          <input type="checkbox" id="setTabSearchChk" ${s.showTabSearchButton !== false ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Ctrl+Tab switches between the 2 most recent tabs</div>
+          <div class="row-sub">Off switches through tabs in strip order, like Chrome&apos;s default</div>
+        </div>
+        <label class="nx-switch">
+          <input type="checkbox" id="setCtrlTabMruChk" ${s.ctrlTabMru ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Tab Hover Preview Card</div>
+          <div class="row-sub">Show a preview card with the page title and address when hovering a tab</div>
+        </div>
+        <label class="nx-switch">
+          <input type="checkbox" id="setTabHoverChk" ${s.tabHoverPreview !== false ? 'checked' : ''} />
           <span class="nx-slider"></span>
         </label>
       </div>
@@ -2938,17 +4517,15 @@ async function renderSettingsPage() {
     </div>
 
     <div class="section-card">
-      <div class="card-header"><h2 class="nx-heading">Startup & Homepage</h2></div>
-      <div class="card-row">
-        <div class="row-info">
-          <div class="row-title">Restore previous session on startup</div>
-          <div class="row-sub">Reopen tabs from your last browsing session when nextGx Browser launches</div>
-        </div>
-        <label class="nx-switch">
-          <input type="checkbox" id="setRestoreSessionChk" ${s.restoreSession !== false ? 'checked' : ''} />
-          <span class="nx-slider"></span>
-        </label>
-      </div>
+      <div class="card-header"><h2 class="nx-heading">On Startup</h2></div>
+      ${startupRadio('newtab', 'Open the new tab page', 'Start with a fresh Speed Dial page')}
+      ${startupRadio('restore', 'Continue where you left off', 'Reopen tabs from your last browsing session when nextGx launches')}
+      ${startupRadio('urls', 'Open a specific page or set of pages', 'Open the pages below every time nextGx launches')}
+      ${startupUrlsHtml}
+    </div>
+
+    <div class="section-card">
+      <div class="card-header"><h2 class="nx-heading">Homepage</h2></div>
       <div class="card-row" style="flex-wrap:wrap;">
         <div class="row-info" style="min-width:220px;">
           <div class="row-title">Homepage</div>
@@ -2971,19 +4548,9 @@ async function renderSettingsPage() {
       </div>
     </div>
 
-    <div class="section-card">
-      <div class="card-header"><h2 class="nx-heading">Search Engine</h2></div>
-      <div class="card-row">
-        <div class="row-info">
-          <div class="row-title">Default Address Bar Search Engine</div>
-        </div>
-        <div class="nx-segmented" id="setSearchSeg">
-          <button class="seg-btn ${s.searchEngine === 'google' ? 'active' : ''}" data-engine="google">Google</button>
-          <button class="seg-btn ${s.searchEngine === 'duckduckgo' ? 'active' : ''}" data-engine="duckduckgo">DuckDuckGo</button>
-          <button class="seg-btn ${s.searchEngine === 'bing' ? 'active' : ''}" data-engine="bing">Bing</button>
-        </div>
-      </div>
-    </div>
+    ${searchEngineCardHtml}
+    ${languagesCardHtml}
+    ${downloadsCardHtml}
 
     <div class="section-card">
       <div class="card-header"><h2 class="nx-heading">Privacy Shield & Security</h2></div>
@@ -3016,20 +4583,43 @@ async function renderSettingsPage() {
       </div>
       ${pausedSitesHtml}
       <div class="card-row" id="settingsClearDataRow" style="flex-wrap:wrap;">
-        <div class="row-info">
-          <div class="row-title">Clear Browsing Data & Cache</div>
-          <div class="row-sub">Select data types to remove from your browser</div>
-          <div style="display:flex;gap:16px;margin-top:8px;font-size:12.5px;color:var(--text-primary);">
+        <div class="row-info" style="min-width:260px;">
+          <div class="row-title">Delete Browsing Data</div>
+          <div class="row-sub">The time range applies to browsing history. Cookies and cache are always cleared for all time.</div>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:10px;">
+            <label for="setClearRangeSel" style="font-size:12.5px;font-weight:600;">Time range</label>
+            <select id="setClearRangeSel" class="priv-perm-select" style="padding:6px 10px;">
+              <option value="hour"${clearDataRange === 'hour' ? ' selected' : ''}>Last hour</option>
+              <option value="day"${clearDataRange === 'day' ? ' selected' : ''}>Last 24 hours</option>
+              <option value="week"${clearDataRange === 'week' ? ' selected' : ''}>Last 7 days</option>
+              <option value="month"${clearDataRange === 'month' ? ' selected' : ''}>Last 4 weeks</option>
+              <option value="all"${clearDataRange === 'all' ? ' selected' : ''}>All time</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-size:12.5px;color:var(--text-primary);">
             <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
-              <input type="checkbox" id="chkSetClearCache" checked /> Cache
+              <input type="checkbox" id="chkSetClearHistory" checked /> Browsing history
             </label>
             <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
-              <input type="checkbox" id="chkSetClearHistory" checked /> Browsing History
+              <input type="checkbox" id="chkSetClearCookies" checked /> Cookies &amp; site data
             </label>
             <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
-              <input type="checkbox" id="chkSetClearCookies" checked /> Cookies & Site Data
+              <input type="checkbox" id="chkSetClearCache" checked /> Cached images &amp; files
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+              <input type="checkbox" id="chkSetClearDownloads" /> Download history
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+              <input type="checkbox" id="chkSetClearPasswords" /> Saved passwords
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+              <input type="checkbox" id="chkSetClearAutofill" /> Autofill form data
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+              <input type="checkbox" id="chkSetClearSiteSettings" /> Site settings
             </label>
           </div>
+          <div class="settings-form-msg success" id="setClearDataMsg" style="display:${clearDataMsg ? 'block' : 'none'};">${escapeHtml(clearDataMsg)}</div>
         </div>
         <button class="btn danger" id="btnSetClearData">Clear Data Now</button>
       </div>
@@ -3088,6 +4678,60 @@ async function renderSettingsPage() {
         </div>
         <button class="btn primary" id="btnSetSleepNow">Hibernate Background Tabs</button>
       </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Sleeping tabs right now</div>
+          <div class="row-sub">${sys?.sleepingTabsCount || 0} background ${sys?.sleepingTabsCount === 1 ? 'tab' : 'tabs'} hibernated · ${sys?.activeTabsCount || 0} active</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-card" id="accessibilitySettingsCard">
+      <div class="card-header"><h2 class="nx-heading">Accessibility</h2></div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Caret browsing (F7)</div>
+          <div class="row-sub">Move through pages with a keyboard caret instead of the mouse</div>
+        </div>
+        <label class="nx-switch">
+          <input type="checkbox" id="setCaretBrowsingChk" ${s.accessibilityCaretBrowsing ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Highlight the focused item</div>
+          <div class="row-sub">Show a strong outline around the item keyboard focus is on</div>
+        </div>
+        <label class="nx-switch">
+          <input type="checkbox" id="setFocusHighlightChk" ${s.accessibilityFocusHighlight ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="section-card" id="systemSettingsCard">
+      <div class="card-header"><h2 class="nx-heading">System</h2></div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Continue running background apps when nextGx is closed</div>
+          <div class="row-sub">Let installed extensions and web apps keep running after you close the browser window</div>
+        </div>
+        <label class="nx-switch">
+          <input type="checkbox" id="setBackgroundAppsChk" ${s.runBackgroundApps ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Use graphics acceleration when available</div>
+          <div class="row-sub">Takes effect after restarting the browser</div>
+        </div>
+        <label class="nx-switch">
+          <input type="checkbox" id="setGpuChk" ${s.gpuAcceleration !== false ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
     </div>
 
     <div class="section-card" id="settingsImportExportCard">
@@ -3105,13 +4749,34 @@ async function renderSettingsPage() {
       </div>
     </div>
 
-    <div class="section-card">
+    <div class="section-card" id="aboutSettingsCard">
       <div class="card-header"><h2 class="nx-heading">About nextGx Browser</h2></div>
       <div class="card-row">
         <div class="row-info">
-          <div class="row-title">nextGx Browser v3.0.0 (64-bit) — Powered by Chromium Engine v156.0.8078.100</div>
-          <div class="row-sub">Designed for Linux & Windows (Microsoft Store MSIX Ready)</div>
+          <div class="row-title">${escapeHtml(aboutTitle)}</div>
+          <div class="row-sub">Designed for Linux &amp; Windows (Microsoft Store MSIX Ready)</div>
         </div>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Default browser</div>
+          <div class="row-sub">Open web links in nextGx Browser instead of another browser</div>
+          <div class="settings-form-msg ${defaultBrowserMsgKind}" id="setDefaultBrowserMsg" style="display:${defaultBrowserMsg ? 'block' : 'none'};">${escapeHtml(defaultBrowserMsg)}</div>
+        </div>
+        <button type="button" class="btn primary" id="btnSetDefaultBrowser">Make default</button>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Reset settings</div>
+          <div class="row-sub">Restore settings to their original defaults. Your bookmarks, history, passwords and extensions stay untouched.</div>
+        </div>
+        <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          ${resetConfirmOpen
+            ? `<span style="font-size:12px;color:var(--text-secondary);">Are you sure?</span>
+          <button type="button" class="btn danger-solid" id="btnConfirmResetSettings">Yes, reset settings</button>
+          <button type="button" class="btn" id="btnCancelResetSettings">Cancel</button>`
+            : `<button type="button" class="btn danger" id="btnResetSettings">Restore settings to their original defaults</button>`}
+        </span>
       </div>
     </div>
   `;
@@ -3228,16 +4893,31 @@ async function renderSettingsPage() {
     });
   });
 
-  mainContainer.querySelectorAll('#setSearchSeg .seg-btn').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      await window.gxChromePagesAPI.updateSettings({ searchEngine: btn.dataset.engine });
-      renderSettingsPage();
-    });
-  });
+  // [Wave2-D] Search engine manager (gap 5.2).
+  bindSearchEngineCard(s);
 
   document.getElementById('setBookmarksBarChk').addEventListener('change', (e) => {
     window.gxChromePagesAPI.updateSettings({ showBookmarksBar: e.target.checked });
   });
+
+  // [Wave2-D] Appearance toggles (gap 5.1): stored here, read by the main
+  // window UI (worker E).
+  const bindSettingsToggle = (id, key) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('change', (e) => {
+        window.gxChromePagesAPI.updateSettings({ [key]: e.target.checked });
+      });
+    }
+  };
+  bindSettingsToggle('setHomeButtonChk', 'showHomeButton');
+  bindSettingsToggle('setTabSearchChk', 'showTabSearchButton');
+  bindSettingsToggle('setCtrlTabMruChk', 'ctrlTabMru');
+  bindSettingsToggle('setTabHoverChk', 'tabHoverPreview');
+  bindSettingsToggle('setCaretBrowsingChk', 'accessibilityCaretBrowsing');
+  bindSettingsToggle('setFocusHighlightChk', 'accessibilityFocusHighlight');
+  bindSettingsToggle('setBackgroundAppsChk', 'runBackgroundApps');
+  bindSettingsToggle('setGpuChk', 'gpuAcceleration');
 
   const setGxCornerRailChk = document.getElementById('setGxCornerRailChk');
   if (setGxCornerRailChk) {
@@ -3299,12 +4979,96 @@ async function renderSettingsPage() {
     window.gxChromePagesAPI.updateSettings({ forceDarkWeb: e.target.checked });
   });
 
-  const setRestoreSessionChk = document.getElementById('setRestoreSessionChk');
-  if (setRestoreSessionChk) {
-    setRestoreSessionChk.addEventListener('change', (e) => {
-      window.gxChromePagesAPI.updateSettings({ restoreSession: e.target.checked });
+  // [Wave2-D] On startup (gap 5.3): 3 options + specific-pages editor.
+  mainContainer.querySelectorAll('input[name="startupMode"]').forEach((radio) => {
+    radio.addEventListener('change', async () => {
+      await window.gxChromePagesAPI.updateSettings({ startupMode: radio.value });
+      renderSettingsPage();
+    });
+  });
+  mainContainer.querySelectorAll('.startup-url-remove').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const idx = Number(btn.dataset.index);
+      // [Wave2-D] Read fresh settings so a quick remove+add can't lose an entry.
+      const fresh = (await window.gxChromePagesAPI.getSettings?.()) || {};
+      const next = (fresh.startupUrls || []).filter((_, i) => i !== idx);
+      await window.gxChromePagesAPI.updateSettings({ startupUrls: next });
+      renderSettingsPage();
+    });
+  });
+  const startupAddUrlForm = document.getElementById('startupAddUrlForm');
+  if (startupAddUrlForm) {
+    startupAddUrlForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const input = document.getElementById('startupAddUrlInput');
+      const errEl = document.getElementById('startupAddUrlError');
+      const check = validateHomepageInput(input ? input.value : '');
+      if (!check.ok) {
+        if (errEl) errEl.textContent = check.error;
+        return;
+      }
+      // [Wave2-D] Read fresh settings so a quick add+add can't lose an entry.
+      const fresh = (await window.gxChromePagesAPI.getSettings?.()) || {};
+      await window.gxChromePagesAPI.updateSettings({
+        startupUrls: [...(fresh.startupUrls || []), check.url]
+      });
+      renderSettingsPage();
     });
   }
+
+  // [Wave2-D] Languages (gap 5.4).
+  mainContainer.querySelectorAll('.lang-remove').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const tag = btn.dataset.tag;
+      // [Wave2-D] Fresh read: two quick removes must not resurrect each other.
+      const fresh = (await window.gxChromePagesAPI.getSettings?.()) || {};
+      const next = (Array.isArray(fresh.preferredLanguages) ? fresh.preferredLanguages : []).filter((t) => t !== tag);
+      if (!next.length) return;
+      await window.gxChromePagesAPI.updateSettings({ preferredLanguages: next });
+      renderSettingsPage();
+    });
+  });
+  const langAddForm = document.getElementById('langAddForm');
+  if (langAddForm) {
+    langAddForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const sel = document.getElementById('langAddSelect');
+      const tag = sel ? sel.value : '';
+      if (!tag) return;
+      langAddSelected = tag;
+      // [Wave2-D] Fresh read: two quick adds must not lose the first language.
+      const fresh = (await window.gxChromePagesAPI.getSettings?.()) || {};
+      const current = Array.isArray(fresh.preferredLanguages) ? fresh.preferredLanguages : [];
+      if (current.includes(tag)) return;
+      await window.gxChromePagesAPI.updateSettings({ preferredLanguages: [...current, tag] });
+      renderSettingsPage();
+    });
+    document.getElementById('langAddSelect')?.addEventListener('change', (e) => {
+      langAddSelected = e.target.value;
+    });
+  }
+  document.getElementById('setSpellcheckChk')?.addEventListener('change', (e) => {
+    window.gxChromePagesAPI.updateSettings({ spellcheckEnabled: e.target.checked });
+  });
+
+  // [Wave2-D] Downloads settings (gap 5.5).
+  document.getElementById('btnChangeDownloadPath')?.addEventListener('click', async () => {
+    if (!window.gxChromePagesAPI.chooseDownloadLocation) return;
+    const res = await window.gxChromePagesAPI.chooseDownloadLocation();
+    if (!res || res.canceled || !res.path) return;
+    await window.gxChromePagesAPI.updateSettings({ downloadPath: res.path });
+    renderSettingsPage();
+  });
+  document.getElementById('btnResetDownloadPath')?.addEventListener('click', async () => {
+    await window.gxChromePagesAPI.updateSettings({ downloadPath: '' });
+    renderSettingsPage();
+  });
+  document.getElementById('setDownloadAskWhereChk')?.addEventListener('change', (e) => {
+    window.gxChromePagesAPI.updateSettings({ downloadAskWhere: e.target.checked });
+  });
+  document.getElementById('setDownloadShowDoneChk')?.addEventListener('change', (e) => {
+    window.gxChromePagesAPI.updateSettings({ downloadShowWhenDone: e.target.checked });
+  });
 
   const homepageForm = document.getElementById('setHomepageForm');
   const homepageInput = document.getElementById('setHomepageInput');
@@ -3404,15 +5168,87 @@ async function renderSettingsPage() {
       window.gxChromePagesAPI.updateSettings({ autoSleepMinutes: mins });
     });
   });
+  // [Wave2-D] Delete browsing data (gap 5.11): time range + data-type list.
+  document.getElementById('setClearRangeSel')?.addEventListener('change', (e) => {
+    clearDataRange = e.target.value;
+  });
   document.getElementById('btnSetClearData').addEventListener('click', async () => {
     const cache = document.getElementById('chkSetClearCache')?.checked ?? true;
     const history = document.getElementById('chkSetClearHistory')?.checked ?? true;
     const cookies = document.getElementById('chkSetClearCookies')?.checked ?? false;
-    await window.gxChromePagesAPI.clearBrowsingData({ cache, cookies, history });
-    document.getElementById('btnSetClearData').textContent = 'Cleared!';
+    const downloads = document.getElementById('chkSetClearDownloads')?.checked ?? false;
+    const passwords = document.getElementById('chkSetClearPasswords')?.checked ?? false;
+    const autofill = document.getElementById('chkSetClearAutofill')?.checked ?? false;
+    const siteSettings = document.getElementById('chkSetClearSiteSettings')?.checked ?? false;
+    const btn = document.getElementById('btnSetClearData');
+    if (btn) btn.disabled = true;
+    const res = await window.gxChromePagesAPI.clearBrowsingData({
+      cache,
+      cookies,
+      history,
+      range: clearDataRange,
+      downloads,
+      passwords,
+      autofill,
+      siteSettings
+    });
+    const picked = [];
+    if (history) picked.push('history');
+    if (cookies) picked.push('cookies');
+    if (cache) picked.push('cache');
+    if (downloads) picked.push('download history');
+    if (passwords) picked.push('saved passwords');
+    if (autofill) picked.push('autofill data');
+    if (siteSettings) picked.push('site settings');
+    clearDataMsg = res
+      ? `Cleared ${picked.length ? picked.join(', ') : 'nothing selected'}${history ? ` (${clearDataRange === 'all' ? 'all time' : clearDataRange})` : ''}.`
+      : 'Clear failed — please try again.';
+    if (btn) btn.disabled = false;
+    const msgEl = document.getElementById('setClearDataMsg');
+    if (msgEl) {
+      msgEl.textContent = clearDataMsg;
+      msgEl.style.display = 'block';
+    }
     if (cookies) {
       await refreshSettingsCookies({ force: true });
     }
+  });
+
+  // [Wave2-D] Default browser + Reset settings (gap 5.14).
+  document.getElementById('btnSetDefaultBrowser')?.addEventListener('click', async () => {
+    if (!window.gxChromePagesAPI.setDefaultBrowser) return;
+    const res = await window.gxChromePagesAPI.setDefaultBrowser();
+    if (res && res.ok) {
+      defaultBrowserMsg = 'nextGx is now the default browser for web links.';
+      defaultBrowserMsgKind = 'success';
+    } else {
+      defaultBrowserMsg = res?.error
+        ? `Could not set as default browser: ${res.error}`
+        : 'Could not set as default browser. Check your system settings and try again.';
+      defaultBrowserMsgKind = 'error';
+    }
+    const msgEl = document.getElementById('setDefaultBrowserMsg');
+    if (msgEl) {
+      msgEl.textContent = defaultBrowserMsg;
+      msgEl.className = `settings-form-msg ${defaultBrowserMsgKind}`;
+      msgEl.style.display = 'block';
+    }
+  });
+  document.getElementById('btnResetSettings')?.addEventListener('click', () => {
+    resetConfirmOpen = true;
+    renderSettingsPage();
+  });
+  document.getElementById('btnCancelResetSettings')?.addEventListener('click', () => {
+    resetConfirmOpen = false;
+    renderSettingsPage();
+  });
+  document.getElementById('btnConfirmResetSettings')?.addEventListener('click', async () => {
+    if (!window.gxChromePagesAPI.resetSettings) return;
+    resetConfirmOpen = false;
+    defaultBrowserMsg = '';
+    clearDataMsg = '';
+    await window.gxChromePagesAPI.resetSettings();
+    renderSettingsPage();
   });
   document.getElementById('btnSetSleepNow').addEventListener('click', async () => {
     await window.gxChromePagesAPI.sleepBackgroundTabs();
@@ -3558,10 +5394,22 @@ function initThemeSync() {
           btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
         });
       }
-      const restoreChk = document.getElementById('setRestoreSessionChk');
-      if (restoreChk && s && typeof s.restoreSession === 'boolean') {
-        restoreChk.checked = s.restoreSession;
-      }
+      // [Wave2-D] Sync the settings-page toggles added in this round.
+      const syncToggle = (id, key) => {
+        const el = document.getElementById(id);
+        if (el && s && typeof s[key] === 'boolean') el.checked = s[key];
+      };
+      syncToggle('setHomeButtonChk', 'showHomeButton');
+      syncToggle('setTabSearchChk', 'showTabSearchButton');
+      syncToggle('setCtrlTabMruChk', 'ctrlTabMru');
+      syncToggle('setTabHoverChk', 'tabHoverPreview');
+      syncToggle('setSpellcheckChk', 'spellcheckEnabled');
+      syncToggle('setDownloadAskWhereChk', 'downloadAskWhere');
+      syncToggle('setDownloadShowDoneChk', 'downloadShowWhenDone');
+      syncToggle('setCaretBrowsingChk', 'accessibilityCaretBrowsing');
+      syncToggle('setFocusHighlightChk', 'accessibilityFocusHighlight');
+      syncToggle('setBackgroundAppsChk', 'runBackgroundApps');
+      syncToggle('setGpuChk', 'gpuAcceleration');
       const homeInp = document.getElementById('setHomepageInput');
       if (homeInp && s && typeof s.homepageUrl === 'string' && document.activeElement !== homeInp) {
         homeInp.value = s.homepageUrl;
@@ -3570,11 +5418,9 @@ function initThemeSync() {
           resetBtn.disabled = !s.homepageUrl;
         }
       }
-      if (s && typeof s.searchEngine === 'string') {
-        document.querySelectorAll('#setSearchSeg .seg-btn').forEach((btn) => {
-          btn.classList.toggle('active', btn.dataset.engine === s.searchEngine);
-        });
-      }
+      // Note: the search-engine list, startup radios and language list are
+      // re-rendered by renderSettingsPage on change; they are not live-synced
+      // here, so typing in their forms is never interrupted.
       if (currentPage === 'privacy') {
         renderPrivacyPage({ force: false });
       }

@@ -1,4 +1,4 @@
-const { app, shell } = require('electron');
+const { app, dialog, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { activeDownloadItems, windowContexts, state } = require('./core');
@@ -101,10 +101,55 @@ function broadcastIncognitoDownloads(session = null) {
 function setupDownloadListener(ses, profileId = 'default', { incognito = false } = {}) {
   ses.on('will-download', (_event, item) => {
     const id = 'dl-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
-    const downloadsDir = app.getPath('downloads');
+    // [FIXUP-3] (Chrome parity gap 5.5) Honour the stored download location
+    // + ask-where setting instead of always pinning app.getPath('downloads').
+    // The session default path (set from ipc.js) is NOT enough: this
+    // handler's setSavePath() overrides it, so it must read the settings
+    // itself. Ask-where uses the synchronous native dialog — the download
+    // has no path yet at this point, so blocking here is the race-free way
+    // to let the user pick before any bytes are written.
+    let downloadsDir = app.getPath('downloads');
+    let askWhere = false;
+    try {
+      const settings = state.storage ? state.storage.getSettings(profileId) : null;
+      if (settings) {
+        if (typeof settings.downloadPath === 'string' && settings.downloadPath.trim()) {
+          downloadsDir = settings.downloadPath.trim();
+        }
+        askWhere = settings.downloadAskWhere === true;
+      }
+    } catch (_) {}
     const { fileName, savePath, normKey } = getUniqueDownloadPath(downloadsDir, item.getFilename());
+    let finalSavePath = savePath;
+    let finalFileName = fileName;
+    if (askWhere) {
+      let parentWin = null;
+      try {
+        for (const ctx of windowContexts.values()) {
+          if (ctx && ctx.session === ses && ctx.win && !ctx.win.isDestroyed()) {
+            parentWin = ctx.win;
+            break;
+          }
+        }
+      } catch (_) {}
+      try {
+        const picked = dialog.showSaveDialogSync(parentWin || undefined, {
+          title: 'Save file as',
+          defaultPath: savePath,
+          buttonLabel: 'Save'
+        });
+        if (!picked) {
+          item.cancel();
+          return;
+        }
+        finalSavePath = picked;
+        finalFileName = path.basename(picked) || fileName;
+      } catch (_) {
+        // Dialog unavailable — fall through to the default location.
+      }
+    }
     inFlightSavePaths.add(normKey);
-    item.setSavePath(savePath);
+    item.setSavePath(finalSavePath);
 
     activeDownloadItems.set(id, item);
 
@@ -115,10 +160,10 @@ function setupDownloadListener(ses, profileId = 'default', { incognito = false }
 
     const record = {
       id,
-      filename: fileName,
-      category: detectFileCategory(fileName),
+      filename: finalFileName,
+      category: detectFileCategory(finalFileName),
       url: item.getURL(),
-      savePath,
+      savePath: finalSavePath,
       totalBytes: item.getTotalBytes(),
       receivedBytes: 0,
       speedBytesPerSec: 0,

@@ -23,6 +23,17 @@ let currentState = {
   split: null
 };
 let settingsState = {};
+// [TABS-W2] Gap 8.2/8.6 — mute state per tab id. Main owns the truth and
+// pushes it via 'tabs:mute-state'; the renderer keeps a mirror for the
+// speaker icon and the tab-menu label.
+const tabMuteMap = new Map();
+// [TABS-W2] Gap 8.1 — last-active timestamps for tab-search recency ordering.
+const tabLastSeen = new Map();
+// [TABS-W2] Gap 1.5 — the permission prompt currently open (omnibox chip).
+let activePermPrompt = null;
+// [TABS-W2] Gap 3.7 — cached history for omnibox suggestions (local only).
+let historyCache = null;
+let historyCacheAt = 0;
 let lastAdblockStats = null;
 let lastSystemStats = null;
 let cachedDownloads = [];
@@ -110,6 +121,8 @@ const findBar = document.getElementById('findBar');
 const findInput = document.getElementById('findInput');
 const findMatchCount = document.getElementById('findMatchCount');
 const zoomValueText = document.getElementById('zoomValueText');
+const btnZoomIndicator = document.getElementById('btnZoomIndicator');
+const zoomIndicatorText = document.getElementById('zoomIndicatorText');
 let lastFindQuery = '';
 
 function escapeHtml(str) {
@@ -126,6 +139,29 @@ function formatBytes(bytes) {
   const units = ['B', 'KB', 'MB', 'GB'];
   const i = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
   return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
+}
+
+// [URLBAR-3.1] Chrome-style omnibox elision: show host + path only, hide the
+// scheme for http(s) URLs. Display-only — the full URL is always kept internally
+// (navigation, copy and focus all use the real URL).
+function elideUrlForDisplay(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') return '';
+  try {
+    const u = new URL(rawUrl);
+    if (u.protocol === 'http:' || u.protocol === 'https:') {
+      // u.host keeps hostname + port and drops any user:pass credentials.
+      const rest = u.pathname + u.search + u.hash;
+      if (rest === '/' || rest === '') return u.host;
+      return u.host + rest;
+    }
+  } catch (_) {}
+  // Non-web schemes (nextgx://, chrome-extension://, about:blank, …) show as-is.
+  return rawUrl;
+}
+
+function getActiveTabFullUrl() {
+  const url = currentState.activeTab?.url || '';
+  return url === 'nextgx://newtab' ? '' : url;
 }
 
 function showToast(msg, { sound = true } = {}) {
@@ -244,7 +280,12 @@ function renderBookmarksBar(list) {
     }
   }
 
-  if (openBookmarkFolderName && !folderGroups.has(openBookmarkFolderName)) {
+  // [TABS-W2] Gap 7.5 — "All Bookmarks" is a virtual folder, not a real one.
+  if (
+    openBookmarkFolderName &&
+    openBookmarkFolderName !== 'All Bookmarks' &&
+    !folderGroups.has(openBookmarkFolderName)
+  ) {
     openBookmarkFolderName = null;
     window.gxAPI.closePopover();
   }
@@ -360,6 +401,47 @@ function renderBookmarksBar(list) {
 
     bookmarksBarItems.appendChild(btn);
   }
+
+  // [TABS-W2] Gap 7.5 — "All Bookmarks" overflow folder at the right end of
+  // the bar (Chrome parity): opens the folder popover with every bookmark.
+  const allBtn = document.createElement('button');
+  allBtn.type = 'button';
+  allBtn.className = 'bm-bar-item bm-bar-folder bm-bar-all';
+  if (openBookmarkFolderName === 'All Bookmarks') allBtn.classList.add('open');
+  allBtn.dataset.bmFolder = 'All Bookmarks';
+  allBtn.title = `All Bookmarks (${cachedBookmarks.length} ${
+    cachedBookmarks.length === 1 ? 'bookmark' : 'bookmarks'
+  })`;
+  allBtn.innerHTML = `
+    <span class="bm-favicon-wrap">
+      <svg class="bm-fallback-svg bm-folder-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+    </span>
+    <span class="bm-bar-label">All Bookmarks</span>
+    <svg class="bm-folder-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+  `;
+  allBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    window.gxSounds?.playClick();
+    if (openBookmarkFolderName === 'All Bookmarks') {
+      openBookmarkFolderName = null;
+      updateBookmarkFolderButtonsState();
+      window.gxAPI.closePopover();
+      return;
+    }
+    openBookmarkFolderName = 'All Bookmarks';
+    updateBookmarkFolderButtonsState();
+    const rect = allBtn.getBoundingClientRect();
+    const popHeight = Math.min(360, Math.max(96, 48 + cachedBookmarks.length * 33 + 12));
+    window.gxAPI.openPopover({
+      kind: 'bookmark-folder',
+      x: Math.round(rect.left),
+      y: Math.round(rect.bottom + 2),
+      width: 256,
+      height: popHeight,
+      payload: { folder: 'All Bookmarks', items: [...cachedBookmarks] }
+    });
+  });
+  bookmarksBarItems.appendChild(allBtn);
 }
 
 if (bookmarksBarItems) {
@@ -661,6 +743,20 @@ if (btnAddWorkspace) {
   });
 }
 
+// [TABS-W2] Gap 8.2/8.6 — speaker button on noisy/muted tabs. Clicking it
+// mutes/unmutes the site (handled in the tab click listener); the muted
+// variant shows a speaker with an X. Used by buildTabElement and by
+// patchTabElementInPlace so the icon survives the fast-path re-render.
+function tabAudioBtnHtml(tab, isMuted) {
+  if (isMuted) {
+    return `<button class="tab-audio-btn muted" draggable="false" data-muted="true" title="Unmute site"><svg class="tab-audio-svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="16" y1="9" x2="22" y2="15"/><line x1="22" y1="9" x2="16" y2="15"/></svg></button>`;
+  }
+  if (tab.audible) {
+    return `<button class="tab-audio-btn" draggable="false" data-muted="false" title="Mute site"><svg class="tab-audio-svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></button>`;
+  }
+  return '';
+}
+
 function buildTabElement(tab, group, state, activeWsGroupsList, otherClosableCount) {
   const el = document.createElement('div');
   const isActive = tab.id === state.activeTabId;
@@ -699,10 +795,8 @@ function buildTabElement(tab, group, state, activeWsGroupsList, otherClosableCou
     el.dataset.splitPane = splitRole;
   }
   el.draggable = true;
-  const splitTitlePrefix = splitRole ? `[Split ${splitRole === 'left' ? 'Left' : 'Right'}] ` : '';
-  el.title = inGroup
-    ? `${splitTitlePrefix}[${group.name}] ${tab.title}\n${tab.url}`
-    : `${splitTitlePrefix}${tab.title}\n${tab.url}`;
+  // [TABS-W2] Gap 5.1 — no native `title` tooltip on the tab: the hover
+  // preview card is the tooltip, and the native one would double it.
 
   const iconHtml = tab.favicon
     ? `<img class="tab-favicon" draggable="false" src="${escapeHtml(tab.favicon)}" alt="" onerror="this.style.display='none'" />`
@@ -716,9 +810,10 @@ function buildTabElement(tab, group, state, activeWsGroupsList, otherClosableCou
       }<line x1="12" y1="4" x2="12" y2="20"/></svg></span>`
     : '';
 
-  const audioSvg = tab.audible
-    ? `<svg class="tab-audio-svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>`
-    : '';
+  // [TABS-W2] Gap 8.2/8.6 — speaker button (click to mute/unmute the site);
+  // muted tabs show the crossed-out speaker even when not currently audible.
+  const isTabMuted = tabMuteMap.get(tab.id) === true;
+  const audioBtn = tabAudioBtnHtml(tab, isTabMuted);
 
   const sleepSvg = tab.sleeping
     ? `<svg class="tab-sleep-svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`
@@ -732,7 +827,7 @@ function buildTabElement(tab, group, state, activeWsGroupsList, otherClosableCou
     el.innerHTML = `
       ${iconHtml}
       ${splitSvg}
-      ${audioSvg}
+      ${audioBtn}
       ${sleepSvg}
       <span class="tab-title">${escapeHtml(tab.title || 'Start Page')}</span>
       <button class="tab-close-btn" draggable="false" title="Close (Ctrl+W)">${closeSvg}</button>
@@ -740,7 +835,7 @@ function buildTabElement(tab, group, state, activeWsGroupsList, otherClosableCou
   }
 
   el.addEventListener('dragstart', (e) => {
-    if (e.target && e.target.closest && e.target.closest('.tab-close-btn')) {
+    if (e.target && e.target.closest && e.target.closest('.tab-close-btn, .tab-audio-btn')) {
       e.preventDefault();
       return;
     }
@@ -827,8 +922,18 @@ function buildTabElement(tab, group, state, activeWsGroupsList, otherClosableCou
     e.preventDefault();
     e.stopPropagation();
     window.gxSounds?.playClick();
+    hideTabHoverCard();
     tabContextMenuOpen = true;
     activeTabContextMode = 'tab';
+    // [TABS-W2] Gap 8.2 — extra fields the tab menu needs (index, tabs to
+    // the right, mute state, URL). tabsToRight counts unpinned same-workspace
+    // tabs after this one, matching closeTabsToRight in tabs.js.
+    const tabIndex = state.tabs.findIndex((t) => t.id === tab.id);
+    const tabsToRight = state.tabs
+      .slice(tabIndex + 1)
+      .filter(
+        (t) => !t.pinned && (t.workspaceId || 'default') === (tab.workspaceId || 'default')
+      ).length;
     window.gxAPI.openPopover({
       kind: 'tab-context',
       x: Math.round(e.clientX),
@@ -838,6 +943,10 @@ function buildTabElement(tab, group, state, activeWsGroupsList, otherClosableCou
       payload: {
         contextType: 'tab',
         id: tab.id,
+        index: tabIndex,
+        tabsToRight,
+        muted: tabMuteMap.get(tab.id) === true,
+        url: tab.url || '',
         pinned: Boolean(tab.pinned),
         sleeping: Boolean(tab.sleeping),
         hasPlayingVideo: Boolean(tab.hasPlayingVideo),
@@ -875,12 +984,19 @@ function buildTabElement(tab, group, state, activeWsGroupsList, otherClosableCou
       e.stopPropagation();
       return;
     }
+    // [TABS-W2] Gap 8.2/8.6 — click the speaker to mute/unmute the site.
+    if (e.target.closest('.tab-audio-btn')) {
+      e.stopPropagation();
+      window.gxAPI.muteTab(tab.id);
+      return;
+    }
     if (e.target.closest('.tab-close-btn')) {
       e.stopPropagation();
       window.gxSounds?.playTabClose();
       window.gxAPI.closeTab(tab.id);
       return;
     }
+    hideTabHoverCard();
     userScrolledTabStrip = false;
     window.gxSounds?.playClick();
     window.gxAPI.closePopover();
@@ -892,6 +1008,15 @@ function buildTabElement(tab, group, state, activeWsGroupsList, otherClosableCou
       window.gxSounds?.playTabClose();
       window.gxAPI.closeTab(tab.id);
     }
+  });
+
+  // [TABS-W2] Gap 5.1 — hover preview card (Chrome-style), delayed so it
+  // does not flash while sweeping across the strip.
+  el.addEventListener('mouseenter', () => {
+    scheduleTabHoverCard(tab, group, el);
+  });
+  el.addEventListener('mouseleave', () => {
+    hideTabHoverCard();
   });
 
   return el;
@@ -1025,12 +1150,9 @@ function patchTabElementInPlace(el, tab, group, state) {
   el.classList.toggle('audible', Boolean(tab.audible));
   el.classList.toggle('split-focused', isSplitFocused);
 
-  const splitTitlePrefix = splitRole ? `[Split ${splitRole === 'left' ? 'Left' : 'Right'}] ` : '';
-  const nextTitleAttr = group
-    ? `${splitTitlePrefix}[${group.name}] ${tab.title}\n${tab.url}`
-    : `${splitTitlePrefix}${tab.title}\n${tab.url}`;
-  if (el.title !== nextTitleAttr) el.title = nextTitleAttr;
-
+  // [TABS-W2] Gap 5.1 — the native `title` tooltip was removed from the
+  // tab element (see buildTabElement): the hover preview card is the
+  // tooltip, and the native one would double it.
   const titleEl = el.querySelector('.tab-title');
   const displayTitle = tab.title || 'Start Page';
   if (titleEl && titleEl.textContent !== displayTitle) {
@@ -1065,13 +1187,21 @@ function patchTabElementInPlace(el, tab, group, state) {
   }
 
   if (!tab.pinned) {
-    const existingAudio = el.querySelector('.tab-audio-svg');
-    if (tab.audible && !existingAudio) {
+    // [TABS-W2] Gap 8.2/8.6 — speaker button: present when audible OR muted;
+    // swap the button when the muted state flips.
+    const isMuted = tabMuteMap.get(tab.id) === true;
+    const wantAudio = Boolean(tab.audible || isMuted);
+    const existingAudioBtn = el.querySelector('.tab-audio-btn');
+    if (wantAudio && !existingAudioBtn) {
       const wrap = document.createElement('span');
-      wrap.innerHTML = `<svg class="tab-audio-svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>`;
+      wrap.innerHTML = tabAudioBtnHtml(tab, isMuted);
       if (titleEl) el.insertBefore(wrap.firstElementChild, titleEl);
-    } else if (!tab.audible && existingAudio) {
-      existingAudio.remove();
+    } else if (!wantAudio && existingAudioBtn) {
+      existingAudioBtn.remove();
+    } else if (existingAudioBtn && existingAudioBtn.dataset.muted !== String(isMuted)) {
+      const wrap = document.createElement('span');
+      wrap.innerHTML = tabAudioBtnHtml(tab, isMuted);
+      existingAudioBtn.replaceWith(wrap.firstElementChild);
     }
 
     const existingSleep = el.querySelector('.tab-sleep-svg');
@@ -1083,6 +1213,262 @@ function patchTabElementInPlace(el, tab, group, state) {
       existingSleep.remove();
     }
   }
+}
+
+// [TABS-W2] Gap 5.1 — tab hover preview card (Chrome-style), shown after a
+// short delay so it does not flash while sweeping across the strip. The
+// card element is created lazily and appended to <body>.
+let tabHoverTimer = null;
+let tabHoverCardEl = null;
+
+function getTabHoverCardEl() {
+  if (tabHoverCardEl) return tabHoverCardEl;
+  const card = document.createElement('div');
+  card.id = 'tabHoverCard';
+  card.className = 'tab-hover-card hidden';
+  document.body.appendChild(card);
+  tabHoverCardEl = card;
+  return card;
+}
+
+function scheduleTabHoverCard(tab, group, tabEl) {
+  hideTabHoverCard();
+  if (settingsState.tabHoverPreview === false) return;
+  tabHoverTimer = setTimeout(() => {
+    const card = getTabHoverCardEl();
+    card.innerHTML = `
+      <div class="tab-hover-head">
+        ${
+          tab.favicon
+            ? `<img class="tab-hover-favicon" src="${escapeHtml(tab.favicon)}" alt="" onerror="this.style.display='none'" />`
+            : `<svg class="tab-hover-favicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8"/></svg>`
+        }
+        <span class="tab-hover-title">${escapeHtml(tab.title || 'Start Page')}</span>
+      </div>
+      <div class="tab-hover-url">${escapeHtml(tab.url || '')}</div>
+    `;
+    card.classList.remove('hidden');
+    const rect = tabEl.getBoundingClientRect();
+    const cardW = card.offsetWidth || 280;
+    card.style.left = `${Math.max(8, Math.min(window.innerWidth - cardW - 8, Math.round(rect.left)))}px`;
+    card.style.top = `${Math.round(rect.bottom + 8)}px`;
+  }, 400);
+}
+
+function hideTabHoverCard() {
+  if (tabHoverTimer) {
+    clearTimeout(tabHoverTimer);
+    tabHoverTimer = null;
+  }
+  if (tabHoverCardEl) tabHoverCardEl.classList.add('hidden');
+}
+
+// [TABS-W2] Gap 8.1 — tab search dropdown (chevron at the left of the tab
+// strip, or Ctrl+Shift+A). The dropdown lives in the POPOVER (kind
+// 'tab-search', rendered by popover.html), NOT in a renderer-side panel:
+// renderer fixed panels below the top chrome are covered by the active
+// tab's WebContentsView in the composited window, so only the popover view
+// (which main brings to front) renders fully. Lists open tabs by recency
+// with favicon, title and URL; Enter/click switches, per-row ✕ closes
+// (handled inside the popover). Main toggles the popover closed when the
+// same kind is re-opened, so the chevron / Ctrl+Shift+A naturally toggle it.
+function openTabSearchPopover() {
+  const rows = (currentState.tabs || []).map((t, i) => ({
+    id: t.id,
+    title: t.title || 'Start Page',
+    url: t.url || '',
+    favicon: t.favicon || '',
+    groupName:
+      ((currentState.groups || []).find((g) => g.id === t.groupId) || {}).name || '',
+    lastSeen: tabLastSeen.get(t.id) || 0,
+    stripIndex: i
+  }));
+  rows.sort((a, b) => b.lastSeen - a.lastSeen || a.stripIndex - b.stripIndex);
+  const chevron = document.getElementById('btnTabSearch');
+  const rect = chevron ? chevron.getBoundingClientRect() : { left: 210, bottom: 40 };
+  window.gxAPI.openPopover({
+    kind: 'tab-search',
+    x: Math.round(rect.left),
+    y: Math.round(rect.bottom + 6),
+    width: 400,
+    height: 320,
+    payload: {
+      tabs: rows.map(({ id, title, url, favicon, groupName }) => ({
+        id,
+        title,
+        url,
+        favicon,
+        groupName
+      }))
+    }
+  });
+}
+
+// [TABS-W2] Gap 3.7 — history-based omnibox suggestions (local history
+// only, no search-suggestion backend). The dropdown lives in the POPOVER
+// (kinds 'omnibox-suggest' / 'omnibox-suggest-alt', rendered by
+// popover.html) — a renderer-side panel below the address bar is covered by
+// the active tab's WebContentsView in the composited window. The two kinds
+// alternate on every update because popovers.js toggles a popover closed
+// when re-opened with the same kind, and there is no update channel for an
+// already-open popover. Click a row to navigate, Enter keeps the normal
+// typed-text navigation (which closes the popover).
+let omniboxSuggestTimer = null;
+let omniboxSuggestKindAlt = false;
+let omniboxSuggestLastUrls = '';
+
+async function getHistoryForSuggestions() {
+  const now = Date.now();
+  if (historyCache && now - historyCacheAt < 30000) return historyCache;
+  try {
+    historyCache = (await window.gxAPI.getHistory?.()) || [];
+  } catch (_) {
+    historyCache = [];
+  }
+  historyCacheAt = now;
+  return historyCache;
+}
+
+async function renderOmniboxSuggestions() {
+  const q = addressInput.value.trim().toLowerCase();
+  if (!q || q.length < 2) {
+    if (omniboxSuggestLastUrls) window.gxAPI.closePopover();
+    omniboxSuggestLastUrls = '';
+    return;
+  }
+  const history = await getHistoryForSuggestions();
+  const seen = new Set();
+  const matches = [];
+  for (const entry of history) {
+    const url = entry.url || '';
+    const title = entry.title || '';
+    if (!url || seen.has(url)) continue;
+    if (title.toLowerCase().includes(q) || url.toLowerCase().includes(q)) {
+      seen.add(url);
+      matches.push({ title, url });
+      if (matches.length >= 6) break;
+    }
+  }
+  const filtered = matches.filter((m) => m.url.toLowerCase() !== q);
+  const urlsKey = filtered.map((m) => m.url).join('|');
+  if (!filtered.length) {
+    if (omniboxSuggestLastUrls) window.gxAPI.closePopover();
+    omniboxSuggestLastUrls = '';
+    return;
+  }
+  // Same list as last time — don't churn the popover.
+  if (urlsKey === omniboxSuggestLastUrls) return;
+  omniboxSuggestLastUrls = urlsKey;
+  omniboxSuggestKindAlt = !omniboxSuggestKindAlt;
+  const rect = addressForm.getBoundingClientRect();
+  window.gxAPI.openPopover({
+    kind: omniboxSuggestKindAlt ? 'omnibox-suggest-alt' : 'omnibox-suggest',
+    x: Math.round(rect.left),
+    y: Math.round(rect.bottom + 6),
+    width: Math.max(320, Math.min(560, Math.round(rect.width))),
+    height: Math.min(320, 54 + filtered.length * 36),
+    payload: { suggestions: filtered }
+  });
+}
+
+function hideOmniboxSuggestions() {
+  // Only close when the suggestions popover may be open — never clobber
+  // another popover (e.g. a permission prompt) with a blind close.
+  if (omniboxSuggestLastUrls) window.gxAPI.closePopover();
+  omniboxSuggestLastUrls = '';
+}
+
+// [TABS-W2] Gap 1.5 — omnibox permission chip (while a prompt is open) and
+// persistent per-site permission icons (after a decision). The chip text
+// mirrors Chrome ("Use microphone?" etc.); the icons reopen the site-info
+// panel, where the permission can be changed.
+const PERM_CHIP_LABELS = {
+  microphone: 'Use microphone?',
+  camera: 'Use camera?',
+  geolocation: 'Use your location?',
+  notifications: 'Get notifications?',
+  'clipboard-read': 'Share clipboard?',
+  'screen-share': 'Share your screen?'
+};
+const PERM_ICON_SVGS = {
+  camera:
+    '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>',
+  microphone:
+    '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>',
+  geolocation:
+    '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
+  notifications:
+    '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',
+  'clipboard-read':
+    '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>',
+  'screen-share':
+    '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>'
+};
+
+function renderPermChip() {
+  const chip = document.getElementById('permChip');
+  if (!chip) return;
+  if (!activePermPrompt || !activePermPrompt.open) {
+    chip.classList.add('hidden');
+    chip.textContent = '';
+    return;
+  }
+  const key = (activePermPrompt.keys || [])[0];
+  chip.textContent = PERM_CHIP_LABELS[key] || 'Permission requested';
+  chip.title = 'This site is asking for permission — answer in the prompt';
+  chip.classList.remove('hidden');
+}
+
+async function refreshSitePermIcons() {
+  const wrap = document.getElementById('permSiteIcons');
+  if (!wrap) return;
+  const active = currentState.activeTab;
+  const origin = active?.origin || '';
+  wrap.innerHTML = '';
+  if (!origin || !/^https?:\/\//i.test(origin)) return;
+  let perms = {};
+  try {
+    perms = (await window.gxAPI.getSitePermissions?.(origin)) || {};
+  } catch (_) {
+    return;
+  }
+  for (const { key, label } of SITE_INFO_PERMS) {
+    const val = perms[key];
+    if (!val || val === 'ask') continue;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'perm-site-icon' + (val === 'block' ? ' blocked' : '');
+    btn.title = `${label}: ${val === 'allow' ? 'Allowed' : 'Blocked'} — click to change`;
+    btn.innerHTML = PERM_ICON_SVGS[key] || '';
+    btn.addEventListener('click', () => {
+      btnSiteSecurity.click();
+    });
+    wrap.appendChild(btn);
+  }
+}
+
+// [TABS-W2] Gap 7.4 — open the bookmark bubble (popover) for the active tab
+// instead of toggling the bookmark directly (star click / Ctrl+D).
+function openBookmarkBubble() {
+  const active = currentState.activeTab;
+  if (!active || !active.url || !/^https?:\/\//i.test(active.url)) {
+    showToast('Only web pages can be bookmarked');
+    return;
+  }
+  const rect = btnBookmarkStar.getBoundingClientRect();
+  window.gxAPI.openPopover({
+    kind: 'bookmark-bubble',
+    x: Math.round(Math.max(8, rect.left - 140)),
+    y: Math.round(rect.bottom + 6),
+    width: 300,
+    height: 260,
+    payload: {
+      url: active.url,
+      title: active.title || active.url,
+      favicon: active.favicon || '',
+      isBookmarked: Boolean(active.isBookmarked)
+    }
+  });
 }
 
 function renderTabs(state) {
@@ -1104,6 +1490,8 @@ function renderTabs(state) {
   lastRenderedTabCount = state.tabs.length;
 
   currentState = state;
+  // [TABS-W2] Gap 8.1 — track last-active times for tab-search recency.
+  if (state.activeTabId) tabLastSeen.set(state.activeTabId, Date.now());
   renderWorkspaces(state);
 
   const allTabs = Array.isArray(state.tabs) ? state.tabs : [];
@@ -1265,7 +1653,21 @@ function syncActiveTabBarControls(state, activeChanged = false) {
     btnReload.setAttribute('aria-label', isLoading ? 'Stop loading' : 'Reload');
 
     if (document.activeElement !== addressInput || !document.hasFocus() || activeChanged) {
-      addressInput.value = active.url === 'nextgx://newtab' ? '' : active.url;
+      // [URLBAR-3.1] Unfocused omnibox shows the elided display value (no scheme).
+      addressInput.value = active.url === 'nextgx://newtab' ? '' : elideUrlForDisplay(active.url);
+    }
+
+    // [FIXUP-1] Close the site-info / zoom popover when the active tab
+    // navigates away — the popover content is per-URL (same as the old
+    // renderer panels). closePopover is a no-op when nothing is open;
+    // Chrome closes these bubbles on navigation too.
+    if (siteInfoPopoverUrl && active.url !== siteInfoPopoverUrl) {
+      siteInfoPopoverUrl = '';
+      window.gxAPI.closePopover();
+    }
+    if (zoomPopoverUrl && active.url !== zoomPopoverUrl) {
+      zoomPopoverUrl = '';
+      window.gxAPI.closePopover();
     }
 
     const isHttpInsecure = Boolean(active.isHttpInsecure);
@@ -1298,6 +1700,14 @@ function syncActiveTabBarControls(state, activeChanged = false) {
     if (zoomValueText) {
       zoomValueText.textContent = `${active.zoomPercent || 100}%`;
     }
+    // [URLBAR-3.5] Omnibox magnifier: visible only while zoom is not 100%.
+    if (btnZoomIndicator) {
+      const pct = active.zoomPercent || 100;
+      btnZoomIndicator.classList.toggle('hidden', pct === 100);
+      if (zoomIndicatorText) zoomIndicatorText.textContent = `${pct}%`;
+    }
+    // [URLBAR-9.2] Per-site zoom restore / remember.
+    syncPerSiteZoom(state, active);
   } else if (btnPopOutVideo) {
     btnPopOutVideo.disabled = true;
     btnPopOutVideo.classList.remove('has-video', 'active');
@@ -1335,6 +1745,12 @@ function syncActiveTabBarControls(state, activeChanged = false) {
 
   if (activeLeftTool === 'gxControl') {
     renderPerformanceTabList();
+  }
+
+  // [TABS-W2] Gap 1.5 — persistent site-permission icons in the omnibox;
+  // refresh when the active tab changes.
+  if (activeChanged) {
+    refreshSitePermIcons();
   }
 }
 
@@ -1480,6 +1896,25 @@ if (btnTabsScrollRight) {
   });
 }
 
+// [TABS-W2] Gap 1.5 — clicking the permission chip opens the site-info
+// panel, where the permission can be answered/changed.
+const permChip = document.getElementById('permChip');
+if (permChip) {
+  permChip.addEventListener('click', () => {
+    btnSiteSecurity.click();
+  });
+}
+
+// [TABS-W2] Gap 8.1 — tab search chevron opens the popover (main toggles
+// it closed when it is already open).
+const btnTabSearch = document.getElementById('btnTabSearch');
+if (btnTabSearch) {
+  btnTabSearch.addEventListener('click', () => {
+    window.gxSounds?.playClick();
+    openTabSearchPopover();
+  });
+}
+
 window.addEventListener('resize', () => {
   updateTabScrollButtons();
   if (sidebarPanelState.open) {
@@ -1584,7 +2019,16 @@ addressForm.addEventListener('submit', (e) => {
 
 addressInput.addEventListener('focus', () => {
   if (suppressAddressFocusSelect) return;
+  // [URLBAR-3.1/3.2] Focus reveals the FULL URL (including scheme) and selects it.
+  const full = getActiveTabFullUrl();
+  if (full && addressInput.value !== full) addressInput.value = full;
   addressInput.select();
+});
+
+addressInput.addEventListener('blur', () => {
+  // [URLBAR-3.1] Back to the elided display value once focus leaves the omnibox.
+  const full = getActiveTabFullUrl();
+  addressInput.value = full ? elideUrlForDisplay(full) : '';
 });
 
 addressInput.addEventListener('mousedown', (e) => {
@@ -1597,35 +2041,151 @@ addressInput.addEventListener('mousedown', (e) => {
   }
 });
 
+// [TABS-W2] Gap 3.7 — history suggestions while typing in the omnibox.
+addressInput.addEventListener('input', () => {
+  clearTimeout(omniboxSuggestTimer);
+  omniboxSuggestTimer = setTimeout(() => {
+    renderOmniboxSuggestions();
+  }, 120);
+});
+addressInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') hideOmniboxSuggestions();
+});
+addressInput.addEventListener('blur', () => {
+  // mousedown on a suggestion row fires before blur and navigates; hiding
+  // here only clears the panel when focus genuinely leaves the omnibox.
+  setTimeout(() => hideOmniboxSuggestions(), 150);
+});
+
+// [FIXUP-1] Site-info bubble + zoom bubble (Chrome parity gaps 3.3/3.4/3.5):
+// the content now lives in the popover system (popover.html kinds
+// 'site-info' / 'zoom-bubble') because the tab's WebContentsView occludes
+// any renderer-side fixed panel below the top chrome. The renderer only
+// opens the popover anchored under the lock icon / magnifier; the popover
+// itself renders the contents and wires the controls. Clicking the anchor
+// again toggles it closed (openPopover closes a same-kind popover).
+// siteInfoPopoverUrl / zoomPopoverUrl remember which URL the bubble was
+// opened for, so a navigation away closes it (same as the old panels);
+// clicking into the page or pressing Escape is handled by the main process
+// (tab focus / shortcut closePopover).
+// SITE_INFO_PERMS is also used by refreshSitePermIcons (omnibox site icons).
+const SITE_INFO_PERMS = [
+  { key: 'camera', label: 'Camera' },
+  { key: 'microphone', label: 'Microphone' },
+  { key: 'geolocation', label: 'Location' },
+  { key: 'notifications', label: 'Notifications' },
+  { key: 'clipboard-read', label: 'Clipboard' },
+  { key: 'screen-share', label: 'Screen sharing' }
+];
+let siteInfoPopoverUrl = '';
+let zoomPopoverUrl = '';
+
 btnSiteSecurity.addEventListener('click', () => {
   window.gxSounds?.playClick();
-  const rect = btnSiteSecurity.getBoundingClientRect();
   const active = currentState.activeTab || {};
-  window.gxAPI.openPopover({
-    kind: 'permissions',
-    x: rect.left,
-    y: TOP_CHROME_HEIGHT + 2,
-    width: 316,
-    height: 388,
-    payload: {
-      origin: active.origin || '',
-      url: active.url || '',
-      isSecure: Boolean(active.isSecure),
-      isHttpInsecure: Boolean(active.isHttpInsecure)
-    }
+  const url = active.url || '';
+  if (!url || url === 'nextgx://newtab') {
+    showToast('No site to inspect on this page');
+    return;
+  }
+  const rect = btnSiteSecurity.getBoundingClientRect();
+  siteInfoPopoverUrl = url;
+  zoomPopoverUrl = '';
+  Promise.resolve(
+    window.gxAPI.openPopover({
+      kind: 'site-info',
+      x: Math.round(rect.left),
+      y: TOP_CHROME_HEIGHT + 2,
+      width: 320,
+      height: 424,
+      payload: { origin: active.origin || '', url }
+    })
+  ).then((opened) => {
+    // Toggled closed by the same click.
+    if (!opened) siteInfoPopoverUrl = '';
   });
 });
 
-btnBookmarkStar.addEventListener('click', async () => {
+btnZoomIndicator?.addEventListener('click', () => {
   window.gxSounds?.playClick();
-  const res = await window.gxAPI.toggleBookmark();
-  showToast(res.added ? 'Saved to Bookmarks' : 'Removed from Bookmarks');
+  const rect = btnZoomIndicator.getBoundingClientRect();
+  zoomPopoverUrl = currentState.activeTab?.url || '';
+  siteInfoPopoverUrl = '';
+  Promise.resolve(
+    window.gxAPI.openPopover({
+      kind: 'zoom-bubble',
+      x: Math.round(rect.left),
+      y: TOP_CHROME_HEIGHT + 2,
+      width: 320,
+      height: 100,
+      payload: { zoomPercent: currentState.activeTab?.zoomPercent || 100 }
+    })
+  ).then((opened) => {
+    // Toggled closed by the same click.
+    if (!opened) zoomPopoverUrl = '';
+  });
 });
 
+// [URLBAR-9.2] Per-site zoom: restore the stored zoom when the active tab lands
+// on a known origin, and remember zoom changes (including Ctrl++/Ctrl+- / Ctrl+0
+// shortcuts, which bypass the 'tabs:zoom' IPC and are persisted here instead).
+let lastZoomSiteKey = '';
+let lastZoomSitePercent = 0;
+let zoomApplyInFlight = false;
+let zoomSaveTimer = null;
+
+function syncPerSiteZoom(state, active) {
+  if (!active || !active.url) return;
+  const origin = active.origin || '';
+  if (!origin || !(active.url.startsWith('http://') || active.url.startsWith('https://'))) return;
+  const percent = active.zoomPercent || 100;
+  const key = `${state.activeTabId}|${origin}`;
+  if (key !== lastZoomSiteKey) {
+    lastZoomSiteKey = key;
+    lastZoomSitePercent = percent;
+    if (window.gxAPI.getSiteZoom) {
+      zoomApplyInFlight = true;
+      window.gxAPI
+        .getSiteZoom(origin)
+        .then((stored) => {
+          const factor = Number(stored);
+          if (Number.isFinite(factor) && factor > 0 && Math.round(factor * 100) !== percent) {
+            window.gxAPI.setZoom(factor);
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          zoomApplyInFlight = false;
+        });
+    }
+    return;
+  }
+  if (percent !== lastZoomSitePercent && !zoomApplyInFlight) {
+    lastZoomSitePercent = percent;
+    clearTimeout(zoomSaveTimer);
+    zoomSaveTimer = setTimeout(() => {
+      window.gxAPI.saveSiteZoom?.(origin, percent / 100);
+    }, 400);
+  }
+}
+
+// [TABS-W2] Gap 7.4 — star opens the bookmark bubble (Name / Folder /
+// Remove / Done) instead of toggling directly.
+btnBookmarkStar.addEventListener('click', async () => {
+  window.gxSounds?.playClick();
+  openBookmarkBubble();
+});
+
+// [TABS-W2] Gap 9.6 — reader button now uses the real extraction channel
+// (toggleReaderModeExtract) instead of the old CSS-only toggleReaderMode.
 btnReaderMode.addEventListener('click', async () => {
   window.gxSounds?.playClick();
-  const active = await window.gxAPI.toggleReaderMode();
-  showToast(active ? 'Reader View Enabled' : 'Reader View Off');
+  const res = await window.gxAPI.toggleReaderModeExtract();
+  if (res && res.ok) {
+    showToast(res.active ? 'Reader View Enabled' : 'Reader View Off');
+  } else if (res && res.error) {
+    showToast(res.error);
+  }
 });
 
 if (btnPopOutVideo) {
@@ -2359,7 +2919,8 @@ function updateFindMatchCount(result) {
   const matches = Number(result.matches) || 0;
   const active = Number(result.activeMatchOrdinal) || 0;
   if (matches > 0) {
-    findMatchCount.textContent = `${active} / ${matches}`;
+    // [URLBAR-9.1] Chrome format: "1/1" (no spaces around the slash).
+    findMatchCount.textContent = `${active}/${matches}`;
     findMatchCount.classList.add('has-matches');
     findMatchCount.classList.remove('no-results');
   } else if (result.finalUpdate) {
@@ -3159,6 +3720,15 @@ function syncSettingsUI(s) {
   const btnHome = document.getElementById('btnHome');
   if (btnHome) {
     btnHome.title = s.homepageUrl ? `Home (${s.homepageUrl})` : 'Home (Start Page)';
+    // [TABS-W2] Gap 5.1 — home button follows the worker-D setting
+    // (showHomeButton; default ON when the key is absent).
+    btnHome.classList.toggle('hidden', s.showHomeButton === false);
+  }
+  // [TABS-W2] Gap 5.1 / 8.1 — tab search chevron follows its setting
+  // (showTabSearchButton; default ON when the key is absent).
+  const btnTabSearchEl = document.getElementById('btnTabSearch');
+  if (btnTabSearchEl) {
+    btnTabSearchEl.classList.toggle('hidden', s.showTabSearchButton === false);
   }
 
   document.querySelectorAll('#searchEngineSegments .seg-btn').forEach((b) => {
@@ -3237,16 +3807,44 @@ window.gxAPI.onToast((msg) => {
   }
 });
 
+// [TABS-W2] Gap 8.2/8.6 — main pushes mute state changes; mirror them and
+// re-render so the speaker icon / tab-menu label update.
+window.gxAPI.onTabMuteState?.(({ tabId, muted }) => {
+  if (!tabId) return;
+  tabMuteMap.set(tabId, Boolean(muted));
+  renderTabs(currentState);
+});
+// [TABS-W2] Gap 1.5 — permission prompt opened/closed: show/hide the chip.
+// On close, refresh the persistent site icons: the decision was just stored,
+// so the icon for the granted/denied permission should appear immediately
+// instead of waiting for the next tab switch.
+window.gxAPI.onPermissionPromptState?.((state) => {
+  activePermPrompt = state && state.open ? state : null;
+  renderPermChip();
+  if (state && !state.open) refreshSitePermIcons();
+});
+
 window.gxAPI.onShortcutAction((action) => {
   if (action === 'focus-address-bar') {
     addressInput.focus();
     addressInput.select();
   } else if (action === 'toggle-bookmark') {
-    window.gxAPI.toggleBookmark().then((res) => {
-      if (res) showToast(res.added ? 'Saved to Bookmarks' : 'Removed from Bookmarks');
-    });
+    // [TABS-W2] Gap 7.4 — Ctrl+D opens the bookmark bubble now.
+    openBookmarkBubble();
   } else if (action === 'open-find') {
     openFindBar();
+  } else if (action === 'open-tab-search') {
+    // [TABS-W2] Gap 8.1 — Ctrl+Shift+A.
+    openTabSearchPopover();
+  } else if (action === 'toggle-reader-mode') {
+    // [TABS-W2] Gap 9.6 — Alt+Shift+R.
+    window.gxAPI.toggleReaderModeExtract().then((res) => {
+      if (res && res.ok) {
+        showToast(res.active ? 'Reader View Enabled' : 'Reader View Off');
+      } else if (res && res.error) {
+        showToast(res.error);
+      }
+    });
   }
 });
 

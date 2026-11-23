@@ -293,7 +293,8 @@ test('SEC-3 / BUG-9: Every active internal UI HTML file has a CSP meta tag with 
     'popover.html': ["'self'", 'data:', 'https:', 'http:'],
     'sidebar-panel-chrome.html': ["'self'", 'data:', 'https:', 'http:'],
     'error.html': ["'self'", 'data:'],
-    'screenshot.html': ["'self'", 'data:']
+    'screenshot.html': ["'self'", 'data:'],
+    'passkey-dialog.html': ["'self'", 'data:'] // worker C: dialog shows no images
   };
 
   for (const file of htmlFiles) {

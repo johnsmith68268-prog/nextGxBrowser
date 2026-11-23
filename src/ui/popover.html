@@ -101,7 +101,8 @@
     }
 
     #view-menu,
-    #view-permissions,
+    #view-permission-prompt,
+    #view-share-picker,
     #view-screenshot,
     #view-downloads,
     #view-shield,
@@ -111,7 +112,14 @@
     #view-workspace-context,
     #view-bookmark-folder,
     #view-extensions-dropdown,
-    #view-profiles {
+    #view-profiles,
+    #view-bookmark-bubble,
+    #view-qr-code,
+    #view-reading-list,
+    #view-tab-search,
+    #view-omnibox-suggest,
+    #view-site-info,
+    #view-zoom-bubble {
       display: flex;
       flex-direction: column;
       width: 100%;
@@ -135,9 +143,92 @@
       gap: 4px;
     }
 
-    #view-permissions,
     #view-shield {
       gap: 8px;
+    }
+
+    #view-site-info {
+      gap: 8px;
+    }
+
+    #view-zoom-bubble {
+      gap: 8px;
+    }
+
+    /* [FIXUP-1] Site-info bubble + zoom bubble (Chrome parity gaps 3.3/3.4/3.5):
+       moved here from the renderer — same contents as worker B's panels. */
+    .site-info-cert {
+      font-size: 11px;
+      line-height: 1.4;
+      color: var(--muted);
+      margin-top: 4px;
+      word-break: break-word;
+    }
+
+    .site-info-cookie-count {
+      flex: 1;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: right;
+    }
+
+    .site-info-perm-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-height: 30px;
+      font-size: 12.5px;
+      color: var(--text);
+    }
+
+    .site-info-perm-row .perm-select {
+      width: 96px;
+    }
+
+    .zoom-bubble-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .zoom-bubble-value {
+      flex: 1;
+      text-align: center;
+      font-family: var(--nx-font-mono);
+      font-size: 13px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+    }
+
+    .zoom-bubble-note {
+      font-size: 11px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .zoom-btn {
+      height: 28px;
+      min-width: 32px;
+      padding: 0 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--nx-radius-sm);
+      background: var(--nx-glass-strong);
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .zoom-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent-bright);
+    }
+
+    .zoom-btn-reset {
+      font-size: 12px;
+      font-weight: 600;
     }
 
     #view-downloads {
@@ -432,6 +523,320 @@
       border-color: var(--border);
       color: var(--text);
       box-shadow: none;
+    }
+
+    /* Chrome parity (worker A): permission prompt pills + device picker */
+    .perm-prompt-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    .perm-prompt-x {
+      flex-shrink: 0;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1;
+      cursor: pointer;
+      padding: 0;
+    }
+
+    .perm-prompt-x:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+    }
+
+    .perm-lines {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      margin-bottom: 8px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .perm-lines span {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .perm-preview-box {
+      position: relative;
+      width: 100%;
+      height: 150px;
+      border-radius: var(--nx-radius-sm);
+      overflow: hidden;
+      background: #000;
+      border: 1px solid var(--border);
+      margin-bottom: 8px;
+    }
+
+    .perm-preview-box video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      background: #000;
+    }
+
+    .perm-preview-badge {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      font-size: 10.5px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.55);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.35);
+    }
+
+    .perm-field-label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      margin: 2px 0 4px;
+    }
+
+    .perm-select {
+      width: 100%;
+      padding: 7px 8px;
+      border-radius: var(--nx-radius-sm);
+      border: 1px solid var(--border);
+      background: var(--bg-input);
+      color: var(--text);
+      font-size: 12px;
+      margin-bottom: 8px;
+      cursor: pointer;
+    }
+
+    .perm-pill {
+      display: block;
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      font-size: 13px;
+      font-weight: 600;
+      text-align: center;
+      cursor: pointer;
+      transition: filter var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+    }
+
+    .perm-pill:hover {
+      filter: brightness(1.12);
+    }
+
+    .perm-pill-primary {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: var(--nx-glow-sm);
+    }
+
+    .perm-pill-soft {
+      background: var(--nx-accent-soft);
+      color: var(--text);
+      border-color: var(--accent);
+    }
+
+    .perm-pill-ghost {
+      background: transparent;
+      color: var(--text);
+      border-color: var(--border);
+    }
+
+    .perm-pill-grey {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      border-color: var(--border);
+    }
+
+    .perm-pill:disabled {
+      opacity: 0.45;
+      cursor: default;
+      filter: none;
+      box-shadow: none;
+    }
+
+    .perm-btns-col {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .perm-btns-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .perm-btns-row .perm-pill {
+      flex: 1;
+    }
+
+    /* Chrome parity (worker A): screen-share picker */
+    #view-share-picker {
+      gap: 0;
+    }
+
+    .share-head {
+      margin-bottom: 10px;
+    }
+
+    .share-sub {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 3px;
+    }
+
+    .share-tabs {
+      display: flex;
+      gap: 2px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 10px;
+    }
+
+    .share-tab {
+      flex: 1;
+      padding: 8px 4px;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .share-tab:hover {
+      color: var(--text);
+    }
+
+    .share-tab.active {
+      color: var(--accent-bright);
+      border-bottom-color: var(--accent);
+    }
+
+    .share-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      overflow-y: auto;
+      min-height: 120px;
+      max-height: 300px;
+      padding: 2px;
+      align-content: start;
+    }
+
+    .share-card {
+      border: 2px solid var(--border);
+      border-radius: var(--nx-radius-sm);
+      overflow: hidden;
+      background: var(--bg-card);
+      cursor: pointer;
+      padding: 0;
+      text-align: left;
+      color: var(--text);
+    }
+
+    .share-card:hover {
+      border-color: var(--accent);
+    }
+
+    .share-card.selected {
+      border-color: var(--accent);
+      box-shadow: var(--nx-glow-sm);
+    }
+
+    .share-thumb {
+      width: 100%;
+      height: 96px;
+      background: rgba(255, 255, 255, 0.05);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .share-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .share-thumb-empty {
+      font-size: 22px;
+      color: var(--muted);
+    }
+
+    .share-card-name {
+      font-size: 11.5px;
+      font-weight: 600;
+      padding: 6px 8px 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .share-card-sub {
+      font-size: 10.5px;
+      color: var(--muted);
+      padding: 0 8px 6px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .share-empty {
+      grid-column: 1 / -1;
+      text-align: center;
+      color: var(--muted);
+      font-size: 12.5px;
+      padding: 28px 10px;
+    }
+
+    .share-audio-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 10px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--nx-radius-sm);
+      background: var(--bg-card);
+      font-size: 13px;
+    }
+
+    .share-note {
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .share-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .share-footer .perm-pill {
+      width: auto;
+      min-width: 110px;
+      padding: 9px 18px;
     }
 
     .nx-switch input:disabled+.nx-slider {
@@ -1261,6 +1666,225 @@
       text-align: center;
       flex-shrink: 0;
     }
+
+    /* [TABS-W2] Bookmark bubble (7.4), QR code (9.4), Reading list (8.8) */
+    #view-bookmark-bubble,
+    #view-qr-code,
+    #view-reading-list,
+    #view-tab-search,
+    #view-omnibox-suggest,
+    #view-site-info,
+    #view-zoom-bubble {
+      gap: 8px;
+      padding: 10px 10px 8px;
+    }
+
+    .bm-bubble-title,
+    .rl-header-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .rl-header-title {
+      flex: 1;
+    }
+
+    .rl-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .rl-count {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .bm-bubble-field {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .bm-bubble-field label {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .bm-bubble-field input,
+    .bm-bubble-field select {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 6px 8px;
+      border-radius: var(--nx-radius-xs);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 12px;
+      outline: none;
+    }
+
+    .bm-bubble-field input:focus,
+    .bm-bubble-field select:focus {
+      border-color: var(--accent);
+    }
+
+    .bm-bubble-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 6px;
+      padding-top: 2px;
+    }
+
+    .qr-wrap {
+      display: flex;
+      justify-content: center;
+      padding: 6px 0 2px;
+    }
+
+    #qrCanvas {
+      border-radius: 6px;
+      background: #fff;
+    }
+
+    .qr-url {
+      font-size: 11px;
+      color: var(--muted);
+      word-break: break-all;
+      text-align: center;
+      padding: 0 4px;
+    }
+
+    .qr-actions {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    #rlList {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .rl-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      border-radius: var(--nx-radius-xs);
+      padding: 2px 0;
+    }
+
+    .rl-row:hover {
+      background: var(--surface);
+    }
+
+    .rl-open {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 6px;
+      border: none;
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      text-align: left;
+      border-radius: var(--nx-radius-xs);
+    }
+
+    .rl-icon {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+    }
+
+    .rl-icon img {
+      width: 16px;
+      height: 16px;
+    }
+
+    .rl-text {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+
+    .rl-title {
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .rl-url {
+      font-size: 11px;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .rl-mark,
+    .rl-remove {
+      flex-shrink: 0;
+      padding: 4px 7px;
+      border: 1px solid var(--border);
+      border-radius: var(--nx-radius-xs);
+      background: transparent;
+      color: var(--muted);
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .rl-mark:hover,
+    .rl-remove:hover {
+      background: var(--surface);
+      color: var(--text);
+    }
+
+    .rl-footnote {
+      font-size: 11px;
+      color: var(--muted);
+      padding: 4px 2px 0;
+    }
+
+    /* [TABS-W2] Gap 8.1 / 3.7 — tab search + omnibox suggestions popovers.
+       Rows reuse the reading-list row classes (.rl-row / .rl-open /
+       .rl-text / .rl-title / .rl-url / .rl-remove). */
+    #view-tab-search {
+      width: 400px;
+    }
+
+    #view-omnibox-suggest {
+      width: 480px;
+    }
+
+    #view-tab-search .ctx-input {
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .ts-list {
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .ts-list .rl-row.selected {
+      background: var(--surface);
+    }
   </style>
 </head>
 
@@ -1349,6 +1973,32 @@
         Passwords & Autofill
       </span>
       <span></span>
+    </button>
+    <!-- [TABS-W2] Chrome parity gaps 8.8 / 9.9 — Reading List viewer + Delete
+         browsing data (opens the Privacy page, which holds the clear-data
+         card). Handled in the popover's own [data-act] listener below. -->
+    <button class="menu-item" data-act="reading-list">
+      <span class="menu-left">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+          <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+        </svg>
+        Reading List
+      </span>
+      <span></span>
+    </button>
+    <button class="menu-item" data-act="delete-browsing-data">
+      <span class="menu-left">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="3 6 5 6 21 6" />
+          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+          <path d="M10 11v6M14 11v6" />
+        </svg>
+        Delete browsing data…
+      </span>
+      <kbd>Ctrl+Shift+Del</kbd>
     </button>
     <button class="menu-item" data-act="privacy">
       <span class="menu-left">
@@ -1456,79 +2106,6 @@
   </div>
 
   <!-- 2. LOCK / SITE SECURITY & PERMISSIONS POPOVER -->
-  <div id="view-permissions" class="hidden" style="display:flex;flex-direction:column;gap:8px;">
-    <div class="sec-header" style="align-items:flex-start;">
-      <svg id="secIcon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"
-        style="color:var(--success);flex-shrink:0;margin-top:2px;">
-        <rect x="3" y="11" width="18" height="11" rx="2" />
-        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-      </svg>
-      <div style="min-width:0;">
-        <div class="sec-status" id="secStatusText">Connection is secure</div>
-        <div class="sec-origin" id="secOriginText">https://example.com</div>
-        <div id="secNoticeText" style="font-size:11px;line-height:1.4;color:var(--muted);margin-top:4px;"></div>
-      </div>
-    </div>
-
-    <div class="pop-section-label nx-heading">Site Permissions</div>
-
-    <div class="perm-row">
-      <span>Camera</span>
-      <select class="perm-select" data-perm="camera">
-        <option value="ask">Ask</option>
-        <option value="allow">Allow</option>
-        <option value="block">Block</option>
-      </select>
-    </div>
-    <div class="perm-row">
-      <span>Microphone</span>
-      <select class="perm-select" data-perm="microphone">
-        <option value="ask">Ask</option>
-        <option value="allow">Allow</option>
-        <option value="block">Block</option>
-      </select>
-    </div>
-    <div class="perm-row">
-      <span>Location</span>
-      <select class="perm-select" data-perm="geolocation">
-        <option value="ask">Ask</option>
-        <option value="allow">Allow</option>
-        <option value="block">Block</option>
-      </select>
-    </div>
-    <div class="perm-row">
-      <span>Notifications</span>
-      <select class="perm-select" data-perm="notifications">
-        <option value="ask">Ask</option>
-        <option value="allow">Allow</option>
-        <option value="block">Block</option>
-      </select>
-    </div>
-
-    <div class="sep"></div>
-    <div class="pop-section-label nx-heading">Cookies &amp; Site Data</div>
-    <div class="perm-row">
-      <span id="popCookieCountText">0 cookies</span>
-      <button class="mini-btn" id="btnClearSiteCookies">Clear cookies for this site</button>
-    </div>
-    <div class="sep"></div>
-    <button class="menu-item" id="btnOpenSiteSettings">
-      <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="3" />
-          <path
-            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-        </svg>
-        Site settings
-      </span>
-      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-        <polyline points="15 3 21 3 21 9" />
-        <line x1="10" y1="14" x2="21" y2="3" />
-      </svg>
-    </button>
-  </div>
-
   <!-- 3. SCREENSHOT MODE POPOVER -->
   <div id="view-screenshot" class="hidden" style="display:flex;flex-direction:column;gap:6px;">
     <button class="menu-item" id="btnShotArea">
@@ -1613,11 +2190,55 @@
     </div>
   </div>
 
-  <!-- 6b. SITE PERMISSION REQUEST PROMPT -->
+  <!-- 5b. SITE-INFO BUBBLE (Chrome parity gaps 3.3/3.4) — moved here from the
+       renderer-side panel: the tab's WebContentsView occludes any fixed panel
+       below the top chrome. Same contents as worker B's panel: connection
+       state, origin, certificate note, cookie count + Clear, 6 per-site
+       permission rows, "Site settings" → nextgx://privacy. -->
+  <div id="view-site-info" class="hidden" style="display:flex;flex-direction:column;gap:8px;">
+    <div class="sec-header">
+      <span id="siteInfoIcon" style="font-size:20px;line-height:1.2;flex-shrink:0;">🔒</span>
+      <div style="min-width:0;flex:1;">
+        <div class="sec-status" id="siteInfoStatus">Connection is secure</div>
+        <div class="sec-origin" id="siteInfoOrigin"></div>
+        <div class="site-info-cert" id="siteInfoCert"></div>
+      </div>
+      <button class="mini-btn" id="btnSiteInfoClose" title="Close" aria-label="Close">✕</button>
+    </div>
+    <div class="perm-row">
+      <span style="font-size:12.5px;">Cookies and site data</span>
+      <span class="site-info-cookie-count" id="siteInfoCookieCount"></span>
+      <button class="mini-btn" id="btnSiteInfoClearCookies" title="Clear cookies for this site">Clear</button>
+    </div>
+    <div class="sep"></div>
+    <div class="nx-heading" style="font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--accent-bright);">Site permissions</div>
+    <div id="siteInfoPermRows"></div>
+    <div class="sep"></div>
+    <button class="menu-item" id="btnSiteInfoSettings">
+      <span class="menu-left">Site settings</span>
+      <span aria-hidden="true">↗</span>
+    </button>
+  </div>
+
+  <!-- 5c. ZOOM BUBBLE (Chrome parity gap 3.5) — moved here from the
+       renderer-side panel for the same occlusion reason. − / % / + / Reset. -->
+  <div id="view-zoom-bubble" class="hidden" style="display:flex;flex-direction:column;gap:8px;">
+    <div class="zoom-bubble-row">
+      <button class="zoom-btn" id="btnZoomBubbleOut" title="Zoom Out (Ctrl+-)">−</button>
+      <span class="zoom-bubble-value" id="zoomBubbleValue">100%</span>
+      <button class="zoom-btn" id="btnZoomBubbleIn" title="Zoom In (Ctrl+= / Ctrl++)">+</button>
+      <button class="zoom-btn zoom-btn-reset" id="btnZoomBubbleReset" title="Reset Zoom (Ctrl+0)">Reset</button>
+    </div>
+    <div class="zoom-bubble-note">Zoom is remembered for this site</div>
+  </div>
+
+  <!-- 6b. SITE PERMISSION REQUEST PROMPT (Chrome parity: 3-pill media/location
+       layout vs 2-pill notifications/clipboard layout; live camera preview
+       + device pickers for camera/mic) -->
   <div id="view-permission-prompt" class="hidden" role="dialog" aria-label="Permission request">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+    <div class="perm-prompt-head">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--accent)" stroke-width="2"
-        stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+        stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:2px;">
         <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
       </svg>
       <div style="min-width:0;flex:1;">
@@ -1627,20 +2248,77 @@
         <div id="permPromptDesc" style="font-size:12px;color:var(--muted);margin-top:2px;">wants to access permission
         </div>
       </div>
+      <button type="button" class="perm-prompt-x" id="btnPermPromptClose" title="Dismiss — ask again next time"
+        aria-label="Dismiss">✕</button>
+    </div>
+    <div id="permPromptLines" class="perm-lines"></div>
+    <div id="permPreviewWrap" class="hidden">
+      <div class="perm-preview-box">
+        <video id="permPreviewVideo" autoplay muted playsinline></video>
+        <span class="perm-preview-badge">● Preview</span>
+      </div>
+      <label class="perm-field-label" for="permCameraSelect">Camera</label>
+      <select id="permCameraSelect" class="perm-select"></select>
+    </div>
+    <div id="permMicWrap" class="hidden">
+      <label class="perm-field-label" for="permMicSelect">Microphone</label>
+      <select id="permMicSelect" class="perm-select"></select>
     </div>
     <div id="permPromptIncognitoNote" class="hidden"
       style="font-size:11px;color:var(--muted);margin-bottom:8px;padding:6px 8px;border-radius:8px;background:rgba(255,255,255,0.04);">
       Private window: decision applies to this window session only.</div>
-    <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">
-      <button type="button" class="mini-btn" id="btnPermPromptAlways"
-        style="flex:1;background:var(--accent);color:#fff;border-color:transparent;font-weight:600;">Allow</button>
-      <button type="button" class="mini-btn" id="btnPermPromptOnce" style="flex:1;">Allow once</button>
-      <button type="button" class="mini-btn" id="btnPermPromptBlock" style="flex:1;color:#ff8a8a;">Block</button>
+    <div id="permPromptBtnsMedia" class="perm-btns-col hidden">
+      <button type="button" class="perm-pill perm-pill-primary" id="btnPermPromptAlways">Allow while visiting the
+        site</button>
+      <button type="button" class="perm-pill perm-pill-soft" id="btnPermPromptOnce">Allow this time</button>
+      <button type="button" class="perm-pill perm-pill-ghost" id="btnPermPromptBlock">Never allow</button>
+    </div>
+    <div id="permPromptBtnsSimple" class="perm-btns-row hidden">
+      <button type="button" class="perm-pill perm-pill-grey" id="btnPermPromptSimpleBlock">Block</button>
+      <button type="button" class="perm-pill perm-pill-primary" id="btnPermPromptSimpleAllow">Allow</button>
+    </div>
+  </div>
+
+  <!-- 6c. SCREEN-SHARE PICKER (Chrome parity gap 2.x): centred modal with
+       Tab / Window / Entire Screen tabs, thumbnails, tab-audio toggle. -->
+  <div id="view-share-picker" class="hidden" role="dialog" aria-label="Choose what to share">
+    <div class="share-head">
+      <div id="shareTitle" class="nx-heading" style="font-size:14px;font-weight:700;color:var(--text);">Choose what to
+        share</div>
+      <div class="share-sub">The site will be able to see the contents of your screen</div>
+    </div>
+    <div class="share-tabs" role="tablist">
+      <button type="button" class="share-tab active" data-share-tab="tab" role="tab">Tab</button>
+      <button type="button" class="share-tab" data-share-tab="window" role="tab">Window</button>
+      <button type="button" class="share-tab" data-share-tab="screen" role="tab">Entire Screen</button>
+    </div>
+    <div id="shareGrid" class="share-grid"></div>
+    <div id="shareTabAudioRow" class="share-audio-row">
+      <span>Share with tab audio</span>
+      <label class="nx-switch">
+        <input type="checkbox" id="chkShareTabAudio" checked />
+        <span class="nx-slider"></span>
+      </label>
+    </div>
+    <div id="shareAudioNote" class="share-note hidden">To share audio, share a tab instead.</div>
+    <div class="share-footer">
+      <button type="button" class="perm-pill perm-pill-grey" id="btnShareCancel">Cancel</button>
+      <button type="button" class="perm-pill perm-pill-primary" id="btnShareConfirm" disabled>Share</button>
     </div>
   </div>
 
   <!-- 6. TAB CONTEXT MENU POPOVER -->
   <div id="view-tab-context" class="hidden" role="menu" aria-label="Tab actions">
+    <!-- [TABS-W2] Chrome parity gap 8.2 — New tab to the right -->
+    <button class="menu-item" data-tab-act="new-tab-right" role="menuitem">
+      <span class="menu-left">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+        New tab to the right
+      </span>
+    </button>
     <button class="menu-item" data-tab-act="duplicate" role="menuitem">
       <span class="menu-left">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
@@ -1679,7 +2357,40 @@
           <rect x="3" y="4" width="18" height="16" rx="2" />
           <line x1="12" y1="4" x2="12" y2="20" />
         </svg>
-        <span id="tabCtxSplitLabel">Split with this tab</span>
+        <span id="tabCtxSplitLabel">Add tab to new split view</span>
+      </span>
+    </button>
+    <!-- [TABS-W2] Chrome parity gap 8.2 — Move tab to new window / Mute site /
+         Add tab to reading list -->
+    <button class="menu-item" data-tab-act="move-to-new-window" id="btnTabCtxMoveWindow" role="menuitem">
+      <span class="menu-left">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <path d="M3 9h18" />
+        </svg>
+        Move tab to new window
+      </span>
+    </button>
+    <button class="menu-item" data-tab-act="mute" id="btnTabCtxMute" role="menuitem">
+      <span class="menu-left">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+          <line x1="23" y1="9" x2="17" y2="15" />
+          <line x1="17" y1="9" x2="23" y2="15" />
+        </svg>
+        <span id="tabCtxMuteLabel">Mute site</span>
+      </span>
+    </button>
+    <button class="menu-item" data-tab-act="reading-list" id="btnTabCtxReadingList" role="menuitem">
+      <span class="menu-left">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+          <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+        </svg>
+        Add tab to reading list
       </span>
     </button>
     <button class="menu-item" data-tab-act="hibernate" id="btnTabCtxHibernate" role="menuitem">
@@ -1725,6 +2436,18 @@
           <path d="M21 8v11a2 2 0 0 1-2 2H8" />
         </svg>
         Close Other Tabs
+      </span>
+    </button>
+    <!-- [TABS-W2] Chrome parity gap 8.2 — Close tabs to the right -->
+    <button class="menu-item" data-tab-act="close-right" id="btnTabCtxCloseRight" role="menuitem">
+      <span class="menu-left">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4" width="14" height="14" rx="2" />
+          <path d="M7.5 8.5l5 5M12.5 8.5l-5 5" />
+          <path d="M21 8v11a2 2 0 0 1-2 2H8" />
+        </svg>
+        Close tabs to the right
       </span>
     </button>
   </div>
@@ -2002,6 +2725,78 @@
     </div>
   </div>
 
+  <!-- [TABS-W2] 10. BOOKMARK BUBBLE (Chrome parity gap 7.4): Name + Folder
+       picker + Remove / Done. Opened from the star / Ctrl+D via popover
+       kind 'bookmark-bubble'. -->
+  <div id="view-bookmark-bubble" class="hidden" role="dialog" aria-label="Bookmark">
+    <div class="bm-bubble-title nx-heading" id="bmBubbleTitle">Bookmark added</div>
+    <label class="bm-bubble-label" for="bmBubbleName">Name</label>
+    <input type="text" id="bmBubbleName" class="ctx-input bm-bubble-input" maxlength="120" autocomplete="off" />
+    <label class="bm-bubble-label" for="bmBubbleFolder">Folder</label>
+    <select id="bmBubbleFolder" class="perm-select bm-bubble-input"></select>
+    <div class="bm-bubble-actions">
+      <button type="button" class="mini-btn bm-bubble-remove" id="btnBmBubbleRemove">Remove</button>
+      <span style="flex:1"></span>
+      <button type="button" class="perm-pill perm-pill-primary bm-bubble-done" id="btnBmBubbleDone">Done</button>
+    </div>
+  </div>
+
+  <!-- [TABS-W2] 11. QR CODE (Chrome parity gap 9.4): locally generated QR for
+       the current page. Rendered by the embedded encoder below — no library,
+       no network. Opened from the page menu via popover kind 'qr-code'. -->
+  <div id="view-qr-code" class="hidden" role="dialog" aria-label="QR Code for this page">
+    <div class="qr-title nx-heading">QR Code for this page</div>
+    <div class="qr-canvas-wrap"><canvas id="qrCanvas" width="232" height="232"></canvas></div>
+    <div class="qr-url" id="qrUrlText"></div>
+    <div class="qr-actions">
+      <button type="button" class="mini-btn" id="btnQrCopy">Copy link</button>
+      <button type="button" class="mini-btn" id="btnQrClose">Close</button>
+    </div>
+  </div>
+
+  <!-- [TABS-W2] 12. READING LIST (Chrome parity gap 8.8): save-for-later list,
+       distinct from bookmarks. Opened from the ⋮ menu via popover kind
+       'reading-list'; items are added from the tab menu. -->
+  <div id="view-reading-list" class="hidden" role="region" aria-label="Reading List">
+    <div class="ext-dd-header">
+      <span class="ext-dd-title nx-heading">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+          <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+        </svg>
+        Reading List
+      </span>
+      <span class="ext-dd-count" id="rlCount"></span>
+    </div>
+    <div class="sep"></div>
+    <div id="rlList" class="ext-dd-list pop-scroll-list"></div>
+    <div class="sep"></div>
+    <div class="rl-footnote">Saved pages open in a new tab. The reading list lives only on this device.</div>
+  </div>
+
+  <!-- [TABS-W2] 13. TAB SEARCH (Chrome parity gap 8.1): lives here, not in a
+       renderer-side panel — renderer fixed panels below the top chrome are
+       covered by the active tab's WebContentsView in the composited window,
+       so the dropdown must be a popover (main brings the popover view to
+       front). Opened from the chevron / Ctrl+Shift+A via popover kind
+       'tab-search'; the payload carries the recency-sorted tab list. -->
+  <div id="view-tab-search" class="hidden" role="dialog" aria-label="Search tabs">
+    <input id="tsInput" class="ctx-input" type="text" placeholder="Search tabs" aria-label="Search tabs" autocomplete="off" spellcheck="false" />
+    <div class="sep"></div>
+    <div id="tsList" class="ts-list pop-scroll-list"></div>
+  </div>
+
+  <!-- [TABS-W2] 14. OMNIBOX SUGGESTIONS (Chrome parity gap 3.7): same
+       layering reason as tab search — the suggestions dropdown must be a
+       popover. The renderer opens it with alternating kinds
+       ('omnibox-suggest' / 'omnibox-suggest-alt') because popovers.js
+       toggles a popover closed when re-opened with the same kind, and
+       there is no update channel for an already-open popover. -->
+  <div id="view-omnibox-suggest" class="hidden" role="listbox" aria-label="Suggestions">
+    <div id="osList" class="ts-list pop-scroll-list"></div>
+  </div>
+
   <script>
     function applyTheme(theme) {
       document.documentElement.setAttribute('data-theme', theme || 'gx-violet');
@@ -2020,7 +2815,6 @@
       });
     })();
 
-    let currentOrigin = '';
     let currentShieldOrigin = '';
     let currentShieldUrl = '';
     let lastShieldSiteInfo = null;
@@ -2029,6 +2823,13 @@
     let currentWorkspaceCtx = null;
     let currentWorkspaceMode = null;
     let currentBmFolderName = '';
+    // [TABS-W2] Gap 1.5 — tracks whether the chrome window has been told a
+    // permission prompt is open, so the omnibox chip can be cleared on close.
+    let lastPromptNotifiedOpen = false;
+    // [TABS-W2] Gap 8.1 — tab search popover state (payload tabs, filtered
+    // by the popover's own input; keyboard selection index).
+    let tsTabs = [];
+    let tsSelected = 0;
     let currentProfilesData = null;
     let profInlineMode = null; // null | { type: 'add', color } | { type: 'rename', profile, color } | { type: 'delete', profile }
     const PROFILE_COLOR_CHOICES = [
@@ -2070,10 +2871,24 @@
     let isMeasuringPopover = false;
 
     function resetPopoverOnClose() {
+      // Chrome parity (worker A): a share picker closed without an explicit
+      // Share/Cancel (outside click, Escape) cancels the display-media
+      // request; a permission prompt closed the same way stores no decision
+      // (main resolves it as denied via onPermissionPopoverClosed).
+      const closingKind = activePopoverKind;
+      if (closingKind === 'share-picker' && currentShareRequestId && !sharePickerResponded) {
+        sharePickerResponded = true;
+        window.gxAPI.respondPermissionPrompt?.({
+          displayMediaRequestId: currentShareRequestId,
+          decision: 'cancel'
+        });
+      }
+      currentShareRequestId = '';
+      sharePickerResponded = false;
+      stopPermPreview();
       popoverOpenSeq += 1;
       activePopoverKind = null;
       activeViewId = null;
-      currentOrigin = '';
       currentShieldOrigin = '';
       currentShieldUrl = '';
       lastShieldSiteInfo = null;
@@ -2099,18 +2914,28 @@
     function showOnly(viewId) {
       [
         'view-menu',
-        'view-permissions',
+        // [TABS-W2] 'view-permissions' removed — the old lock popover is
+        // unreachable (the lock button opens the renderer site-info bubble).
         'view-permission-prompt',
+        'view-share-picker',
         'view-screenshot',
         'view-downloads',
         'view-shield',
+        'view-site-info',
+        'view-zoom-bubble',
         'view-tab-context',
         'view-address-context',
         'view-group-context',
         'view-workspace-context',
         'view-bookmark-folder',
         'view-extensions-dropdown',
-        'view-profiles'
+        'view-profiles',
+        // [TABS-W2]
+        'view-bookmark-bubble',
+        'view-qr-code',
+        'view-reading-list',
+        'view-tab-search',
+        'view-omnibox-suggest'
       ].forEach((id) => {
         // M-1: never let one missing view kill the whole popover handler.
         const el = document.getElementById(id);
@@ -2361,6 +3186,630 @@
       }
     }
 
+    // [TABS-W2] QR Code encoder (gap 9.4) — compact port of Project Nayuki's
+    // qrcodegen (MIT License, https://www.nayuki.io/page/qr-code-generator-library),
+    // byte mode, EC level M, versions 1–10. Local only: no library, no network.
+    // Returns { version, size, mask, modules } (modules[y][x] booleans) or null
+    // when the text is too long for version 10-M (213 bytes).
+    const QR_M_ECC_PER_BLOCK = [-1, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26];
+    const QR_M_NUM_BLOCKS = [-1, 1, 1, 1, 2, 2, 4, 4, 4, 5, 5];
+    const QR_MASK_PATTERNS = [
+      (x, y) => (x + y) % 2,
+      (x, y) => y % 2,
+      (x, y) => x % 3,
+      (x, y) => (x + y) % 3,
+      (x, y) => (Math.floor(x / 3) + Math.floor(y / 2)) % 2,
+      (x, y) => ((x * y) % 2) + ((x * y) % 3),
+      (x, y) => (((x * y) % 2) + ((x * y) % 3)) % 2,
+      (x, y) => (((x + y) % 2) + ((x * y) % 3)) % 2
+    ];
+
+    function qrGetBit(x, i) {
+      return ((x >>> i) & 1) !== 0;
+    }
+
+    function qrRsMultiply(x, y) {
+      let z = 0;
+      for (let i = 7; i >= 0; i--) {
+        z = (z << 1) ^ ((z >> 7) * 0x11d);
+        z ^= ((y >> i) & 1) * x;
+      }
+      return z;
+    }
+
+    function qrRsDivisor(degree) {
+      const result = new Array(degree).fill(0);
+      result[degree - 1] = 1;
+      let root = 1;
+      for (let i = 0; i < degree; i++) {
+        for (let j = 0; j < degree; j++) {
+          result[j] = qrRsMultiply(result[j], root);
+          if (j + 1 < degree) result[j] ^= result[j + 1];
+        }
+        root = qrRsMultiply(root, 0x02);
+      }
+      return result;
+    }
+
+    function qrRsRemainder(data, divisor) {
+      const result = new Array(divisor.length).fill(0);
+      for (const b of data) {
+        const factor = b ^ result.shift();
+        result.push(0);
+        for (let i = 0; i < divisor.length; i++) result[i] ^= qrRsMultiply(divisor[i], factor);
+      }
+      return result;
+    }
+
+    function qrNumRawDataModules(ver) {
+      let result = (16 * ver + 128) * ver + 64;
+      if (ver >= 2) {
+        const numAlign = Math.floor(ver / 7) + 2;
+        result -= (25 * numAlign - 10) * numAlign - 55;
+        if (ver >= 7) result -= 36;
+      }
+      return result;
+    }
+
+    function qrNumDataCodewords(ver) {
+      return (
+        Math.floor(qrNumRawDataModules(ver) / 8) -
+        QR_M_ECC_PER_BLOCK[ver] * QR_M_NUM_BLOCKS[ver]
+      );
+    }
+
+    function qrAlignmentPositions(ver) {
+      if (ver === 1) return [];
+      const numAlign = Math.floor(ver / 7) + 2;
+      const step = Math.floor((ver * 8 + numAlign * 3 + 5) / (numAlign * 4 - 4)) * 2;
+      const size = ver * 4 + 17;
+      const result = [];
+      for (let i = 0; i < numAlign - 1; i++) result.push(size - 7 - i * step);
+      result.push(6);
+      return result.reverse();
+    }
+
+    function qrFinderPenaltyCountPatterns(runHistory) {
+      const n = runHistory[1];
+      const core =
+        n > 0 &&
+        runHistory[2] === n &&
+        runHistory[4] === n &&
+        runHistory[5] === n &&
+        runHistory[3] === n * 3;
+      return (
+        (core && runHistory[0] >= n * 4 && runHistory[6] >= n ? 1 : 0) +
+        (core && runHistory[6] >= n * 4 && runHistory[0] >= n ? 1 : 0)
+      );
+    }
+
+    function qrFinderPenaltyAddHistory(currentRunLength, runHistory, size) {
+      if (runHistory[0] === 0) currentRunLength += size;
+      runHistory.unshift(currentRunLength);
+      runHistory.pop();
+    }
+
+    function qrFinderPenaltyTerminateAndCount(currentRunColor, currentRunLength, runHistory, size) {
+      if (currentRunColor) {
+        qrFinderPenaltyAddHistory(currentRunLength, runHistory, size);
+        currentRunLength = 0;
+      }
+      currentRunLength += size;
+      qrFinderPenaltyAddHistory(currentRunLength, runHistory, size);
+      return qrFinderPenaltyCountPatterns(runHistory);
+    }
+
+    function qrPenaltyScore(modules, size) {
+      let result = 0;
+      for (let y = 0; y < size; y++) {
+        let runColor = false;
+        let runX = 0;
+        const runHistory = [0, 0, 0, 0, 0, 0, 0];
+        for (let x = 0; x < size; x++) {
+          if (modules[y][x] === runColor) {
+            runX++;
+            if (runX === 5) result += 3;
+            else if (runX > 5) result += 1;
+          } else {
+            qrFinderPenaltyAddHistory(runX, runHistory, size);
+            if (!runColor) result += qrFinderPenaltyCountPatterns(runHistory) * 40;
+            runColor = modules[y][x];
+            runX = 1;
+          }
+        }
+        result += qrFinderPenaltyTerminateAndCount(runColor, runX, runHistory, size) * 40;
+      }
+      for (let x = 0; x < size; x++) {
+        let runColor = false;
+        let runY = 0;
+        const runHistory = [0, 0, 0, 0, 0, 0, 0];
+        for (let y = 0; y < size; y++) {
+          if (modules[y][x] === runColor) {
+            runY++;
+            if (runY === 5) result += 3;
+            else if (runY > 5) result += 1;
+          } else {
+            qrFinderPenaltyAddHistory(runY, runHistory, size);
+            if (!runColor) result += qrFinderPenaltyCountPatterns(runHistory) * 40;
+            runColor = modules[y][x];
+            runY = 1;
+          }
+        }
+        result += qrFinderPenaltyTerminateAndCount(runColor, runY, runHistory, size) * 40;
+      }
+      for (let y = 0; y < size - 1; y++) {
+        for (let x = 0; x < size - 1; x++) {
+          if (
+            modules[y][x] === modules[y][x + 1] &&
+            modules[y][x] === modules[y + 1][x] &&
+            modules[y][x] === modules[y + 1][x + 1]
+          ) {
+            result += 3;
+          }
+        }
+      }
+      let dark = 0;
+      for (const row of modules) for (const cell of row) if (cell) dark++;
+      const total = size * size;
+      const k = Math.floor((Math.abs(dark * 20 - total * 10) + total - 1) / total) - 1;
+      result += k * 10;
+      return result;
+    }
+
+    function qrEncodeMatrix(text) {
+      const bytes = new TextEncoder().encode(text);
+      let version = -1;
+      for (let ver = 1; ver <= 10; ver++) {
+        const countBits = ver <= 9 ? 8 : 16;
+        if (4 + countBits + bytes.length * 8 <= qrNumDataCodewords(ver) * 8) {
+          version = ver;
+          break;
+        }
+      }
+      if (version === -1) return null;
+      const size = version * 4 + 17;
+      const countBits = version <= 9 ? 8 : 16;
+      const dataCapacityBits = qrNumDataCodewords(version) * 8;
+
+      const bits = [];
+      const appendBits = (val, len) => {
+        for (let i = len - 1; i >= 0; i--) bits.push((val >>> i) & 1);
+      };
+      appendBits(0x4, 4); // Byte mode
+      appendBits(bytes.length, countBits);
+      for (const b of bytes) appendBits(b, 8);
+      appendBits(0, Math.min(4, dataCapacityBits - bits.length));
+      appendBits(0, (((-bits.length % 8) + 8) % 8));
+      let padByte = 0xec;
+      while (bits.length < dataCapacityBits) {
+        appendBits(padByte, 8);
+        padByte = padByte === 0xec ? 0x11 : 0xec;
+      }
+      const dataCodewords = [];
+      for (let i = 0; i < bits.length; i += 8) {
+        let b = 0;
+        for (let j = 0; j < 8; j++) b = (b << 1) | bits[i + j];
+        dataCodewords.push(b);
+      }
+
+      const numBlocks = QR_M_NUM_BLOCKS[version];
+      const blockEccLen = QR_M_ECC_PER_BLOCK[version];
+      const rawCodewords = Math.floor(qrNumRawDataModules(version) / 8);
+      const numShortBlocks = numBlocks - (rawCodewords % numBlocks);
+      const shortBlockLen = Math.floor(rawCodewords / numBlocks);
+      const rsDiv = qrRsDivisor(blockEccLen);
+      const blocks = [];
+      let k = 0;
+      for (let i = 0; i < numBlocks; i++) {
+        const datLen = shortBlockLen - blockEccLen + (i < numShortBlocks ? 0 : 1);
+        const dat = dataCodewords.slice(k, k + datLen);
+        k += dat.length;
+        const ecc = qrRsRemainder(dat, rsDiv);
+        let block = dat.slice();
+        if (i < numShortBlocks) block.push(0);
+        block = block.concat(ecc);
+        blocks.push(block);
+      }
+      const allCodewords = [];
+      for (let i = 0; i < blocks[0].length; i++) {
+        for (let j = 0; j < blocks.length; j++) {
+          if (i === shortBlockLen - blockEccLen && j < numShortBlocks) continue;
+          allCodewords.push(blocks[j][i]);
+        }
+      }
+
+      const modules = Array.from({ length: size }, () => new Array(size).fill(false));
+      const isFunction = Array.from({ length: size }, () => new Array(size).fill(false));
+      const setFunction = (x, y, dark) => {
+        if (x < 0 || y < 0 || x >= size || y >= size) return;
+        modules[y][x] = dark;
+        isFunction[y][x] = true;
+      };
+      for (let i = 0; i < size; i++) {
+        setFunction(6, i, i % 2 === 0);
+        setFunction(i, 6, i % 2 === 0);
+      }
+      const drawFinder = (cx, cy) => {
+        for (let dy = -4; dy <= 4; dy++) {
+          for (let dx = -4; dx <= 4; dx++) {
+            const dist = Math.max(Math.abs(dx), Math.abs(dy));
+            setFunction(cx + dx, cy + dy, dist !== 2 && dist !== 4);
+          }
+        }
+      };
+      drawFinder(3, 3);
+      drawFinder(size - 4, 3);
+      drawFinder(3, size - 4);
+      const alignPos = qrAlignmentPositions(version);
+      for (let i = 0; i < alignPos.length; i++) {
+        for (let j = 0; j < alignPos.length; j++) {
+          if (
+            (i === 0 && j === 0) ||
+            (i === 0 && j === alignPos.length - 1) ||
+            (i === alignPos.length - 1 && j === 0)
+          ) {
+            continue;
+          }
+          const cx = alignPos[i];
+          const cy = alignPos[j];
+          for (let dy = -2; dy <= 2; dy++) {
+            for (let dx = -2; dx <= 2; dx++) {
+              setFunction(cx + dx, cy + dy, Math.max(Math.abs(dx), Math.abs(dy)) !== 1);
+            }
+          }
+        }
+      }
+      const drawFormat = (mask) => {
+        const data = (0 << 3) | mask; // Ecc.MEDIUM format bits = 0
+        let rem = data;
+        for (let i = 0; i < 10; i++) rem = (rem << 1) ^ ((rem >> 9) * 0x537);
+        const fmtBits = ((data << 10) | rem) ^ 0x5412;
+        for (let i = 0; i <= 5; i++) setFunction(8, i, qrGetBit(fmtBits, i));
+        setFunction(8, 7, qrGetBit(fmtBits, 6));
+        setFunction(8, 8, qrGetBit(fmtBits, 7));
+        setFunction(7, 8, qrGetBit(fmtBits, 8));
+        for (let i = 9; i < 15; i++) setFunction(14 - i, 8, qrGetBit(fmtBits, i));
+        for (let i = 0; i < 8; i++) setFunction(size - 1 - i, 8, qrGetBit(fmtBits, i));
+        for (let i = 8; i < 15; i++) setFunction(8, size - 15 + i, qrGetBit(fmtBits, i));
+        setFunction(8, size - 8, true);
+      };
+      const drawVersion = () => {
+        if (version < 7) return;
+        let rem = version;
+        for (let i = 0; i < 12; i++) rem = (rem << 1) ^ ((rem >> 11) * 0x1f25);
+        const verBits = (version << 12) | rem;
+        for (let i = 0; i < 18; i++) {
+          const bit = qrGetBit(verBits, i);
+          const a = size - 11 + (i % 3);
+          const b = Math.floor(i / 3);
+          setFunction(a, b, bit);
+          setFunction(b, a, bit);
+        }
+      };
+      drawFormat(0);
+      drawVersion();
+      let bitIdx = 0;
+      for (let r = size - 1; r >= 1; r -= 2) {
+        let right = r;
+        if (right <= 6) right -= 1;
+        for (let vert = 0; vert < size; vert++) {
+          for (let j = 0; j < 2; j++) {
+            const x = right - j;
+            const upward = ((right + 1) & 2) === 0;
+            const y = upward ? size - 1 - vert : vert;
+            if (!isFunction[y][x] && bitIdx < allCodewords.length * 8) {
+              modules[y][x] = qrGetBit(allCodewords[bitIdx >> 3], 7 - (bitIdx & 7));
+              bitIdx++;
+            }
+          }
+        }
+      }
+      const applyMask = (mask) => {
+        const fn = QR_MASK_PATTERNS[mask];
+        for (let y = 0; y < size; y++) {
+          for (let x = 0; x < size; x++) {
+            if (fn(x, y) === 0 && !isFunction[y][x]) modules[y][x] = !modules[y][x];
+          }
+        }
+      };
+      let bestMask = 0;
+      let bestPenalty = Infinity;
+      for (let m = 0; m < 8; m++) {
+        applyMask(m);
+        drawFormat(m);
+        const penalty = qrPenaltyScore(modules, size);
+        if (penalty < bestPenalty) {
+          bestMask = m;
+          bestPenalty = penalty;
+        }
+        applyMask(m); // Undo (XOR)
+      }
+      applyMask(bestMask);
+      drawFormat(bestMask);
+      return { version, size, mask: bestMask, modules };
+    }
+
+    function renderQrCodeView(payload) {
+      const url = typeof payload?.url === 'string' ? payload.url : '';
+      const urlEl = document.getElementById('qrUrlText');
+      if (urlEl) urlEl.textContent = url;
+      const canvas = document.getElementById('qrCanvas');
+      if (!canvas) return;
+      const ctx2d = canvas.getContext('2d');
+      if (!ctx2d) return;
+      ctx2d.clearRect(0, 0, canvas.width, canvas.height);
+      ctx2d.fillStyle = '#ffffff';
+      ctx2d.fillRect(0, 0, canvas.width, canvas.height);
+      const qr = url ? qrEncodeMatrix(url) : null;
+      if (!qr) {
+        ctx2d.fillStyle = '#333';
+        ctx2d.font = '13px system-ui, sans-serif';
+        ctx2d.textAlign = 'center';
+        ctx2d.fillText('URL too long for a QR code', canvas.width / 2, canvas.height / 2);
+        return;
+      }
+      const quiet = 4;
+      const scale = canvas.width / (qr.size + quiet * 2);
+      ctx2d.fillStyle = '#000000';
+      for (let y = 0; y < qr.size; y++) {
+        for (let x = 0; x < qr.size; x++) {
+          if (qr.modules[y][x]) {
+            ctx2d.fillRect(
+              Math.round((x + quiet) * scale),
+              Math.round((y + quiet) * scale),
+              Math.ceil(scale),
+              Math.ceil(scale)
+            );
+          }
+        }
+      }
+    }
+
+    // [TABS-W2] Bookmark bubble (gap 7.4) + Reading list view (gap 8.8).
+    let currentBmBubble = null;
+
+    function renderBookmarkBubble(payload) {
+      const url = typeof payload?.url === 'string' ? payload.url : '';
+      const titleInput = document.getElementById('bmBubbleName');
+      const folderSelect = document.getElementById('bmBubbleFolder');
+      const removeBtn = document.getElementById('btnBmBubbleRemove');
+      const titleEl = document.getElementById('bmBubbleTitle');
+      if (!titleInput || !folderSelect) return;
+      currentBmBubble = {
+        url,
+        title: typeof payload?.title === 'string' ? payload.title : url,
+        favicon: typeof payload?.favicon === 'string' ? payload.favicon : '',
+        isBookmarked: Boolean(payload?.isBookmarked),
+        id: null,
+        folder: ''
+      };
+      titleInput.value = currentBmBubble.title;
+      if (titleEl) {
+        titleEl.textContent = currentBmBubble.isBookmarked ? 'Edit bookmark' : 'Bookmark added';
+      }
+      if (removeBtn) removeBtn.classList.toggle('hidden', !currentBmBubble.isBookmarked);
+      folderSelect.innerHTML = '';
+      const addOpt = (value, label) => {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = label;
+        folderSelect.appendChild(opt);
+      };
+      addOpt('', 'Bookmarks bar');
+      addOpt('Other bookmarks', 'Other bookmarks');
+      return window.gxAPI
+        .getBookmarks()
+        .then((list) => {
+          const items = Array.isArray(list) ? list : [];
+          const existing = items.find(
+            (b) => b && typeof b.url === 'string' && b.url.replace(/\/$/, '') === url.replace(/\/$/, '')
+          );
+          if (existing) {
+            currentBmBubble.id = existing.id || null;
+            currentBmBubble.folder = typeof existing.folder === 'string' ? existing.folder : '';
+            if (typeof existing.title === 'string' && existing.title) {
+              titleInput.value = existing.title;
+              currentBmBubble.title = existing.title;
+            }
+          }
+          const folders = [];
+          for (const b of items) {
+            const f = typeof b?.folder === 'string' ? b.folder.trim() : '';
+            if (f && f !== 'Other bookmarks' && !folders.includes(f)) folders.push(f);
+          }
+          for (const f of folders) addOpt(f, f);
+          // Existing bookmark: show its real folder ('' = Bookmarks bar).
+          // New bookmark: default to "Other bookmarks" (Chrome parity).
+          const desiredFolder = currentBmBubble.id ? currentBmBubble.folder : 'Other bookmarks';
+          folderSelect.value = desiredFolder;
+          if (folderSelect.value !== desiredFolder) {
+            folderSelect.value = currentBmBubble.id ? '' : 'Other bookmarks';
+          }
+          requestAnimationFrame(() => {
+            titleInput.focus();
+            titleInput.select();
+          });
+        })
+        .catch(() => {
+          folderSelect.value = 'Other bookmarks';
+        });
+    }
+
+    async function renderReadingList() {
+      const listEl = document.getElementById('rlList');
+      const countEl = document.getElementById('rlCount');
+      if (!listEl) return;
+      let items = [];
+      try {
+        items = (await window.gxAPI.getReadingList()) || [];
+      } catch (_) {
+        items = [];
+      }
+      if (countEl) countEl.textContent = items.length ? `${items.length}` : '';
+      listEl.innerHTML = '';
+      if (!items.length) {
+        listEl.innerHTML =
+          '<div style="font-size:12px;color:var(--muted);padding:10px 4px;">Nothing saved yet — right-click a tab and choose “Add tab to reading list”.</div>';
+        return;
+      }
+      for (const item of items) {
+        const row = document.createElement('div');
+        row.className = 'rl-row';
+        const favUrl = getBookmarkFaviconUrl(item);
+        row.innerHTML = `
+          <button type="button" class="rl-open" title="${escapeHtml(item.url || '')}">
+            <span class="rl-icon">${favUrl ? `<img src="${escapeHtml(favUrl)}" alt="" />` : '📖'}</span>
+            <span class="rl-text">
+              <span class="rl-title">${escapeHtml(item.title || item.url || 'Untitled')}</span>
+              <span class="rl-url">${escapeHtml(item.url || '')}</span>
+            </span>
+          </button>
+          <button type="button" class="rl-mark" title="${item.read ? 'Mark as unread' : 'Mark as read'}">${item.read ? '✓ Read' : 'Mark read'}</button>
+          <button type="button" class="rl-remove" title="Remove from reading list">✕</button>
+        `;
+        row.querySelector('.rl-open').addEventListener('click', () => {
+          window.gxAPI.closePopover();
+          window.gxAPI.createTab({ url: item.url, active: true });
+        });
+        row.querySelector('.rl-mark').addEventListener('click', async () => {
+          await window.gxAPI.markReadingListRead(item.id, !item.read);
+          renderReadingList();
+        });
+        row.querySelector('.rl-remove').addEventListener('click', async () => {
+          await window.gxAPI.removeReadingList(item.id);
+          renderReadingList();
+        });
+        listEl.appendChild(row);
+      }
+    }
+
+    // [TABS-W2] Gap 8.1 — tab search popover: rows are the recency-sorted
+    // tabs from the payload; the popover's own input filters them, Enter /
+    // click switches, per-row ✕ closes the tab and drops the row.
+    function getTsFilteredRows() {
+      const q = (document.getElementById('tsInput')?.value || '').trim().toLowerCase();
+      if (!q) return tsTabs;
+      return tsTabs.filter(
+        (t) =>
+          (t.title || '').toLowerCase().includes(q) || (t.url || '').toLowerCase().includes(q)
+      );
+    }
+
+    function renderTsList() {
+      const listEl = document.getElementById('tsList');
+      if (!listEl) return;
+      const rows = getTsFilteredRows();
+      listEl.innerHTML = '';
+      if (!rows.length) {
+        listEl.innerHTML =
+          '<div style="font-size:12px;color:var(--muted);padding:10px 4px;">No matching tabs</div>';
+        return;
+      }
+      tsSelected = Math.max(0, Math.min(tsSelected, rows.length - 1));
+      for (let i = 0; i < rows.length; i++) {
+        const t = rows[i];
+        const row = document.createElement('div');
+        row.className = 'rl-row' + (i === tsSelected ? ' selected' : '');
+        const favUrl = t.favicon || '';
+        row.innerHTML = `
+          <button type="button" class="rl-open" title="${escapeHtml(t.url || '')}">
+            <span class="rl-icon">${favUrl ? `<img src="${escapeHtml(favUrl)}" alt="" onerror="this.style.display='none'" />` : '🌐'}</span>
+            <span class="rl-text">
+              <span class="rl-title">${escapeHtml(t.title || 'Start Page')}</span>
+              <span class="rl-url">${escapeHtml(t.url || '')}${t.groupName ? ` — ${escapeHtml(t.groupName)}` : ''}</span>
+            </span>
+          </button>
+          <button type="button" class="rl-remove" title="Close tab">✕</button>
+        `;
+        row.querySelector('.rl-open').addEventListener('click', () => {
+          window.gxAPI.closePopover();
+          window.gxAPI.switchTab(t.id);
+        });
+        row.querySelector('.rl-open').addEventListener('mouseenter', () => {
+          tsSelected = i;
+          listEl.querySelectorAll('.rl-row').forEach((r, j) =>
+            r.classList.toggle('selected', j === i)
+          );
+        });
+        row.querySelector('.rl-remove').addEventListener('click', (e) => {
+          e.stopPropagation();
+          window.gxAPI.closeTab(t.id);
+          tsTabs = tsTabs.filter((x) => x.id !== t.id);
+          renderTsList();
+        });
+        listEl.appendChild(row);
+      }
+    }
+
+    function renderTabSearch(payload) {
+      const input = document.getElementById('tsInput');
+      if (!input) return;
+      tsTabs = Array.isArray(payload?.tabs) ? payload.tabs.slice() : [];
+      tsSelected = 0;
+      input.value = '';
+      if (!input.dataset.wired) {
+        input.dataset.wired = '1';
+        input.addEventListener('input', () => {
+          tsSelected = 0;
+          renderTsList();
+        });
+        input.addEventListener('keydown', (e) => {
+          const rows = getTsFilteredRows();
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            window.gxAPI.closePopover();
+          } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (!rows.length) return;
+            tsSelected =
+              e.key === 'ArrowDown'
+                ? (tsSelected + 1) % rows.length
+                : (tsSelected - 1 + rows.length) % rows.length;
+            renderTsList();
+          } else if (e.key === 'Enter') {
+            e.preventDefault();
+            const row = rows[tsSelected] || rows[0];
+            if (row) {
+              window.gxAPI.closePopover();
+              window.gxAPI.switchTab(row.id);
+            }
+          }
+        });
+      }
+      renderTsList();
+      requestAnimationFrame(() => input.focus());
+    }
+
+    // [TABS-W2] Gap 3.7 — omnibox suggestions popover: rows are the
+    // history matches from the payload. mousedown (not click): the chrome
+    // omnibox blurs when the popover is pressed and its blur handler closes
+    // this popover — mousedown fires first, so the navigation still lands.
+    function renderOmniboxSuggest(payload) {
+      const listEl = document.getElementById('osList');
+      if (!listEl) return;
+      const suggestions = Array.isArray(payload?.suggestions) ? payload.suggestions : [];
+      listEl.innerHTML = '';
+      for (const m of suggestions) {
+        const row = document.createElement('div');
+        row.className = 'rl-row';
+        row.innerHTML = `
+          <button type="button" class="rl-open" title="${escapeHtml(m.url || '')}">
+            <span class="rl-icon">↺</span>
+            <span class="rl-text">
+              <span class="rl-title">${escapeHtml(m.title || m.url)}</span>
+              <span class="rl-url">${escapeHtml(m.url || '')}</span>
+            </span>
+          </button>
+        `;
+        row.querySelector('.rl-open').addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          window.gxAPI.closePopover();
+          window.gxAPI.navigate(m.url);
+        });
+        listEl.appendChild(row);
+      }
+    }
+
     function renderShieldPopover(siteInfo, stats) {
       if (siteInfo) lastShieldSiteInfo = siteInfo;
       const info = siteInfo || lastShieldSiteInfo || {};
@@ -2426,63 +3875,426 @@
       globalSub.textContent = `Trackers: ${trackersOn ? 'On' : 'Off'}`;
     }
 
+    // --- [FIXUP-1] Site-info bubble (Chrome parity gaps 3.3/3.4) + zoom
+    // bubble (3.5), moved from the renderer. Same contents/behaviour as
+    // worker B's panels: elided-URL display is the renderer's job (the
+    // omnibox), here we show the origin; connection state, cookie count +
+    // Clear, cert row with the honest "not available" note, 6 per-site
+    // permission rows wired to the store, "Site settings" → nextgx://privacy.
+    const SITE_INFO_PERMS = [
+      { key: 'camera', label: 'Camera' },
+      { key: 'microphone', label: 'Microphone' },
+      { key: 'geolocation', label: 'Location' },
+      { key: 'notifications', label: 'Notifications' },
+      { key: 'clipboard-read', label: 'Clipboard' },
+      { key: 'screen-share', label: 'Screen sharing' }
+    ];
+    let currentSiteInfoOrigin = '';
+    let currentSiteInfoUrl = '';
+
+    function renderSiteInfoPermRows(origin, perms) {
+      const container = document.getElementById('siteInfoPermRows');
+      if (!container) return;
+      container.innerHTML = '';
+      for (const { key, label } of SITE_INFO_PERMS) {
+        const row = document.createElement('div');
+        row.className = 'site-info-perm-row';
+        const name = document.createElement('span');
+        name.textContent = label;
+        const select = document.createElement('select');
+        select.className = 'perm-select';
+        select.setAttribute('aria-label', `${label} permission for this site`);
+        for (const [val, text] of [['ask', 'Ask'], ['allow', 'Allow'], ['block', 'Block']]) {
+          const opt = document.createElement('option');
+          opt.value = val;
+          opt.textContent = text;
+          if ((perms[key] || 'ask') === val) opt.selected = true;
+          select.appendChild(opt);
+        }
+        select.addEventListener('change', async () => {
+          const updated = await window.gxAPI.setSitePermission(origin, key, select.value);
+          if (updated) renderSiteInfoPermRows(origin, updated);
+        });
+        row.appendChild(name);
+        row.appendChild(select);
+        container.appendChild(row);
+      }
+    }
+
+    async function refreshSiteInfoCookieCount(origin) {
+      const countEl = document.getElementById('siteInfoCookieCount');
+      if (!countEl) return;
+      if (!origin || !/^https?:\/\//i.test(origin)) {
+        countEl.textContent = '';
+        return;
+      }
+      try {
+        const list = await window.gxAPI.getCookies({ origin });
+        const n = Array.isArray(list) ? list.length : 0;
+        countEl.textContent = `${n} cookie${n === 1 ? '' : 's'}`;
+      } catch (_) {
+        countEl.textContent = '';
+      }
+    }
+
+    async function renderSiteInfoPopover(payload) {
+      const url = payload?.url || '';
+      const origin = payload?.origin || '';
+      currentSiteInfoOrigin = origin;
+      currentSiteInfoUrl = url;
+      const isHttps = url.startsWith('https://');
+      const isHttp = url.startsWith('http://');
+      const statusEl = document.getElementById('siteInfoStatus');
+      const iconEl = document.getElementById('siteInfoIcon');
+      const originEl = document.getElementById('siteInfoOrigin');
+      const certEl = document.getElementById('siteInfoCert');
+      if (statusEl) {
+        statusEl.textContent = isHttps
+          ? 'Connection is secure'
+          : isHttp
+          ? 'Your connection to this site is not secure'
+          : 'Internal browser page';
+      }
+      if (iconEl) iconEl.textContent = isHttps ? '🔒' : isHttp ? '⚠️' : 'ⓘ';
+      if (originEl) originEl.textContent = origin || url;
+      if (certEl) certEl.textContent = '';
+      renderSiteInfoPermRows(origin, {});
+      // Fill in live data (permissions, cookies, certificate) without
+      // blocking the open; re-fit once it lands.
+      try {
+        const perms = await window.gxAPI.getSitePermissions(origin);
+        if (perms && currentSiteInfoOrigin === origin && activePopoverKind === 'site-info') {
+          renderSiteInfoPermRows(origin, perms);
+          fitPopoverToView('site-info', 'view-site-info');
+        }
+      } catch (_) {}
+      refreshSiteInfoCookieCount(origin);
+      if (isHttps && certEl) {
+        try {
+          const cert = await window.gxAPI.getSiteCertificate();
+          if (currentSiteInfoOrigin !== origin || activePopoverKind !== 'site-info') return;
+          if (cert && cert.available) {
+            const parts = [];
+            if (cert.subjectName) parts.push(`Issued to ${cert.subjectName}`);
+            if (cert.issuerName) parts.push(`by ${cert.issuerName}`);
+            if (cert.validExpiry) {
+              parts.push(`valid until ${new Date(cert.validExpiry * 1000).toLocaleDateString()}`);
+            }
+            certEl.textContent = parts.length ? parts.join(' · ') : 'Certificate details unavailable.';
+          } else {
+            // Honest fallback: Electron does not expose certificate details here.
+            certEl.textContent = 'Certificate details are not available in this build.';
+          }
+          fitPopoverToView('site-info', 'view-site-info');
+        } catch (_) {
+          certEl.textContent = 'Certificate details are not available in this build.';
+        }
+      }
+    }
+
+    // --- Chrome parity (worker A): permission prompt preview + devices ---
+    let permPreviewStream = null;
+    let permPreviewSeq = 0;
+
+    function stopPermPreview() {
+      permPreviewSeq += 1;
+      if (permPreviewStream) {
+        try {
+          permPreviewStream.getTracks().forEach((t) => t.stop());
+        } catch (_) {}
+        permPreviewStream = null;
+      }
+      const video = document.getElementById('permPreviewVideo');
+      if (video) video.srcObject = null;
+    }
+
+    function populatePermSelect(selectId, devices, kind, fallbackLabel) {
+      const sel = document.getElementById(selectId);
+      if (!sel) return;
+      sel.innerHTML = '';
+      const list = Array.isArray(devices) ? devices : [];
+      if (list.length === 0) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = `No ${kind === 'camera' ? 'camera' : 'microphone'} found`;
+        sel.appendChild(opt);
+        sel.disabled = true;
+        return;
+      }
+      sel.disabled = false;
+      for (const d of list) {
+        const opt = document.createElement('option');
+        opt.value = d.deviceId || '';
+        opt.textContent = d.label || `${fallbackLabel} ${sel.options.length + 1}`;
+        sel.appendChild(opt);
+      }
+      // Default to the first device; the stored choice (if any) is applied by
+      // the tab preload, this picker only records a fresh user choice.
+      // NOTE: deviceIds are salted per origin/profile, so the LABEL is what
+      // the tab preload matches on — record both.
+      const first = list[0];
+      if (first) {
+        if (first.deviceId) currentPermPromptDevices[kind] = first.deviceId;
+        if (first.label) currentPermPromptDevices[`${kind}Label`] = first.label;
+      }
+    }
+
+    async function startPermDevices(keys) {
+      const seq = ++permPreviewSeq;
+      const wantVideo = keys.includes('camera');
+      const wantAudio = keys.includes('microphone');
+      if (!wantVideo && !wantAudio) return;
+      try {
+        // A live grant unlocks device labels for enumerateDevices() — without
+        // it, labels AND deviceIds come back empty. The popover is a trusted
+        // internal UI page, so main grants it media (see permissions.js).
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: wantVideo,
+          audio: wantAudio
+        });
+        if (seq !== permPreviewSeq) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        permPreviewStream = stream;
+        if (wantVideo) {
+          const video = document.getElementById('permPreviewVideo');
+          if (video) video.srcObject = stream;
+        }
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        if (seq !== permPreviewSeq) return;
+        populatePermSelect(
+          'permCameraSelect',
+          devices.filter((d) => d.kind === 'videoinput'),
+          'camera',
+          'Camera'
+        );
+        populatePermSelect(
+          'permMicSelect',
+          devices.filter((d) => d.kind === 'audioinput'),
+          'microphone',
+          'Microphone'
+        );
+        // Mic-only prompts need no live preview: release the mic right away;
+        // the labels stay available for this origin once granted.
+        if (!wantVideo) {
+          try {
+            stream.getAudioTracks().forEach((t) => t.stop());
+          } catch (_) {}
+          if (permPreviewStream === stream) permPreviewStream = null;
+        }
+        fitPopoverToView('permission-prompt', 'view-permission-prompt');
+      } catch (_) {
+        // Preview unavailable (no camera, denied, etc.): the prompt stays
+        // usable without a preview or device choice.
+        if (seq === permPreviewSeq) stopPermPreview();
+      }
+    }
+
+    async function switchPermPreviewCamera(deviceId) {
+      if (!deviceId) return;
+      const seq = ++permPreviewSeq;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: { exact: deviceId } }
+        });
+        if (seq !== permPreviewSeq) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        if (permPreviewStream) {
+          try {
+            permPreviewStream.getTracks().forEach((t) => t.stop());
+          } catch (_) {}
+        }
+        permPreviewStream = stream;
+        const video = document.getElementById('permPreviewVideo');
+        if (video) video.srcObject = stream;
+      } catch (_) {
+        if (seq === permPreviewSeq) permPreviewSeq += 1;
+      }
+    }
+
+    // --- Chrome parity (worker A): screen-share picker ---
+    let currentShareRequestId = '';
+    let currentShareData = null;
+    let currentShareTab = 'tab';
+    let currentShareSelection = null;
+    let sharePickerResponded = false;
+
+    function respondSharePicker(decision, source) {
+      if (!currentShareRequestId || sharePickerResponded) return;
+      sharePickerResponded = true;
+      const reqId = currentShareRequestId;
+      const tabAudio = document.getElementById('chkShareTabAudio')?.checked !== false;
+      window.gxAPI.respondPermissionPrompt?.({
+        displayMediaRequestId: reqId,
+        decision,
+        source: source || null,
+        tabAudio
+      });
+    }
+
+    function updateShareFooter() {
+      const confirmBtn = document.getElementById('btnShareConfirm');
+      if (!confirmBtn) return;
+      confirmBtn.disabled = !currentShareSelection;
+      if (currentShareSelection && currentShareTab === 'tab') {
+        const audioOn = document.getElementById('chkShareTabAudio')?.checked !== false;
+        confirmBtn.textContent = audioOn ? 'Share with Audio' : 'Share';
+      } else {
+        confirmBtn.textContent = 'Share';
+      }
+    }
+
+    function renderShareGrid() {
+      const grid = document.getElementById('shareGrid');
+      if (!grid) return;
+      grid.innerHTML = '';
+      const data = currentShareData || {};
+      const items =
+        currentShareTab === 'tab'
+          ? (data.tabs || []).map((t) => ({
+              kind: 'tab',
+              id: t.tabId,
+              tabId: t.tabId,
+              name: t.title || 'Tab',
+              sub: t.url || '',
+              thumbnail: t.thumbnail || ''
+            }))
+          : currentShareTab === 'window'
+            ? (data.windows || []).map((w) => ({
+                kind: 'window',
+                id: w.id,
+                name: w.name || 'Window',
+                sub: '',
+                thumbnail: w.thumbnail || ''
+              }))
+            : (data.screens || []).map((s) => ({
+                kind: 'screen',
+                id: s.id,
+                name: s.name || 'Screen',
+                sub: '',
+                thumbnail: s.thumbnail || ''
+              }));
+      if (items.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'share-empty';
+        empty.textContent =
+          currentShareTab === 'tab'
+            ? 'No tabs available to share'
+            : currentShareTab === 'window'
+              ? 'No windows available to share'
+              : 'No screens available to share';
+        grid.appendChild(empty);
+        return;
+      }
+      for (const item of items) {
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = 'share-card';
+        const isSelected =
+          currentShareSelection &&
+          currentShareSelection.kind === item.kind &&
+          String(currentShareSelection.id) === String(item.id);
+        if (isSelected) card.classList.add('selected');
+        const thumb = document.createElement('div');
+        thumb.className = 'share-thumb';
+        if (item.thumbnail) {
+          const img = document.createElement('img');
+          img.alt = '';
+          img.src = item.thumbnail;
+          img.addEventListener('error', () => {
+            thumb.innerHTML = '';
+            const fallback = document.createElement('span');
+            fallback.className = 'share-thumb-empty';
+            fallback.textContent = item.kind === 'tab' ? '▣' : item.kind === 'window' ? '▢' : '▭';
+            thumb.appendChild(fallback);
+          });
+          thumb.appendChild(img);
+        } else {
+          const fallback = document.createElement('span');
+          fallback.className = 'share-thumb-empty';
+          fallback.textContent = item.kind === 'tab' ? '▣' : item.kind === 'window' ? '▢' : '▭';
+          thumb.appendChild(fallback);
+        }
+        const name = document.createElement('div');
+        name.className = 'share-card-name';
+        name.textContent = item.name;
+        card.appendChild(thumb);
+        card.appendChild(name);
+        if (item.sub) {
+          const sub = document.createElement('div');
+          sub.className = 'share-card-sub';
+          sub.textContent = item.sub;
+          card.appendChild(sub);
+        }
+        card.addEventListener('click', () => {
+          currentShareSelection = { kind: item.kind, id: item.id, tabId: item.tabId };
+          renderShareGrid();
+          updateShareFooter();
+        });
+        grid.appendChild(card);
+      }
+    }
+
+    function renderSharePicker(payload) {
+      currentShareRequestId = payload?.requestId || '';
+      currentShareData = {
+        screens: Array.isArray(payload?.screens) ? payload.screens : [],
+        windows: Array.isArray(payload?.windows) ? payload.windows : [],
+        tabs: Array.isArray(payload?.tabs) ? payload.tabs : []
+      };
+      currentShareSelection = null;
+      sharePickerResponded = false;
+      // Default to the Tab tab (like Chrome); fall back to Window/Screen
+      // when there are no tabs to share.
+      currentShareTab =
+        currentShareData.tabs.length > 0
+          ? 'tab'
+          : currentShareData.windows.length > 0
+            ? 'window'
+            : 'screen';
+      const titleEl = document.getElementById('shareTitle');
+      if (titleEl) {
+        titleEl.textContent = `Choose what to share with ${payload?.host || payload?.origin || 'this site'}`;
+      }
+      document.querySelectorAll('[data-share-tab]').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.shareTab === currentShareTab);
+      });
+      document
+        .getElementById('shareTabAudioRow')
+        ?.classList.toggle('hidden', currentShareTab !== 'tab');
+      document
+        .getElementById('shareAudioNote')
+        ?.classList.toggle('hidden', currentShareTab === 'tab');
+      renderShareGrid();
+      updateShareFooter();
+    }
+
     window.gxAPI.onPopoverData(async (data) => {
       if (!data || data.closed) {
+        // [TABS-W2] Gap 1.5 — prompt closed: clear the omnibox chip.
+        if (lastPromptNotifiedOpen) {
+          lastPromptNotifiedOpen = false;
+          window.gxAPI.notifyPermissionPromptState?.({ open: false });
+        }
         resetPopoverOnClose();
         return;
       }
       const openSeq = ++popoverOpenSeq;
       const { kind, payload } = data;
+      // [TABS-W2] Gap 1.5 — a different popover replaced the prompt: the
+      // chip must go too (the closed:true path above does not fire here).
+      if (lastPromptNotifiedOpen && kind !== 'permission-prompt') {
+        lastPromptNotifiedOpen = false;
+        window.gxAPI.notifyPermissionPromptState?.({ open: false });
+      }
 
       if (kind === 'menu') {
         showOnly('view-menu');
         document.getElementById('zoomPct').textContent = `${payload?.zoomPercent || 100}%`;
         fitPopoverToView('menu', 'view-menu', { reset: true });
-      } else if (kind === 'permissions') {
-        showOnly('view-permissions');
-        currentOrigin = payload?.origin || '';
-        const isSecure = Boolean(payload?.isSecure);
-        const isHttp = Boolean(payload?.isHttpInsecure);
-        let displayHost = payload?.url || currentOrigin || 'Internal Page';
-        try {
-          if (currentOrigin) displayHost = new URL(currentOrigin).host || displayHost;
-        } catch (_) { }
-        document.getElementById('secOriginText').textContent = displayHost;
-        document.getElementById('secStatusText').textContent = isHttp
-          ? 'Your connection to this site is not secure'
-          : isSecure
-            ? 'Connection is secure'
-            : 'nextGx Internal Page';
-        const noticeEl = document.getElementById('secNoticeText');
-        if (noticeEl) {
-          noticeEl.textContent = isHttp
-            ? 'You should not enter any sensitive information on this site (for example, passwords or credit cards), because it could be stolen by attackers.'
-            : isSecure
-              ? 'Your information (for example, passwords or credit card numbers) is private when it is sent to this site.'
-              : 'Built-in browser page running locally inside nextGx Browser.';
-        }
-        const secIconEl = document.getElementById('secIcon');
-        secIconEl.style.color = isHttp ? 'var(--warning)' : 'var(--success)';
-        secIconEl.innerHTML = isHttp
-          ? '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>'
-          : '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>';
-        fitPopoverToView('permissions', 'view-permissions', { reset: true });
-
-        if (currentOrigin) {
-          const perms = await window.gxAPI.getSitePermissions(currentOrigin);
-          if (openSeq !== popoverOpenSeq || activePopoverKind !== 'permissions') return;
-          document.querySelectorAll('[data-perm]').forEach((sel) => {
-            sel.disabled = false;
-            sel.value = perms[sel.dataset.perm] || 'ask';
-          });
-        } else {
-          document.querySelectorAll('[data-perm]').forEach((sel) => {
-            sel.disabled = true;
-          });
-        }
-        await refreshSiteCookies(currentOrigin, openSeq);
-        if (openSeq !== popoverOpenSeq || activePopoverKind !== 'permissions') return;
-        fitPopoverToView('permissions', 'view-permissions');
       } else if (kind === 'screenshot') {
         showOnly('view-screenshot');
         fitPopoverToView('screenshot', 'view-screenshot', { reset: true });
@@ -2505,6 +4317,22 @@
         if (openSeq !== popoverOpenSeq || activePopoverKind !== 'shield') return;
         renderShieldPopover(siteInfo, stats);
         fitPopoverToView('shield', 'view-shield');
+      } else if (kind === 'site-info') {
+        // [FIXUP-1] Chrome parity gaps 3.3/3.4. The renderer opens this from
+        // the lock icon; the popover view sits above the tab WebContentsView
+        // so the whole bubble is visible.
+        showOnly('view-site-info');
+        fitPopoverToView('site-info', 'view-site-info', { reset: true });
+        await renderSiteInfoPopover(payload || {});
+        if (openSeq !== popoverOpenSeq || activePopoverKind !== 'site-info') return;
+        fitPopoverToView('site-info', 'view-site-info');
+      } else if (kind === 'zoom-bubble') {
+        // [FIXUP-1] Chrome parity gap 3.5. The renderer opens this from the
+        // omnibox magnifier with the current zoom percent in the payload.
+        showOnly('view-zoom-bubble');
+        const zoomValEl = document.getElementById('zoomBubbleValue');
+        if (zoomValEl) zoomValEl.textContent = `${payload?.zoomPercent || 100}%`;
+        fitPopoverToView('zoom-bubble', 'view-zoom-bubble', { reset: true });
       } else if (kind === 'tab-context') {
         const ctxType = payload?.contextType || 'tab';
         if (ctxType === 'group') {
@@ -2548,10 +4376,12 @@
                   ? 'Replace the right split pane with this tab'
                   : 'Replace the left split pane with this tab';
             } else if (currentTabCtx?.isActive) {
-              splitLabel.textContent = 'Open in split view';
+              // [TABS-W2] Gap 8.3 — Chrome's "Add tab to new split view".
+              splitLabel.textContent = 'Add tab to new split view';
               splitBtn.title = 'Split this tab side by side with a new tab';
             } else {
-              splitLabel.textContent = 'Split with this tab';
+              // [TABS-W2] Gap 8.3 — same entry for a background tab.
+              splitLabel.textContent = 'Add tab to new split view';
               splitBtn.title = 'Open active tab and this tab side by side';
             }
           }
@@ -2587,6 +4417,32 @@
                 ? !currentTabCtx.canCloseOthers
                 : Number(currentTabCtx?.totalTabs || 1) <= 1;
           }
+          // [TABS-W2] Gap 8.2 — dynamic labels/disabled states for the new
+          // tab-menu entries (mute label, move-to-window, close-to-right).
+          const muteLabel = document.getElementById('tabCtxMuteLabel');
+          if (muteLabel) {
+            muteLabel.textContent = currentTabCtx?.muted ? 'Unmute site' : 'Mute site';
+          }
+          const moveWindowBtn = document.getElementById('btnTabCtxMoveWindow');
+          if (moveWindowBtn) {
+            const singleTab = Number(currentTabCtx?.totalTabs || 1) <= 1;
+            moveWindowBtn.disabled = singleTab;
+            moveWindowBtn.title = singleTab
+              ? 'Cannot move the only tab to a new window'
+              : 'Move this tab to a new window';
+          }
+          const closeRightBtn = document.getElementById('btnTabCtxCloseRight');
+          if (closeRightBtn) {
+            closeRightBtn.disabled = Number(currentTabCtx?.tabsToRight || 0) <= 0;
+          }
+          const readingListBtn = document.getElementById('btnTabCtxReadingList');
+          if (readingListBtn) {
+            const url = String(currentTabCtx?.url || '');
+            readingListBtn.disabled = !/^https?:\/\//i.test(url);
+            readingListBtn.title = readingListBtn.disabled
+              ? 'Only web pages can be added to the reading list'
+              : 'Save this page to your reading list';
+          }
           renderTabContextGroupAndWorkspaceSections(currentTabCtx);
           fitPopoverToView('tab-context', 'view-tab-context', { reset: true });
         }
@@ -2615,15 +4471,57 @@
         fitPopoverToView('address-context', 'view-address-context', { reset: true });
       } else if (kind === 'permission-prompt') {
         currentPermPromptReqId = payload?.requestId || '';
+        currentPermPromptDevices = {};
+        stopPermPreview();
         showOnly('view-permission-prompt');
         const hostEl = document.getElementById('permPromptHost');
         const descEl = document.getElementById('permPromptDesc');
         const incogEl = document.getElementById('permPromptIncognitoNote');
+        const linesEl = document.getElementById('permPromptLines');
         const labels = Array.isArray(payload?.labels) && payload.labels.length ? payload.labels : ['Site permission'];
+        const keys = Array.isArray(payload?.keys) ? payload.keys : [];
         if (hostEl) hostEl.textContent = payload?.host || payload?.origin || 'This site';
         if (descEl) descEl.textContent = `wants to use your ${labels.join(' & ')}`;
+        if (linesEl) {
+          linesEl.innerHTML = '';
+          const lineText = {
+            camera: 'Use your camera',
+            microphone: 'Use your microphone',
+            geolocation: 'Use your location',
+            notifications: 'Show notifications',
+            'screen-share': 'Share your screen',
+            'clipboard-read': 'See text and images copied to the clipboard'
+          };
+          for (const k of keys) {
+            const row = document.createElement('span');
+            row.textContent = lineText[k] || k;
+            linesEl.appendChild(row);
+          }
+        }
         if (incogEl) incogEl.classList.toggle('hidden', !payload?.incognito);
+        const variant = payload?.variant === 'simple' ? 'simple' : 'media';
+        document.getElementById('permPromptBtnsMedia')?.classList.toggle('hidden', variant !== 'media');
+        document.getElementById('permPromptBtnsSimple')?.classList.toggle('hidden', variant !== 'simple');
+        const showPreview = keys.includes('camera');
+        const showMic = keys.includes('microphone');
+        document.getElementById('permPreviewWrap')?.classList.toggle('hidden', !showPreview);
+        document.getElementById('permMicWrap')?.classList.toggle('hidden', !showMic);
         fitPopoverToView('permission-prompt', 'view-permission-prompt', { reset: true });
+        // [TABS-W2] Gap 1.5 — tell the chrome window a prompt is open so it
+        // can render the omnibox chip ("Use microphone?" etc.).
+        lastPromptNotifiedOpen = true;
+        window.gxAPI.notifyPermissionPromptState?.({
+          open: true,
+          origin: payload?.origin || '',
+          host: payload?.host || payload?.origin || '',
+          keys,
+          labels
+        });
+        if (showPreview || showMic) startPermDevices(keys);
+      } else if (kind === 'share-picker') {
+        showOnly('view-share-picker');
+        renderSharePicker(payload || {});
+        fitPopoverToView('share-picker', 'view-share-picker', { reset: true });
       } else if (kind === 'bookmark-folder') {
         showOnly('view-bookmark-folder');
         renderBookmarkFolderItems(payload?.folder || '', payload?.items || []);
@@ -2645,6 +4543,35 @@
           renderProfilesPopover(fresh);
           fitPopoverToView('profiles', 'view-profiles');
         }
+      } else if (kind === 'bookmark-bubble') {
+        // [TABS-W2] Gap 7.4
+        showOnly('view-bookmark-bubble');
+        await renderBookmarkBubble(payload || {});
+        if (openSeq !== popoverOpenSeq || activePopoverKind !== 'bookmark-bubble') return;
+        fitPopoverToView('bookmark-bubble', 'view-bookmark-bubble', { reset: true });
+      } else if (kind === 'qr-code') {
+        // [TABS-W2] Gap 9.4
+        showOnly('view-qr-code');
+        renderQrCodeView(payload || {});
+        fitPopoverToView('qr-code', 'view-qr-code', { reset: true });
+      } else if (kind === 'reading-list') {
+        // [TABS-W2] Gap 8.8
+        showOnly('view-reading-list');
+        await renderReadingList();
+        if (openSeq !== popoverOpenSeq || activePopoverKind !== 'reading-list') return;
+        fitPopoverToView('reading-list', 'view-reading-list', { reset: true });
+      } else if (kind === 'tab-search') {
+        // [TABS-W2] Gap 8.1
+        showOnly('view-tab-search');
+        renderTabSearch(payload || {});
+        fitPopoverToView('tab-search', 'view-tab-search', { reset: true });
+      } else if (kind === 'omnibox-suggest' || kind === 'omnibox-suggest-alt') {
+        // [TABS-W2] Gap 3.7 — the renderer alternates the two kinds so
+        // re-opening with fresh matches never toggles the popover closed
+        // (popovers.js closes a popover re-opened with the same kind).
+        showOnly('view-omnibox-suggest');
+        renderOmniboxSuggest(payload || {});
+        fitPopoverToView(kind, 'view-omnibox-suggest', { reset: true });
       }
     });
 
@@ -3406,6 +5333,26 @@
           window.gxAPI.closeTab(tabId);
         } else if (act === 'close-others') {
           window.gxAPI.closeOtherTabs(tabId);
+        } else if (act === 'new-tab-right') {
+          // [TABS-W2] Gap 8.2 — insert right after the tab that was clicked.
+          const idx = typeof currentTabCtx.index === 'number' ? currentTabCtx.index : -1;
+          window.gxAPI.createTab({
+            url: 'nextgx://newtab',
+            active: true,
+            insertIndex: idx >= 0 ? idx + 1 : undefined
+          });
+        } else if (act === 'move-to-new-window') {
+          // [TABS-W2] Gap 8.2
+          window.gxAPI.moveTabToNewWindow(tabId);
+        } else if (act === 'mute') {
+          // [TABS-W2] Gap 8.2 / 8.6 — toggles mute for the tab's site.
+          window.gxAPI.muteTab(tabId);
+        } else if (act === 'reading-list') {
+          // [TABS-W2] Gap 8.8 — main resolves title/URL from the tab.
+          window.gxAPI.addReadingList({ tabId });
+        } else if (act === 'close-right') {
+          // [TABS-W2] Gap 8.2
+          window.gxAPI.closeTabsToRight(tabId);
         }
       });
     });
@@ -3433,15 +5380,122 @@
     });
 
     let currentPermPromptReqId = '';
+    let currentPermPromptDevices = {};
     const respondPermPrompt = (decision) => {
       if (!currentPermPromptReqId) return;
       const reqId = currentPermPromptReqId;
       currentPermPromptReqId = '';
-      window.gxAPI.respondPermissionPrompt?.({ requestId: reqId, decision });
+      const devices = { ...currentPermPromptDevices };
+      currentPermPromptDevices = {};
+      // Release the preview camera/mic NOW (synchronously, before main
+      // resolves the page's getUserMedia) so the page's stream never races
+      // the preview for exclusive hardware access.
+      stopPermPreview();
+      window.gxAPI.respondPermissionPrompt?.({ requestId: reqId, decision, devices });
     };
     document.getElementById('btnPermPromptAlways')?.addEventListener('click', () => respondPermPrompt('allow-always'));
     document.getElementById('btnPermPromptOnce')?.addEventListener('click', () => respondPermPrompt('allow-once'));
     document.getElementById('btnPermPromptBlock')?.addEventListener('click', () => respondPermPrompt('block'));
+    document.getElementById('btnPermPromptSimpleAllow')?.addEventListener('click', () => respondPermPrompt('allow-always'));
+    document.getElementById('btnPermPromptSimpleBlock')?.addEventListener('click', () => respondPermPrompt('block'));
+    // Gap 1.4: ✕ dismisses with NO decision stored (main resolves the
+    // in-flight request as denied and the site asks again next time).
+    document.getElementById('btnPermPromptClose')?.addEventListener('click', () => {
+      currentPermPromptReqId = '';
+      currentPermPromptDevices = {};
+      window.gxAPI.closePopover?.();
+    });
+    document.getElementById('permCameraSelect')?.addEventListener('change', (e) => {
+      const id = e.target.value || '';
+      const label = e.target.options[e.target.selectedIndex]?.textContent || '';
+      if (id) currentPermPromptDevices.camera = id;
+      else delete currentPermPromptDevices.camera;
+      if (label) currentPermPromptDevices.cameraLabel = label;
+      else delete currentPermPromptDevices.cameraLabel;
+      if (id) switchPermPreviewCamera(id);
+    });
+    document.getElementById('permMicSelect')?.addEventListener('change', (e) => {
+      const id = e.target.value || '';
+      const label = e.target.options[e.target.selectedIndex]?.textContent || '';
+      if (id) currentPermPromptDevices.microphone = id;
+      else delete currentPermPromptDevices.microphone;
+      if (label) currentPermPromptDevices.microphoneLabel = label;
+      else delete currentPermPromptDevices.microphoneLabel;
+    });
+
+    // Chrome parity (worker A): screen-share picker controls.
+    document.querySelectorAll('[data-share-tab]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (!currentShareRequestId) return;
+        currentShareTab = btn.dataset.shareTab;
+        currentShareSelection = null;
+        document.querySelectorAll('[data-share-tab]').forEach((b) => {
+          b.classList.toggle('active', b === btn);
+        });
+        document
+          .getElementById('shareTabAudioRow')
+          ?.classList.toggle('hidden', currentShareTab !== 'tab');
+        document
+          .getElementById('shareAudioNote')
+          ?.classList.toggle('hidden', currentShareTab === 'tab');
+        renderShareGrid();
+        updateShareFooter();
+      });
+    });
+    document.getElementById('chkShareTabAudio')?.addEventListener('change', () => updateShareFooter());
+    document.getElementById('btnShareCancel')?.addEventListener('click', () => {
+      respondSharePicker('cancel');
+    });
+    document.getElementById('btnShareConfirm')?.addEventListener('click', () => {
+      if (!currentShareSelection) return;
+      respondSharePicker('share', currentShareSelection);
+    });
+
+    // [TABS-W2] Bookmark bubble buttons (gap 7.4): Done saves the name /
+    // folder (add or update via the bookmark store), Remove deletes it.
+    document.getElementById('btnBmBubbleDone')?.addEventListener('click', async () => {
+      if (!currentBmBubble || !currentBmBubble.url) return;
+      const nameEl = document.getElementById('bmBubbleName');
+      const folderEl = document.getElementById('bmBubbleFolder');
+      const title = (nameEl?.value || '').trim() || currentBmBubble.url;
+      const folder = folderEl?.value || '';
+      if (currentBmBubble.id) {
+        await window.gxAPI.updateBookmark({ id: currentBmBubble.id, title, folder });
+      } else {
+        await window.gxAPI.addBookmark({
+          title,
+          url: currentBmBubble.url,
+          folder,
+          favicon: currentBmBubble.favicon || ''
+        });
+      }
+      currentBmBubble = null;
+      window.gxAPI.closePopover();
+    });
+    document.getElementById('btnBmBubbleRemove')?.addEventListener('click', async () => {
+      if (currentBmBubble?.id) await window.gxAPI.removeBookmark(currentBmBubble.id);
+      currentBmBubble = null;
+      window.gxAPI.closePopover();
+    });
+    // [TABS-W2] QR code buttons (gap 9.4): copy the page URL, close the view.
+    document.getElementById('btnQrCopy')?.addEventListener('click', async () => {
+      const url = document.getElementById('qrUrlText')?.textContent || '';
+      if (!url) return;
+      try {
+        await navigator.clipboard.writeText(url);
+      } catch (_) {
+        const ta = document.createElement('textarea');
+        ta.value = url;
+        document.body.appendChild(ta);
+        ta.select();
+        try {
+          document.execCommand('copy');
+        } catch (_) {}
+        ta.remove();
+      }
+      window.gxAPI.closePopover();
+    });
+    document.getElementById('btnQrClose')?.addEventListener('click', () => window.gxAPI.closePopover());
 
     document.addEventListener('keydown', (e) => {
       if (
@@ -3499,6 +5553,36 @@
         const act = btn.dataset.act;
         if (act === 'screenshot-area') {
           window.gxAPI.startAreaScreenshot();
+        } else if (act === 'reading-list') {
+          // [TABS-W2] Gap 8.8 — swap the menu for the reading-list view.
+          window.gxAPI.openPopover({
+            kind: 'reading-list',
+            x: Math.max(8, window.innerWidth - 328),
+            y: 90,
+            width: 320,
+            height: 380
+          });
+        } else if (act === 'delete-browsing-data') {
+          // [TABS-W2] Gap 9.9 — the Privacy page holds the clear-data card.
+          window.gxAPI.closePopover();
+          window.gxAPI.createTab({ url: 'nextgx://privacy', active: true });
+        } else if (act === 'bookmark-current') {
+          // [TABS-W2] Gap 7.4 — open the bookmark bubble instead of toggling.
+          const active = lastMenuActiveTab || {};
+          if (!active.url || /^nextgx:\/\//i.test(active.url)) return;
+          window.gxAPI.openPopover({
+            kind: 'bookmark-bubble',
+            x: Math.max(8, window.innerWidth - 316),
+            y: 90,
+            width: 308,
+            height: 260,
+            payload: {
+              url: active.url,
+              title: active.title || active.url,
+              favicon: active.favicon || '',
+              isBookmarked: Boolean(active.isBookmarked)
+            }
+          });
         } else {
           window.gxAPI.triggerMenuAction(act);
         }
@@ -3522,54 +5606,15 @@
       window.gxAPI.toggleFullscreen();
     });
 
+    // [TABS-W2] Latest active tab while the ⋮ menu is open — feeds the
+    // bookmark bubble (gap 7.4) without a main-side round trip.
+    let lastMenuActiveTab = null;
     window.gxAPI.onStateUpdate?.((state) => {
+      if (state?.activeTab) lastMenuActiveTab = state.activeTab;
       if (activePopoverKind === 'menu' && state?.activeTab && typeof state.activeTab.zoomPercent === 'number') {
         const zoomEl = document.getElementById('zoomPct');
         if (zoomEl) zoomEl.textContent = `${state.activeTab.zoomPercent}%`;
       }
-    });
-
-    document.getElementById('btnOpenSiteSettings')?.addEventListener('click', () => {
-      window.gxAPI.triggerMenuAction('settings');
-    });
-
-    document.querySelectorAll('[data-perm]').forEach((sel) => {
-      sel.addEventListener('change', async () => {
-        if (currentOrigin) {
-          await window.gxAPI.setSitePermission(currentOrigin, sel.dataset.perm, sel.value);
-        }
-      });
-    });
-
-    async function refreshSiteCookies(origin, expectedSeq = popoverOpenSeq) {
-      const countEl = document.getElementById('popCookieCountText');
-      const clearBtn = document.getElementById('btnClearSiteCookies');
-      if (!countEl || !clearBtn) return;
-      if (!origin || !/^https?:\/\//i.test(origin) || !window.gxAPI.getCookies) {
-        if (expectedSeq !== popoverOpenSeq || activePopoverKind !== 'permissions') return;
-        countEl.textContent = '0 cookies';
-        clearBtn.disabled = true;
-        return;
-      }
-      try {
-        const list = await window.gxAPI.getCookies({ origin });
-        if (expectedSeq !== popoverOpenSeq || activePopoverKind !== 'permissions') return;
-        const count = Array.isArray(list) ? list.length : 0;
-        countEl.textContent = `${count} ${count === 1 ? 'cookie' : 'cookies'}`;
-        clearBtn.disabled = count === 0;
-      } catch (_) {
-        if (expectedSeq !== popoverOpenSeq || activePopoverKind !== 'permissions') return;
-        countEl.textContent = '0 cookies';
-        clearBtn.disabled = true;
-      }
-    }
-
-    document.getElementById('btnClearSiteCookies').addEventListener('click', async () => {
-      if (!currentOrigin || !window.gxAPI.clearSiteCookies) return;
-      const seq = popoverOpenSeq;
-      await window.gxAPI.clearSiteCookies(currentOrigin);
-      if (seq !== popoverOpenSeq || activePopoverKind !== 'permissions') return;
-      await refreshSiteCookies(currentOrigin, seq);
     });
 
     document.getElementById('btnShotArea').addEventListener('click', () => window.gxAPI.startAreaScreenshot());
@@ -3644,6 +5689,41 @@
 
     document.getElementById('btnShieldSettings').addEventListener('click', () => {
       window.gxAPI.triggerMenuAction('settings');
+    });
+
+    // [FIXUP-1] Site-info bubble buttons (gaps 3.3/3.4).
+    document.getElementById('btnSiteInfoClose').addEventListener('click', () => {
+      window.gxAPI.closePopover();
+    });
+
+    document.getElementById('btnSiteInfoClearCookies').addEventListener('click', async () => {
+      if (!currentSiteInfoOrigin) return;
+      await window.gxAPI.clearSiteCookies(currentSiteInfoOrigin);
+      refreshSiteInfoCookieCount(currentSiteInfoOrigin);
+    });
+
+    document.getElementById('btnSiteInfoSettings').addEventListener('click', () => {
+      window.gxAPI.closePopover();
+      window.gxAPI.createTab({ url: 'nextgx://privacy', active: true });
+    });
+
+    // [FIXUP-1] Zoom bubble buttons (gap 3.5). 'tabs:zoom' returns the new
+    // percent, so the label stays in sync with the live zoom.
+    const zoomBubbleValueEl = () => document.getElementById('zoomBubbleValue');
+    document.getElementById('btnZoomBubbleOut').addEventListener('click', async () => {
+      const pct = await window.gxAPI.setZoom('out');
+      const el = zoomBubbleValueEl();
+      if (el && typeof pct === 'number') el.textContent = `${pct}%`;
+    });
+    document.getElementById('btnZoomBubbleIn').addEventListener('click', async () => {
+      const pct = await window.gxAPI.setZoom('in');
+      const el = zoomBubbleValueEl();
+      if (el && typeof pct === 'number') el.textContent = `${pct}%`;
+    });
+    document.getElementById('btnZoomBubbleReset').addEventListener('click', async () => {
+      const pct = await window.gxAPI.setZoom('reset');
+      const el = zoomBubbleValueEl();
+      if (el && typeof pct === 'number') el.textContent = `${pct}%`;
     });
 
     window.gxAPI.onAdblockUpdate((stats) => {

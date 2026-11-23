@@ -1,4 +1,4 @@
-const { WebContentsView } = require('electron');
+const { WebContentsView, ipcMain } = require('electron');
 const {
   NEW_TAB_FILE_URL,
   TAB_PRELOAD_FILE,
@@ -12,7 +12,13 @@ const {
   isWebUiUrl,
   isErrorPageUrl,
   appendInternalUrlParams,
-  sanitizeFaviconUrl
+  sanitizeFaviconUrl,
+  // [TABS-W2] Used by the Wave-2 tab IPC channels registered at the bottom
+  // of this file (mute / close-right / move-to-window / reading list /
+  // reader extract / permission-prompt state). Follows the permissions.js
+  // precedent: handlers live in the owning module, not in ipc.js.
+  isInternalUiSender,
+  getOriginForUrl
 } = require('./utils');
 const {
   getFailedUrlFromErrorPage,
@@ -24,6 +30,7 @@ const {
 const {
   serializeTabs,
   broadcastState,
+  getCtxFromSender,
   notifyActiveWebUiTabShown,
   broadcastHistoryUpdate,
   broadcastBookmarksUpdate
@@ -33,6 +40,8 @@ const { scheduleSessionSave } = require('./session');
 const { attachKeyboardShortcuts } = require('./shortcuts');
 const { attachWebContentsContextMenu } = require('./context-menu');
 const { restoreFocusToActiveTab, closePopover } = require('./popovers');
+// [TABS-W2] Lazy require avoids a require cycle (windows.js requires tabs.js).
+const windowsMod = () => require('./windows');
 const gxControl = require('./gxcontrol');
 const player = require('./player');
 const splitView = require('./splitview');
@@ -78,6 +87,16 @@ function buildWebContentsViewForTab(ctx, tab) {
   wc.setUserAgent(wc.getUserAgent().replace(/Electron\/[^\s]+\s?/g, ''));
   attachKeyboardShortcuts(ctx, wc);
   attachWebContentsContextMenu(ctx, wc, { isSidebar: false });
+
+  // [TABS-W2] Mute site (gap 8.2/8.6): a tab opened on a muted origin starts
+  // muted, so "Mute site" covers the whole site in this window.
+  try {
+    const origin = getOriginForUrl(tab.url);
+    if (origin && ctx._mutedOrigins instanceof Set && ctx._mutedOrigins.has(origin)) {
+      tab.muted = true;
+      wc.setAudioMuted(true);
+    }
+  } catch (_) {}
 
   wc.on('focus', () => {
     splitView.onTabWebContentsFocused(ctx, tab.id);
@@ -159,6 +178,19 @@ function buildWebContentsViewForTab(ctx, tab) {
   const handleUrlChange = (url) => {
     if (url && url.startsWith('chrome-error://')) return;
     tab.url = url;
+    // [TABS-W2] Mute follows the site: navigating a muted tab to another
+    // origin unmutes it, navigating onto a muted origin mutes it.
+    try {
+      const origin = getOriginForUrl(url);
+      const shouldMute = Boolean(
+        origin && ctx._mutedOrigins instanceof Set && ctx._mutedOrigins.has(origin)
+      );
+      if (shouldMute !== Boolean(tab.muted)) {
+        tab.muted = shouldMute;
+        if (!wc.isDestroyed()) wc.setAudioMuted(shouldMute);
+        notifyTabMuteState(ctx, tab.id, shouldMute);
+      }
+    } catch (_) {}
     if (isNewTabUrl(url)) {
       tab.title = ctx.incognito ? 'Private Start' : 'Start Page';
       tab.favicon = '';
@@ -439,6 +471,9 @@ function createTabInternal(
     incognito: Boolean(ctx.incognito),
     sleeping: startAsleep,
     audible: false,
+    // [TABS-W2] Mute-site state (gap 8.2/8.6). Not serialized by broadcast.js,
+    // so the renderer learns it via the 'tabs:mute-state' event (see below).
+    muted: false,
     readerMode: false,
     zoomFactor: 1.0,
     lastFindRequestId: null,
@@ -554,17 +589,27 @@ function switchTab(ctx, tabId) {
     }
   }
   ctx.activeTabId = tabId;
+  // [TABS-W2] MRU order for Ctrl+Tab (gap 5.1): most recently activated first.
+  if (!Array.isArray(ctx._mruTabIds)) ctx._mruTabIds = [];
+  const mruIdx = ctx._mruTabIds.indexOf(tabId);
+  if (mruIdx !== -1) ctx._mruTabIds.splice(mruIdx, 1);
+  ctx._mruTabIds.unshift(tabId);
+  if (ctx._mruTabIds.length > 50) ctx._mruTabIds.length = 50;
   if (ctx.workspaceLastActiveTab instanceof Map && !tab.pinned) {
     const activeWsId = ctx.incognito ? DEFAULT_WORKSPACE_ID : ctx.activeWorkspaceId || DEFAULT_WORKSPACE_ID;
     ctx.workspaceLastActiveTab.set(activeWsId, tabId);
   }
   tab.lastActiveAt = Date.now();
   if (tab.sleeping) wakeTab(ctx, tab);
-  const splitSwitch = splitView.onTabSwitched(ctx, tabId);
+  splitView.onTabSwitched(ctx, tabId);
   gxControl.onActiveTabChanged(ctx);
   updateActiveViewBounds(ctx);
+  // [TABS-W2] Focus the newly active tab's page on every switch (not only in
+  // split view): after a programmatic switch the previously focused view is
+  // hidden, so without this the window has no keyboard focus at all and
+  // Ctrl+Tab / Ctrl+T / every other shortcut is silently lost until the
+  // user clicks somewhere. Chrome focuses the new tab's page on switch.
   if (
-    splitSwitch.inVisibleSplit &&
     !ctx.restoringSession &&
     tab.view &&
     tab.view.webContents &&
@@ -833,6 +878,423 @@ function closeOtherTabs(ctx, keepTabId) {
   scheduleSessionSave(ctx);
   return serializeTabs(ctx);
 }
+
+// ---------------------------------------------------------------------------
+// [TABS-W2] Chrome-parity Wave 2 tab actions (gaps 8.2, 8.3, 8.6, 8.8, 9.6, 5.1)
+// ---------------------------------------------------------------------------
+
+function notifyTabMuteState(ctx, tabId, muted) {
+  if (!ctx || !ctx.win || ctx.win.isDestroyed() || !ctx.win.webContents) return;
+  try {
+    ctx.win.webContents.send('tabs:mute-state', { tabId, muted: Boolean(muted) });
+  } catch (_) {}
+}
+
+function getMutedOrigins(ctx) {
+  if (!ctx._mutedOrigins || !(ctx._mutedOrigins instanceof Set)) {
+    ctx._mutedOrigins = new Set();
+  }
+  return ctx._mutedOrigins;
+}
+
+// Gap 8.2 / 8.6 — "Mute site": mutes this tab and every other tab in the
+// window on the same origin (Chrome mutes the site, not just the tab).
+// `muted` null toggles. Returns the new state for the tab.
+function toggleTabMute(ctx, tabId, muted = null) {
+  const tab = ctx.tabs.get(tabId);
+  if (!tab) return { ok: false };
+  const origin = getOriginForUrl(tab.url);
+  const next = muted === null || muted === undefined ? !tab.muted : Boolean(muted);
+  const origins = getMutedOrigins(ctx);
+  if (origin) {
+    if (next) origins.add(origin);
+    else origins.delete(origin);
+  }
+  for (const t of ctx.tabs.values()) {
+    if (!t) continue;
+    const sameTab = t.id === tabId;
+    const sameOrigin = origin && getOriginForUrl(t.url) === origin;
+    if (!sameTab && !sameOrigin) continue;
+    t.muted = next;
+    if (t.view && t.view.webContents && !t.view.webContents.isDestroyed()) {
+      try {
+        t.view.webContents.setAudioMuted(next);
+      } catch (_) {}
+    }
+    notifyTabMuteState(ctx, t.id, next);
+  }
+  broadcastState(ctx);
+  return { ok: true, muted: next, origin: origin || '' };
+}
+
+// Gap 8.2 — "Close tabs to the right": closes unpinned tabs after the given
+// tab in the active workspace, mirroring closeOtherTabs (closed-tab restore,
+// group pruning, split cleanup, keep-at-least-one-tab).
+function closeTabsToRight(ctx, tabId) {
+  const anchor = ctx.tabs.get(tabId);
+  if (!anchor) return serializeTabs(ctx);
+  const activeWsId = ctx.incognito ? DEFAULT_WORKSPACE_ID : ctx.activeWorkspaceId || DEFAULT_WORKSPACE_ID;
+  const anchorIdx = ctx.tabOrder.indexOf(tabId);
+  const toClose = ctx.tabOrder.filter((id, idx) => {
+    if (idx <= anchorIdx) return false;
+    const t = ctx.tabs.get(id);
+    if (!t || t.pinned) return false;
+    return (t.workspaceId || DEFAULT_WORKSPACE_ID) === activeWsId;
+  });
+  if (toClose.length === 0) return serializeTabs(ctx);
+
+  const activeClosed = toClose.includes(ctx.activeTabId);
+  const affectedGroups = new Set();
+  const closedIds = new Set();
+  for (const id of toClose) {
+    const tab = ctx.tabs.get(id);
+    if (!tab) continue;
+    if (tab.groupId) affectedGroups.add(tab.groupId);
+    closedIds.add(id);
+    recordClosedTabIfEligible(ctx, tab);
+    player.onTabClosed(ctx, tab);
+    if (tab.view) {
+      gxControl.onTabDetached(tab);
+      try {
+        ctx.win.contentView.removeChildView(tab.view);
+        tab.view.webContents.close();
+      } catch (_) {}
+      tab.view = null;
+    }
+    ctx.tabs.delete(id);
+  }
+  ctx.tabOrder = ctx.tabOrder.filter((id) => ctx.tabs.has(id));
+  syncTabsMapOrder(ctx);
+  splitView.onTabsClosed(ctx, closedIds);
+  if (ctx.workspaceLastActiveTab instanceof Map && closedIds.size > 0) {
+    for (const [wsId, lastId] of ctx.workspaceLastActiveTab.entries()) {
+      if (closedIds.has(lastId)) ctx.workspaceLastActiveTab.delete(wsId);
+    }
+  }
+  let prunedAnyGroup = false;
+  for (const gid of affectedGroups) {
+    if (pruneGroupIfEmpty(ctx, gid, { broadcast: false })) prunedAnyGroup = true;
+  }
+  if (activeClosed) {
+    ctx.activeTabId = tabId;
+    anchor.lastActiveAt = Date.now();
+    if (ctx.workspaceLastActiveTab instanceof Map && !anchor.pinned && isTabVisibleInWorkspace(anchor, activeWsId)) {
+      ctx.workspaceLastActiveTab.set(activeWsId, tabId);
+    }
+    if (anchor.sleeping) wakeTab(ctx, anchor);
+    gxControl.onActiveTabChanged(ctx);
+  }
+  updateActiveViewBounds(ctx);
+  if (activeClosed) {
+    restoreFocusToActiveTab(ctx);
+    notifyActiveWebUiTabShown(ctx);
+  }
+  if (prunedAnyGroup) broadcastGroupsChange(ctx);
+  else broadcastState(ctx);
+  scheduleSessionSave(ctx);
+  return serializeTabs(ctx);
+}
+
+// Gap 8.2 — "Move tab to new window": opens the tab's URL in a fresh window
+// (same profile / private state) and closes the tab here. Chrome greys the
+// entry out for a lone tab, so this is a no-op when it is the only tab.
+function moveTabToNewWindow(ctx, tabId) {
+  const tab = ctx.tabs.get(tabId);
+  if (!tab) return { ok: false, error: 'Tab not found.' };
+  if (ctx.tabOrder.length <= 1) {
+    return { ok: false, error: 'Cannot move the only tab to a new window.' };
+  }
+  const url = getTabSourceUrl(tab) || tab.url;
+  const created = windowsMod().createBrowserWindow({
+    incognito: Boolean(ctx.incognito),
+    profileId: ctx.profileId || null,
+    initialUrl: url
+  });
+  if (!created || !created.win) return { ok: false, error: 'Could not open a new window.' };
+  closeTab(ctx, tabId);
+  return { ok: true };
+}
+
+// Gap 5.1 — Ctrl+Tab: with the MRU setting on, jump to the most recently
+// used *other* tab (Chrome's "Ctrl+Tab switches between 2 most recent tabs");
+// otherwise cycle to the next visible tab in strip order.
+function switchToMruTab(ctx) {
+  if (!ctx || !ctx.tabs || ctx.tabs.size === 0) return serializeTabs(ctx);
+  const mru = Array.isArray(ctx._mruTabIds) ? ctx._mruTabIds : [];
+  const activeWsId = ctx.incognito ? DEFAULT_WORKSPACE_ID : ctx.activeWorkspaceId || DEFAULT_WORKSPACE_ID;
+  for (const id of mru) {
+    if (id === ctx.activeTabId) continue;
+    const t = ctx.tabs.get(id);
+    if (!t || t.pinned) continue;
+    if (!isTabVisibleInWorkspace(t, activeWsId)) continue;
+    return switchTab(ctx, id);
+  }
+  return cycleTab(ctx, 1);
+}
+
+function cycleTab(ctx, direction = 1) {
+  if (!ctx || !ctx.tabs || ctx.tabs.size === 0) return serializeTabs(ctx);
+  const activeWsId = ctx.incognito ? DEFAULT_WORKSPACE_ID : ctx.activeWorkspaceId || DEFAULT_WORKSPACE_ID;
+  const visible = ctx.tabOrder.filter((id) => {
+    const t = ctx.tabs.get(id);
+    return t && isTabVisibleInWorkspace(t, activeWsId);
+  });
+  if (visible.length <= 1) return serializeTabs(ctx);
+  let idx = visible.indexOf(ctx.activeTabId);
+  if (idx === -1) idx = 0;
+  const next = visible[(idx + (direction >= 0 ? 1 : visible.length - 1)) % visible.length];
+  return switchTab(ctx, next);
+}
+
+// Gap 9.6 — Reading mode with real article extraction (readability-style,
+// done locally). Runs entirely in the page: picks the most text-dense
+// candidate (article/main/largest text block), strips scripts, nav, ads and
+// sidebars, and rewrites the page into a clean reader layout. Toggle off
+// reloads the original page. The old CSS-only `tabs:reader-mode` channel in
+// ipc.js is left untouched; the UI uses this channel instead.
+function extractArticleForReader() {
+  // Runs inside the page — must not reference anything outside this function.
+  function textLen(el) {
+    return (el.innerText || '').trim().length;
+  }
+  function linkDensity(el) {
+    const text = textLen(el);
+    if (!text) return 1;
+    let linkText = 0;
+    const links = el.querySelectorAll('a');
+    for (const a of links) linkText += (a.innerText || '').trim().length;
+    return linkText / text;
+  }
+  const kill = (root, sel) => {
+    const nodes = root.querySelectorAll(sel);
+    for (const n of nodes) n.remove();
+  };
+  const doc = document;
+  const candidates = [];
+  const seen = new Set();
+  const consider = (el) => {
+    if (!el || seen.has(el)) return;
+    seen.add(el);
+    const len = textLen(el);
+    if (len < 200) return;
+    const paras = el.querySelectorAll('p').length;
+    if (paras === 0 && len < 800) return;
+    candidates.push({ el, score: len * (1 - Math.min(0.9, linkDensity(el))) + paras * 40 });
+  };
+  doc.querySelectorAll('article, main, [role="main"]').forEach(consider);
+  if (candidates.length === 0) {
+    const all = doc.querySelectorAll('div, section');
+    for (const el of all) consider(el);
+  }
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => b.score - a.score);
+  const best = candidates[0].el.cloneNode(true);
+  kill(best, 'script, style, noscript, iframe, svg, form, button, input, select, textarea, nav, header, footer, aside, [role="navigation"], [role="banner"], [role="complementary"], .ad, [class*="ad-"], [id*="ad-"], [class*="sidebar"], [class*="share"], [class*="comment"], [class*="related"], [class*="newsletter"], [class*="paywall"]');
+  const titleEl = doc.querySelector('h1');
+  const title = (titleEl ? titleEl.innerText : doc.title || '').trim();
+  const metaAuthor = doc.querySelector('meta[name="author"]');
+  const byline = metaAuthor ? (metaAuthor.getAttribute('content') || '').trim() : '';
+  const paras = best.querySelectorAll('p');
+  let bodyText = '';
+  for (const p of paras) bodyText += (p.innerText || '').trim() + '\n';
+  if (bodyText.trim().length < 300) return null;
+  const allowed = ['P', 'H1', 'H2', 'H3', 'H4', 'UL', 'OL', 'LI', 'BLOCKQUOTE', 'FIGURE', 'FIGCAPTION', 'IMG', 'A', 'STRONG', 'EM', 'BR'];
+  const clean = (node) => {
+    const kids = Array.from(node.childNodes);
+    for (const kid of kids) {
+      if (kid.nodeType === 3) continue;
+      if (kid.nodeType !== 1) {
+        kid.remove();
+        continue;
+      }
+      if (allowed.indexOf(kid.tagName) === -1) {
+        const span = doc.createElement('span');
+        while (kid.firstChild) span.appendChild(kid.firstChild);
+        node.replaceChild(span, kid);
+        clean(span);
+      } else {
+        if (kid.tagName === 'IMG') {
+          const src = kid.getAttribute('src') || '';
+          if (!/^https?:\/\//i.test(src) && !/^data:image\//i.test(src)) kid.remove();
+          else {
+            kid.removeAttribute('srcset');
+            kid.removeAttribute('loading');
+          }
+        }
+        if (kid.tagName === 'A') {
+          const href = kid.getAttribute('href') || '';
+          if (!/^https?:\/\//i.test(href) && href.charAt(0) !== '#') kid.removeAttribute('href');
+        }
+        for (const attr of Array.from(kid.attributes || [])) {
+          if (['src', 'href', 'alt', 'title'].indexOf(attr.name) === -1) kid.removeAttribute(attr.name);
+        }
+        clean(kid);
+      }
+    }
+  };
+  clean(best);
+  // [TABS-W2] The reader template prints the title itself; drop the matching
+  // first H1 from the extracted body so the title is not shown twice.
+  const firstH1 = best.querySelector('h1');
+  if (firstH1 && title && (firstH1.innerText || '').trim() === title) firstH1.remove();
+  return { title, byline, html: best.innerHTML, textLength: bodyText.trim().length };
+}
+
+async function toggleReaderModeExtract(ctx) {
+  const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
+  if (!tab || !tab.view || !tab.view.webContents || tab.view.webContents.isDestroyed()) {
+    return { ok: false, error: 'No active tab.' };
+  }
+  const wc = tab.view.webContents;
+  if (tab.readerMode) {
+    tab.readerMode = false;
+    try {
+      await wc.reload();
+    } catch (_) {}
+    broadcastState(ctx);
+    return { ok: true, active: false };
+  }
+  const url = tab.url || '';
+  if (!/^https?:\/\//i.test(url)) {
+    return { ok: false, error: 'Reader view works on web pages.' };
+  }
+  let extracted = null;
+  try {
+    extracted = await wc.executeJavaScript(`(${extractArticleForReader.toString()})()`);
+  } catch (_) {
+    extracted = null;
+  }
+  if (!extracted || typeof extracted.html !== 'string' || (extracted.textLength || 0) < 300) {
+    return { ok: false, error: 'Could not extract a readable article from this page.' };
+  }
+  const esc = (s) =>
+    String(s || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  const readerHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(extracted.title || 'Reader view')}</title><style>
+    body{background:#14161f;color:#e2e8f0;font-family:Georgia,'Charter',serif;font-size:19px;line-height:1.75;margin:0;padding:0}
+    .nx-reader-bar{position:sticky;top:0;display:flex;gap:12px;align-items:center;padding:10px 20px;background:#1b1e2b;border-bottom:1px solid #2b2f42;font-family:system-ui,sans-serif;font-size:13px;color:#9aa3b2}
+    .nx-reader-bar button{background:#7c5cff;color:#fff;border:0;border-radius:999px;padding:6px 14px;font-size:13px;cursor:pointer}
+    .nx-reader-bar a{color:#9aa3b2;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    article{max-width:680px;margin:36px auto 80px;padding:0 28px}
+    h1{font-size:32px;line-height:1.25;margin:0 0 8px}
+    h2{font-size:24px;margin:32px 0 8px} h3{font-size:20px;margin:24px 0 8px}
+    .nx-byline{color:#9aa3b2;font-family:system-ui,sans-serif;font-size:13px;margin-bottom:28px}
+    p{margin:0 0 18px} img{max-width:100%;height:auto;border-radius:8px}
+    a{color:#8ab4ff} blockquote{border-left:3px solid #7c5cff;margin:18px 0;padding-left:16px;color:#b9c0d0}
+    ul,ol{margin:0 0 18px;padding-left:24px}
+  </style></head><body>
+  <div class="nx-reader-bar"><button onclick="location.reload()">← Back to original</button><span>Reader view</span><a href="${esc(url)}">${esc(url)}</a></div>
+  <article><h1>${esc(extracted.title || 'Untitled')}</h1>${extracted.byline ? `<div class="nx-byline">${esc(extracted.byline)}</div>` : ''}${extracted.html}</article>
+  </body></html>`;
+  try {
+    await wc.executeJavaScript(`document.open(); document.write(${JSON.stringify(readerHtml)}); document.close();`);
+  } catch (err) {
+    return { ok: false, error: err?.message || 'Reader view failed.' };
+  }
+  tab.readerMode = true;
+  broadcastState(ctx);
+  return { ok: true, active: true };
+}
+
+// [TABS-W2] Wave-2 IPC channels. Registered from this module (owned) instead
+// of ipc.js, following the permissions.js / passkeys.js precedent. Internal-UI
+// senders only (same guard ipc.js uses for its own channels).
+let tabsWave2IpcRegistered = false;
+function ensureTabsWave2IpcRegistered() {
+  if (tabsWave2IpcRegistered) return;
+  tabsWave2IpcRegistered = true;
+  try {
+    if (!ipcMain || typeof ipcMain.handle !== 'function') return;
+    const handleInternal = (channel, handler) => {
+      ipcMain.handle(channel, (e, ...args) => {
+        if (!isInternalUiSender(e)) throw new Error(`Forbidden IPC channel: ${channel}`);
+        return handler(e, ...args);
+      });
+    };
+    handleInternal('tabs:mute', (e, payload = {}) => {
+      const ctx = getCtxFromSender(e.sender);
+      const tabId = typeof payload === 'string' ? payload : payload.tabId;
+      return toggleTabMute(ctx, tabId, payload && 'muted' in payload ? payload.muted : null);
+    });
+    handleInternal('tabs:mute-state', (e, payload = {}) => {
+      const ctx = getCtxFromSender(e.sender);
+      const tabId = typeof payload === 'string' ? payload : payload.tabId;
+      const tab = tabId ? ctx.tabs.get(tabId) : null;
+      return { tabId: tabId || null, muted: Boolean(tab && tab.muted) };
+    });
+    handleInternal('tabs:close-right', (e, payload = {}) => {
+      const ctx = getCtxFromSender(e.sender);
+      const tabId = typeof payload === 'string' ? payload : payload.tabId;
+      return closeTabsToRight(ctx, tabId);
+    });
+    handleInternal('tabs:move-to-new-window', (e, payload = {}) => {
+      const ctx = getCtxFromSender(e.sender);
+      const tabId = typeof payload === 'string' ? payload : payload.tabId;
+      return moveTabToNewWindow(ctx, tabId);
+    });
+    handleInternal('tabs:reader-mode-extract', async (e) => {
+      const ctx = getCtxFromSender(e.sender);
+      return toggleReaderModeExtract(ctx);
+    });
+    handleInternal('reading-list:get', (e) => {
+      const ctx = getCtxFromSender(e.sender);
+      const pid = ctx?.profileId || state.storage.getActiveProfileId();
+      return state.storage.getReadingList(pid);
+    });
+    handleInternal('reading-list:add', (e, payload = {}) => {
+      const ctx = getCtxFromSender(e.sender);
+      const pid = ctx?.profileId || state.storage.getActiveProfileId();
+      const tab = payload.tabId ? ctx.tabs.get(payload.tabId) : null;
+      const entry = {
+        title: payload.title || tab?.title || '',
+        url: payload.url || tab?.url || '',
+        favicon: payload.favicon || tab?.favicon || ''
+      };
+      const res = state.storage.addReadingListItem(entry, pid);
+      if (ctx?.win && !ctx.win.isDestroyed()) {
+        if (res.ok) {
+          ctx.win.webContents.send('ui:toast', 'Added to Reading List');
+        } else if (res.duplicate) {
+          ctx.win.webContents.send('ui:toast', 'Already in your reading list');
+        }
+      }
+      return res;
+    });
+    handleInternal('reading-list:remove', (e, payload = {}) => {
+      const ctx = getCtxFromSender(e.sender);
+      const pid = ctx?.profileId || state.storage.getActiveProfileId();
+      const id = typeof payload === 'string' ? payload : payload.id;
+      return state.storage.removeReadingListItem(id, pid);
+    });
+    handleInternal('reading-list:mark-read', (e, payload = {}) => {
+      const ctx = getCtxFromSender(e.sender);
+      const pid = ctx?.profileId || state.storage.getActiveProfileId();
+      return state.storage.markReadingListRead(payload.id, payload.read, pid);
+    });
+    // Gap 1.5 — omnibox permission chips: the permission-prompt popover
+    // (popover.html, owned) reports its open/close lifecycle here; main
+    // forwards it to the chrome window so the renderer can render the chip
+    // while prompting and the persistent site icon after a decision.
+    // A decision also triggers the stored-permissions broadcast, which the
+    // renderer uses to refresh the persistent icons.
+    handleInternal('ui:permission-prompt-state', (e, payload = {}) => {
+      const ctx = getCtxFromSender(e.sender);
+      if (!ctx || !ctx.win || ctx.win.isDestroyed() || !ctx.win.webContents) return { ok: false };
+      ctx.win.webContents.send('permission-prompt:state', {
+        open: Boolean(payload.open),
+        origin: typeof payload.origin === 'string' ? payload.origin : '',
+        host: typeof payload.host === 'string' ? payload.host : '',
+        keys: Array.isArray(payload.keys) ? payload.keys : [],
+        labels: Array.isArray(payload.labels) ? payload.labels : []
+      });
+      return { ok: true };
+    });
+  } catch (_) {}
+}
+ensureTabsWave2IpcRegistered();
 
 function duplicateTab(ctx, tabId) {
   const orig = ctx.tabs.get(tabId);
@@ -1269,6 +1731,13 @@ module.exports = {
   sleepBackgroundTabs,
   closeTab,
   closeOtherTabs,
+  // [TABS-W2]
+  closeTabsToRight,
+  toggleTabMute,
+  moveTabToNewWindow,
+  switchToMruTab,
+  cycleTab,
+  toggleReaderModeExtract,
   duplicateTab,
   reorderTab,
   reopenLastClosedTab,

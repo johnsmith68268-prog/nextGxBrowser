@@ -38,6 +38,10 @@
       </button>
 
       <div class="nx-tabs-strip" id="tabsStrip">
+        <!-- [TABS-W2] Gap 8.1 — tab search chevron (opens the tab search dropdown) -->
+        <button class="nx-tab-search-btn" id="btnTabSearch" title="Search tabs (Ctrl+Shift+A)" aria-label="Search tabs">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
         <button class="nx-tab-scroll-btn hidden" id="btnTabsScrollLeft" title="Scroll tabs left" aria-label="Scroll tabs left">
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
         </button>
@@ -104,7 +108,7 @@
           spellcheck="false"
         />
 
-        <span class="private-pill hidden" id="incognitoIndicator">Private</span>
+        <span class="private-pill hidden" id="incognitoIndicator">Incognito</span>
 
         <!-- Reader Mode Button inside Address Bar (Safari style) -->
         <button type="button" class="capsule-btn" id="btnReaderMode" title="Toggle Reader View">
@@ -116,6 +120,17 @@
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
           <span id="topBlockedCount">0</span>
         </button>
+
+        <!-- [URLBAR-3.5] Zoom magnifier — shown only when page zoom is not 100% -->
+        <button type="button" class="capsule-btn zoom-indicator hidden" id="btnZoomIndicator" title="Page zoom — click to change">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><line x1="15.5" y1="15.5" x2="21" y2="21"/><line x1="8" y1="10.5" x2="13" y2="10.5"/><line x1="10.5" y1="8" x2="10.5" y2="13"/></svg>
+          <span id="zoomIndicatorText">100%</span>
+        </button>
+
+        <!-- [TABS-W2] Gap 1.5 — persistent site-permission icons (after a
+             decision) + permission chip (while a prompt is open) -->
+        <span class="perm-site-icons" id="permSiteIcons"></span>
+        <button type="button" class="perm-chip hidden" id="permChip" title="A site is asking for permission"></button>
 
         <!-- Bookmark Star -->
         <button type="button" class="capsule-btn" id="btnBookmarkStar" title="Bookmark this page (Ctrl+D)">
@@ -188,6 +203,16 @@
     <button class="mini-icon-btn" id="btnFindNext" title="Next (Enter)">▼</button>
     <button class="mini-icon-btn" id="btnFindClose" title="Done (Esc)">Done</button>
   </div>
+
+  <!-- [FIXUP-1] Site-info bubble + zoom bubble now live in the popover
+       system (popover.html kinds 'site-info' / 'zoom-bubble'): renderer-side
+       fixed panels below the top chrome are occluded by the tab's
+       WebContentsView. The lock icon / magnifier open them via gxAPI. -->
+
+  <!-- [TABS-W2] Gap 8.1 / 3.7 — tab search + omnibox suggestions now live in
+       the POPOVER (popover.html, kinds 'tab-search' / 'omnibox-suggest'):
+       renderer-side dropdown panels below the top chrome are covered by
+       the active tab's WebContentsView in the composited window. -->
 
   <!-- MAIN BODY -->
   <div class="nx-body">

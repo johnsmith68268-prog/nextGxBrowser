@@ -475,6 +475,31 @@ body {
   cursor: default;
 }
 
+/* [TABS-W2] Gap 8.1 — tab search chevron at the left of the tab strip. */
+.nx-tab-search-btn {
+  width: 24px;
+  height: 28px;
+  border-radius: var(--nx-radius-xs);
+  clip-path: var(--nx-chamfer-sm);
+  border: 1px solid var(--border-glass);
+  background: var(--bg-chrome);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--nx-motion-fast) var(--nx-motion-ease), border-color var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+  -webkit-app-region: no-drag;
+}
+
+.nx-tab-search-btn:hover {
+  background: var(--nx-accent-soft);
+  border-color: var(--nx-accent);
+  color: var(--nx-accent-bright);
+  box-shadow: var(--nx-glow-sm);
+}
+
 .nx-tabs-container {
   display: flex;
   align-items: center;
@@ -639,6 +664,34 @@ body {
 .tab-audio-svg {
   color: var(--nx-accent-bright);
   flex-shrink: 0;
+}
+
+/* [TABS-W2] Gap 8.2/8.6 — clickable speaker button on noisy/muted tabs. */
+.tab-audio-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--nx-accent-bright);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.tab-audio-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.tab-audio-btn.muted {
+  color: var(--text-muted);
+}
+
+.tab-audio-btn.muted:hover {
+  color: var(--text);
 }
 
 .tab-sleep-svg {
@@ -820,6 +873,16 @@ body {
   cursor: pointer;
   clip-path: polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 4px 100%, 0 calc(100% - 4px));
   transition: background var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease), border-color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+}
+
+/* [TABS-W2] Gap 7.5 — "All Bookmarks" folder sits at the right end of the
+   bar, separated from the other items. */
+.bm-bar-all {
+  margin-left: auto;
+  border-left: 1px solid var(--border-glass);
+  border-radius: 0 var(--nx-radius-xs) var(--nx-radius-xs) 0;
+  padding-left: 10px;
+  font-weight: 700;
 }
 
 .bm-bar-item:hover {
@@ -1214,6 +1277,110 @@ body {
   border-color: var(--nx-accent);
   color: var(--nx-accent-bright);
   box-shadow: var(--nx-glow-sm);
+}
+
+/* [FIXUP-1] The site-info bubble + zoom bubble moved to the popover system
+   (popover.html kinds 'site-info' / 'zoom-bubble'); the renderer-side
+   .nx-omnibox-panel rules below were removed with the panels. */
+
+/* [TABS-W2] Gap 1.5 — omnibox permission chip + persistent site icons. */
+.perm-chip {
+  flex-shrink: 0;
+  max-width: 170px;
+  padding: 3px 9px;
+  border: 1px solid var(--nx-accent);
+  border-radius: 999px;
+  background: var(--nx-accent-soft);
+  color: var(--nx-accent-bright);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.perm-site-icons {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.perm-site-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--nx-accent-bright);
+  cursor: pointer;
+}
+
+.perm-site-icon:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.perm-site-icon.blocked {
+  color: var(--danger);
+  opacity: 0.85;
+}
+
+/* [TABS-W2] Gap 5.1 — tab hover preview card. */
+.tab-hover-card {
+  position: fixed;
+  width: 300px;
+  max-width: calc(100vw - 16px);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--nx-radius-sm);
+  box-shadow: var(--nx-glow-md), 0 12px 32px rgba(0, 0, 0, 0.5);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  z-index: 70;
+  color: var(--text-main);
+  pointer-events: none;
+}
+
+.tab-hover-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tab-hover-favicon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--nx-accent-bright);
+}
+
+.tab-hover-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tab-hover-url {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.zoom-indicator span {
+  font-family: var(--nx-font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 /* MAIN BODY & OPERA GX SIDEBAR (50px) */

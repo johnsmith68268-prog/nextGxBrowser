@@ -85,6 +85,16 @@ class StorageManager {
         sitePermissions: path.join(this.dataDir, 'site_permissions.json'),
         closedTabs: path.join(this.dataDir, 'closed_tabs.json'),
         adblockSites: path.join(this.dataDir, 'adblock_sites.json'),
+        // [URLBAR-9.2] Per-site zoom store (origin -> zoom factor). Chrome parity.
+        siteZoom: path.join(this.dataDir, 'site_zoom.json'),
+        // [TABS-W2] Reading list store (gap 8.8): save-for-later items,
+        // distinct from bookmarks. { id, title, url, favicon, addedAt, read }.
+        readingList: path.join(this.dataDir, 'reading_list.json'),
+        // [Wave2-D] Autofill stores (gaps 6.2/6.3): addresses + payment methods.
+        // Card numbers are encrypted with the OS keyring (safeStorage) when
+        // available, reusing the password-encryption helpers below.
+        addresses: path.join(this.dataDir, 'addresses.json'),
+        paymentMethods: path.join(this.dataDir, 'payment_methods.json'),
         session: path.join(this.dataDir, 'session.json')
       };
     } else {
@@ -99,6 +109,13 @@ class StorageManager {
         sitePermissions: path.join(this.dataDir, 'site_permissions.json'),
         closedTabs: path.join(this.dataDir, 'closed_tabs.json'),
         adblockSites: path.join(this.dataDir, 'adblock_sites.json'),
+        // [URLBAR-9.2] Per-site zoom store (origin -> zoom factor). Chrome parity.
+        siteZoom: path.join(this.dataDir, 'site_zoom.json'),
+        // [TABS-W2] Reading list store (gap 8.8) — see profile-child branch.
+        readingList: path.join(this.dataDir, 'reading_list.json'),
+        // [Wave2-D] Autofill stores (gaps 6.2/6.3) — see profile-child branch.
+        addresses: path.join(this.dataDir, 'addresses.json'),
+        paymentMethods: path.join(this.dataDir, 'payment_methods.json'),
         extensions: path.join(this.dataDir, 'extensions.json'),
         session: path.join(this.dataDir, 'session.json'),
         workspaces: path.join(this.dataDir, 'workspaces.json'),
@@ -131,6 +148,18 @@ class StorageManager {
             }
           ],
       sitePermissions: {},
+      // [TABS-W2] Reading list (gap 8.8): save-for-later items, distinct from
+      // bookmarks. { id, title, url, favicon, addedAt, read }.
+      readingList: [],
+      // [URLBAR-9.2] Per-site zoom: { "<origin>": <zoom factor 0.3–3.0> }. 100% (=1.0) is
+      // the default and is not stored (entries are removed when reset to 1.0).
+      siteZoom: {},
+      // [Wave2-D] Autofill (gaps 6.2/6.3). Addresses are stored as plain
+      // JSON (names/addresses are not secrets); payment-method card numbers
+      // are encrypted with safeStorage when available (see the password
+      // helpers) and only the last 4 digits are kept in the clear.
+      addresses: [],
+      paymentMethods: [],
       adblockSites: {},
       extensions: [],
       session: { version: 1, windows: [] },
@@ -180,9 +209,74 @@ class StorageManager {
             },
             workspace: 'Personal',
             searchEngine: 'google',
+            // [Wave2-D] Search engines (gap 5.2): editable list. `url` must
+            // contain %s (replaced with the encoded query). `keyword` triggers
+            // the engine from the address bar; `siteSearch` engines are
+            // keyword-only and can never be the default. Built-ins mirror
+            // Chrome's list; the default engine id lives in `searchEngine`.
+            searchEngines: [
+              { id: 'google', name: 'Google', url: 'https://www.google.com/search?q=%s', keyword: '', siteSearch: false, builtin: true },
+              { id: 'bing', name: 'Bing', url: 'https://www.bing.com/search?q=%s', keyword: 'bing', siteSearch: false, builtin: true },
+              { id: 'duckduckgo', name: 'DuckDuckGo', url: 'https://duckduckgo.com/?q=%s', keyword: 'ddg', siteSearch: false, builtin: true },
+              { id: 'brave', name: 'Brave', url: 'https://search.brave.com/search?q=%s', keyword: 'brave', siteSearch: false, builtin: true },
+              { id: 'ecosia', name: 'Ecosia', url: 'https://www.ecosia.org/search?q=%s', keyword: 'ecosia', siteSearch: false, builtin: true }
+            ],
+            // [Wave2-D] Address-bar keyword shortcut mode (gap 5.2):
+            // 'space-or-tab' (Chrome default) or 'tab'.
+            searchShortcutMode: 'space-or-tab',
+            // [Wave2-D] On startup (gap 5.3): 'newtab' = open the new tab
+            // page, 'restore' = continue where you left off, 'urls' = open a
+            // specific page or set of pages (see startupUrls). `restoreSession`
+            // below is kept in sync: true exactly when mode is 'restore'.
+            startupMode: 'restore',
+            startupUrls: [],
             restoreSession: true,
             homepageUrl: '',
+            // [Wave2-D] Languages (gap 5.4): BCP 47 tags. The spellchecker
+            // languages follow preferredLanguages when spellcheck is on.
+            preferredLanguages: ['en-US'],
+            spellcheckEnabled: true,
+            // [Wave2-D] Downloads settings (gap 5.5): '' = system Downloads
+            // folder. The session download path is applied from ipc.js; the
+            // will-download flow in downloads.js still pins its own path
+            // (see chrome-parity-log-settings.md) — location/ask-where need a
+            // 3-line change there to take effect for real downloads.
+            downloadPath: '',
+            downloadAskWhere: false,
+            downloadShowWhenDone: true,
+            // [Wave2-D] Third-party cookies (gap 5.9): 'allow' |
+            // 'block-incognito' (Chrome's modern default) | 'block'. Enforced
+            // at the network level (Cookie/Set-Cookie headers) from ipc.js.
+            thirdPartyCookies: 'block-incognito',
+            // [Wave2-D] Site settings defaults (gap 5.12): 'ask' (Sites can
+            // ask) or 'block' (Don't allow). Stored here; the permission
+            // prompt flow in permissions.js must read them (not yet wired —
+            // see chrome-parity-log-settings.md).
+            sitePermissionDefaults: {
+              camera: 'ask',
+              microphone: 'ask',
+              geolocation: 'ask',
+              notifications: 'ask',
+              'clipboard-read': 'ask',
+              'screen-share': 'ask'
+            },
             showBookmarksBar: true,
+            // [Wave2-D] Appearance toggles (gap 5.1) — behaviours are read
+            // by the main window UI (worker E). Keys: showHomeButton,
+            // showTabSearchButton, ctrlTabMru (Ctrl+Tab = 2 most recent tabs),
+            // tabHoverPreview (hover preview card on tabs).
+            showHomeButton: true,
+            showTabSearchButton: true,
+            ctrlTabMru: false,
+            tabHoverPreview: true,
+            // [Wave2-D] Accessibility (gap 5.6) + System (gap 5.7): stored
+            // settings only in this round — caret browsing (F7), focus
+            // highlight, background-apps and GPU toggles need main/renderer
+            // wiring in a later round.
+            accessibilityCaretBrowsing: false,
+            accessibilityFocusHighlight: false,
+            runBackgroundApps: false,
+            gpuAcceleration: true,
             adblockEnabled: true,
             trackerBlockEnabled: true,
             forceDarkWeb: false,
@@ -736,6 +830,96 @@ class StorageManager {
     return Math.max(1, Math.round(num));
   }
 
+  // [Wave2-D] Search-engine list sanitization (gap 5.2). Keeps only
+  // well-formed entries ({id, name, url with %s, keyword, siteSearch}),
+  // guarantees the built-in Google entry exists, and guarantees the chosen
+  // default id points at a non-site-search engine (else falls back to Google).
+  _sanitizeSearchEngines(rawList, defaultId) {
+    const fallback = JSON.parse(JSON.stringify(this.defaults.settings.searchEngines));
+    const list = Array.isArray(rawList) ? rawList : [];
+    const seen = new Set();
+    const clean = [];
+    for (const e of list) {
+      if (!e || typeof e !== 'object') continue;
+      const id = typeof e.id === 'string' ? e.id.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '') : '';
+      const name = typeof e.name === 'string' ? e.name.trim().slice(0, 40) : '';
+      const url = typeof e.url === 'string' ? e.url.trim() : '';
+      if (!id || !name || !/^https?:\/\//i.test(url) || !url.includes('%s') || seen.has(id)) continue;
+      seen.add(id);
+      clean.push({
+        id,
+        name,
+        url,
+        keyword: typeof e.keyword === 'string' ? e.keyword.trim().toLowerCase().replace(/\s+/g, '') : '',
+        siteSearch: Boolean(e.siteSearch),
+        builtin: Boolean(e.builtin)
+      });
+    }
+    if (!clean.some((e) => e.id === 'google')) {
+      clean.unshift({ ...fallback[0] });
+    }
+    let resolvedDefault = typeof defaultId === 'string' ? defaultId.trim().toLowerCase() : 'google';
+    if (!clean.some((e) => e.id === resolvedDefault && !e.siteSearch)) {
+      resolvedDefault = 'google';
+    }
+    return { engines: clean, defaultId: resolvedDefault };
+  }
+
+  // [Wave2-D] Startup URLs (gap 5.3): http(s) URLs only, deduped, max 20.
+  _sanitizeStartupUrls(rawList) {
+    if (!Array.isArray(rawList)) return [];
+    const out = [];
+    const seen = new Set();
+    for (const raw of rawList.slice(0, 20)) {
+      if (typeof raw !== 'string') continue;
+      const check = this.validateHomepageUrl(raw);
+      if (!check.ok || !check.url) continue;
+      if (seen.has(check.url)) continue;
+      seen.add(check.url);
+      out.push(check.url);
+    }
+    return out;
+  }
+
+  // [Wave2-D] Language tags (gap 5.4): BCP 47 `ll` or `ll-CC`, max 12, and
+  // the primary subtag must be a real ISO 639 language (a shape check alone
+  // would accept nonsense like 'xx').
+  _sanitizeLanguages(rawList) {
+    const known = new Set([
+      'en', 'bn', 'hi', 'es', 'fr', 'de', 'pt', 'ar', 'zh', 'ja', 'ko', 'ru',
+      'it', 'nl', 'tr', 'vi', 'id', 'ms', 'ur', 'fa', 'uk', 'pl', 'sv', 'da',
+      'fi', 'no', 'nb', 'cs', 'sk', 'hu', 'ro', 'el', 'he', 'th', 'ta', 'te',
+      'ml', 'kn', 'mr', 'gu', 'pa', 'ne', 'si', 'my', 'km', 'lo', 'ka', 'hy',
+      'az', 'kk', 'ky', 'uz', 'tg', 'mn', 'bo', 'dz', 'am', 'ti', 'so', 'sw',
+      'yo', 'ig', 'ha', 'af', 'sq', 'sr', 'hr', 'bs', 'sl', 'mk', 'lv', 'lt',
+      'et', 'ga', 'cy', 'mt', 'is', 'gl', 'ca', 'eu', 'be', 'la', 'eo', 'yi'
+    ]);
+    if (!Array.isArray(rawList) || !rawList.length) return ['en-US'];
+    const out = [];
+    const seen = new Set();
+    for (const raw of rawList.slice(0, 12)) {
+      if (typeof raw !== 'string') continue;
+      const tag = raw.trim();
+      const m = tag.match(/^([a-z]{2,3})(-[A-Z]{2})?$/);
+      if (!m || !known.has(m[1])) continue;
+      if (seen.has(tag)) continue;
+      seen.add(tag);
+      out.push(tag);
+    }
+    return out.length ? out : ['en-US'];
+  }
+
+  // [Wave2-D] Per-permission defaults (gap 5.12): only 'ask' | 'block'.
+  _sanitizeSitePermissionDefaults(raw) {
+    const keys = ['camera', 'microphone', 'geolocation', 'notifications', 'clipboard-read', 'screen-share'];
+    const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const out = {};
+    for (const k of keys) {
+      out[k] = src[k] === 'block' ? 'block' : 'ask';
+    }
+    return out;
+  }
+
   _sanitizeGxRamLimitMB(rawMB) {
     const num = Number(rawMB);
     if (!Number.isFinite(num) || num <= 0) return this.defaults.settings.gxRamLimitMB;
@@ -822,6 +1006,33 @@ class StorageManager {
     merged.sidebarPanelPinned = Boolean(merged.sidebarPanelPinned);
     const hpCheck = this.validateHomepageUrl(merged.homepageUrl);
     merged.homepageUrl = hpCheck.ok ? hpCheck.url : '';
+    // [Wave2-D] New settings keys: sanitize on every read so a hand-edited
+    // or imported settings file can never leave the app in a broken state.
+    const sanitizedEngines = this._sanitizeSearchEngines(merged.searchEngines, merged.searchEngine);
+    merged.searchEngines = sanitizedEngines.engines;
+    merged.searchEngine = sanitizedEngines.defaultId;
+    merged.searchShortcutMode = merged.searchShortcutMode === 'tab' ? 'tab' : 'space-or-tab';
+    merged.startupMode = ['newtab', 'restore', 'urls'].includes(merged.startupMode) ? merged.startupMode : 'restore';
+    merged.startupUrls = this._sanitizeStartupUrls(merged.startupUrls);
+    // Startup mode is the source of truth; restoreSession mirrors it.
+    merged.restoreSession = merged.startupMode === 'restore';
+    merged.preferredLanguages = this._sanitizeLanguages(merged.preferredLanguages);
+    merged.spellcheckEnabled = merged.spellcheckEnabled !== false;
+    merged.downloadPath = typeof merged.downloadPath === 'string' ? merged.downloadPath.trim() : '';
+    merged.downloadAskWhere = Boolean(merged.downloadAskWhere);
+    merged.downloadShowWhenDone = merged.downloadShowWhenDone !== false;
+    merged.thirdPartyCookies = ['allow', 'block-incognito', 'block'].includes(merged.thirdPartyCookies)
+      ? merged.thirdPartyCookies
+      : 'block-incognito';
+    merged.sitePermissionDefaults = this._sanitizeSitePermissionDefaults(merged.sitePermissionDefaults);
+    merged.showHomeButton = merged.showHomeButton !== false;
+    merged.showTabSearchButton = merged.showTabSearchButton !== false;
+    merged.ctrlTabMru = Boolean(merged.ctrlTabMru);
+    merged.tabHoverPreview = merged.tabHoverPreview !== false;
+    merged.accessibilityCaretBrowsing = Boolean(merged.accessibilityCaretBrowsing);
+    merged.accessibilityFocusHighlight = Boolean(merged.accessibilityFocusHighlight);
+    merged.runBackgroundApps = Boolean(merged.runBackgroundApps);
+    merged.gpuAcceleration = merged.gpuAcceleration !== false;
     return merged;
   }
 
@@ -850,6 +1061,93 @@ class StorageManager {
     const safePartial = partial && typeof partial === 'object' ? { ...partial } : {};
     if (Object.prototype.hasOwnProperty.call(safePartial, 'restoreSession')) {
       safePartial.restoreSession = Boolean(safePartial.restoreSession);
+    }
+    // [Wave2-D] Startup mode (gap 5.3) is the source of truth;
+    // restoreSession mirrors it. A direct restoreSession write (e.g. the
+    // privacy-dashboard toggle) maps back onto startupMode without
+    // clobbering an explicit 'urls' choice when turning restore off.
+    if (Object.prototype.hasOwnProperty.call(safePartial, 'startupMode')) {
+      const mode = safePartial.startupMode;
+      safePartial.startupMode = ['newtab', 'restore', 'urls'].includes(mode) ? mode : 'restore';
+      safePartial.restoreSession = safePartial.startupMode === 'restore';
+    } else if (Object.prototype.hasOwnProperty.call(safePartial, 'restoreSession')) {
+      const wantRestore = Boolean(safePartial.restoreSession);
+      const currentMode = current.startupMode || 'restore';
+      safePartial.startupMode = wantRestore
+        ? 'restore'
+        : currentMode === 'urls'
+          ? 'urls'
+          : 'newtab';
+      safePartial.restoreSession = wantRestore && safePartial.startupMode === 'restore';
+    }
+    if (Object.prototype.hasOwnProperty.call(safePartial, 'startupUrls')) {
+      safePartial.startupUrls = this._sanitizeStartupUrls(safePartial.startupUrls);
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(safePartial, 'searchEngines') ||
+      Object.prototype.hasOwnProperty.call(safePartial, 'searchEngine')
+    ) {
+      const nextList = Object.prototype.hasOwnProperty.call(safePartial, 'searchEngines')
+        ? safePartial.searchEngines
+        : current.searchEngines;
+      const nextDefault = Object.prototype.hasOwnProperty.call(safePartial, 'searchEngine')
+        ? safePartial.searchEngine
+        : current.searchEngine;
+      const sanitized = this._sanitizeSearchEngines(nextList, nextDefault);
+      safePartial.searchEngines = sanitized.engines;
+      safePartial.searchEngine = sanitized.defaultId;
+    }
+    if (Object.prototype.hasOwnProperty.call(safePartial, 'searchShortcutMode')) {
+      safePartial.searchShortcutMode = safePartial.searchShortcutMode === 'tab' ? 'tab' : 'space-or-tab';
+    }
+    if (Object.prototype.hasOwnProperty.call(safePartial, 'preferredLanguages')) {
+      safePartial.preferredLanguages = this._sanitizeLanguages(safePartial.preferredLanguages);
+    }
+    if (Object.prototype.hasOwnProperty.call(safePartial, 'spellcheckEnabled')) {
+      safePartial.spellcheckEnabled = Boolean(safePartial.spellcheckEnabled);
+    }
+    if (Object.prototype.hasOwnProperty.call(safePartial, 'downloadPath')) {
+      safePartial.downloadPath = typeof safePartial.downloadPath === 'string' ? safePartial.downloadPath.trim() : '';
+    }
+    if (Object.prototype.hasOwnProperty.call(safePartial, 'downloadAskWhere')) {
+      safePartial.downloadAskWhere = Boolean(safePartial.downloadAskWhere);
+    }
+    if (Object.prototype.hasOwnProperty.call(safePartial, 'downloadShowWhenDone')) {
+      safePartial.downloadShowWhenDone = Boolean(safePartial.downloadShowWhenDone);
+    }
+    if (Object.prototype.hasOwnProperty.call(safePartial, 'thirdPartyCookies')) {
+      safePartial.thirdPartyCookies = ['allow', 'block-incognito', 'block'].includes(safePartial.thirdPartyCookies)
+        ? safePartial.thirdPartyCookies
+        : 'block-incognito';
+    }
+    if (Object.prototype.hasOwnProperty.call(safePartial, 'sitePermissionDefaults')) {
+      // [Wave2-D] Merge onto the current map, don't replace it: the UI sends
+      // one permission at a time, and two rapid updates must compose instead
+      // of the second clobbering the first (the storage write is synchronous,
+      // so merges serialize correctly in the main process).
+      const base = current.sitePermissionDefaults && typeof current.sitePermissionDefaults === 'object'
+        ? current.sitePermissionDefaults
+        : {};
+      const incoming = safePartial.sitePermissionDefaults && typeof safePartial.sitePermissionDefaults === 'object'
+        ? safePartial.sitePermissionDefaults
+        : {};
+      safePartial.sitePermissionDefaults = this._sanitizeSitePermissionDefaults({ ...base, ...incoming });
+    }
+    for (const boolKey of [
+      'showHomeButton',
+      'showTabSearchButton',
+      'ctrlTabMru',
+      'tabHoverPreview',
+      'accessibilityCaretBrowsing',
+      'accessibilityFocusHighlight',
+      'runBackgroundApps'
+    ]) {
+      if (Object.prototype.hasOwnProperty.call(safePartial, boolKey)) {
+        safePartial[boolKey] = Boolean(safePartial[boolKey]);
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(safePartial, 'gpuAcceleration')) {
+      safePartial.gpuAcceleration = Boolean(safePartial.gpuAcceleration);
     }
     if (Object.prototype.hasOwnProperty.call(safePartial, 'autoSleepEnabled')) {
       safePartial.autoSleepEnabled = Boolean(safePartial.autoSleepEnabled);
@@ -1306,6 +1604,45 @@ class StorageManager {
     return { ok: true, origin: matchedKey, removed: true, sitePermissions: this._readOwnAllSitePermissions() };
   }
 
+  // [URLBAR-9.2] Per-Site Zoom (per-origin zoom factor, Chrome parity: zoom is
+  // remembered per site across tabs and sessions). Only http(s) origins are stored.
+  _normalizeSiteZoomFactor(raw) {
+    const num = Number(raw);
+    if (!Number.isFinite(num)) return null;
+    return Math.max(0.3, Math.min(3.0, Math.round(num * 100) / 100));
+  }
+
+  _readOwnSiteZoomMap() {
+    const raw = this.get('siteZoom');
+    return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  }
+
+  getSiteZoom(origin, profileId) {
+    const target = this._targetFor(profileId);
+    if (target !== this) return target.getSiteZoom(origin);
+    if (!origin || typeof origin !== 'string') return null;
+    const factor = this._normalizeSiteZoomFactor(this._readOwnSiteZoomMap()[origin.trim()]);
+    return factor === null ? null : factor;
+  }
+
+  setSiteZoom(origin, factor, profileId) {
+    const target = this._targetFor(profileId);
+    if (target !== this) return target.setSiteZoom(origin, factor);
+    if (!origin || typeof origin !== 'string') return null;
+    const cleanOrigin = origin.trim();
+    if (!/^https?:\/\//i.test(cleanOrigin)) return null;
+    const cleanFactor = this._normalizeSiteZoomFactor(factor);
+    if (cleanFactor === null) return this.getSiteZoom(cleanOrigin);
+    const map = { ...this._readOwnSiteZoomMap() };
+    if (cleanFactor === 1) {
+      delete map[cleanOrigin];
+    } else {
+      map[cleanOrigin] = cleanFactor;
+    }
+    this._write('siteZoom', map);
+    return cleanFactor;
+  }
+
   // Per-Site AdBlocker Settings (per-origin: { enabled: true | false })
   _normalizeAdblockOrigin(raw) {
     if (!raw || typeof raw !== 'string') return '';
@@ -1573,6 +1910,65 @@ class StorageManager {
     return this._write('bookmarks', list);
   }
 
+  // [TABS-W2] Reading list (Chrome parity gap 8.8): save-for-later items,
+  // stored separately from bookmarks. Local only, per profile.
+  _readOwnReadingList() {
+    const raw = this.get('readingList');
+    return Array.isArray(raw)
+      ? raw.filter((i) => i && typeof i === 'object' && typeof i.url === 'string')
+      : [];
+  }
+
+  getReadingList(profileId) {
+    const target = this._targetFor(profileId);
+    if (target !== this) return target.getReadingList();
+    return this._readOwnReadingList();
+  }
+
+  addReadingListItem({ title, url, favicon = '' } = {}, profileId) {
+    const target = this._targetFor(profileId);
+    if (target !== this) return target.addReadingListItem({ title, url, favicon });
+    if (!url || typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
+      return { ok: false, error: 'Only web pages can be added to the reading list.', items: this._readOwnReadingList() };
+    }
+    const normalized = url.replace(/\/$/, '');
+    const list = [...this._readOwnReadingList()];
+    const existing = list.find((i) => i.url.replace(/\/$/, '') === normalized);
+    if (existing) {
+      return { ok: false, error: 'Already in your reading list.', duplicate: true, item: existing, items: list };
+    }
+    const cleanFavicon = this._normalizeBookmarkFavicon(favicon);
+    const item = {
+      id: 'rl-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      title: (typeof title === 'string' && title.trim()) || url,
+      url,
+      addedAt: Date.now(),
+      read: false
+    };
+    if (cleanFavicon) item.favicon = cleanFavicon;
+    list.unshift(item);
+    this._write('readingList', list);
+    return { ok: true, item, items: list };
+  }
+
+  removeReadingListItem(id, profileId) {
+    const target = this._targetFor(profileId);
+    if (target !== this) return target.removeReadingListItem(id);
+    const list = this._readOwnReadingList().filter((i) => i.id !== id);
+    this._write('readingList', list);
+    return { ok: true, items: list };
+  }
+
+  markReadingListRead(id, read, profileId) {
+    const target = this._targetFor(profileId);
+    if (target !== this) return target.markReadingListRead(id, read);
+    const list = this._readOwnReadingList().map((i) =>
+      i.id === id ? { ...i, read: Boolean(read) } : i
+    );
+    this._write('readingList', list);
+    return { ok: true, items: list };
+  }
+
   importBookmarks(entries = [], profileId) {
     const target = this._targetFor(profileId);
     if (target !== this) return target.importBookmarks(entries);
@@ -1710,7 +2106,9 @@ class StorageManager {
     const cutoffs = {
       hour: now - 3600 * 1000,
       day: now - 24 * 3600 * 1000,
-      week: now - 7 * 24 * 3600 * 1000
+      week: now - 7 * 24 * 3600 * 1000,
+      // [Wave2-D] "Last 4 weeks" for the Delete-browsing-data time range.
+      month: now - 28 * 24 * 3600 * 1000
     };
     const cutoff = cutoffs[range] || 0;
     const list = this._readOwnHistory().filter(h => (h.visitedAt || 0) < cutoff);
@@ -2054,6 +2452,297 @@ class StorageManager {
     const list = rawList.filter((p) => p && p.id !== id);
     this._write('passwords', list);
     return this._readOwnPasswords();
+  }
+
+  // [Wave2-D] Clear all saved passwords (gap 5.11 "Delete browsing data").
+  clearPasswords(profileId) {
+    const target = this._targetFor(profileId);
+    if (target !== this) return target.clearPasswords();
+    this._write('passwords', []);
+    return [];
+  }
+
+  // [Wave2-D] Clear every site-permission decision for the profile (gap 5.11).
+  clearAllSitePermissions(profileId) {
+    const target = this._targetFor(profileId);
+    if (target !== this) return target.clearAllSitePermissions();
+    this._write('sitePermissions', {});
+    return { ok: true, sitePermissions: {} };
+  }
+
+  // [Wave2-D] Reset settings to factory defaults (gap 5.14). Only the
+  // settings store is touched — passwords, history, bookmarks, etc. stay.
+  resetSettings(profileId) {
+    if (this.isProfileChild) return this.getSettings();
+    const pid = this._resolveProfileId(profileId);
+    if (pid !== DEFAULT_PROFILE_ID) {
+      // Non-default profiles only override theme/sidebar; nothing to reset.
+      return this.getSettings(pid);
+    }
+    this._write('settings', this._cloneDefault('settings'));
+    return this.getSettings(pid);
+  }
+
+  // [Wave2-D] Addresses autofill (gap 6.3). Plain JSON; no secrets inside.
+  _readOwnAddresses() {
+    const raw = this.get('addresses');
+    return Array.isArray(raw) ? raw.filter((a) => a && typeof a === 'object') : [];
+  }
+
+  _cleanAddressFields(src = {}) {
+    const str = (v, max = 120) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+    return {
+      label: str(src.label, 60),
+      fullName: str(src.fullName),
+      organization: str(src.organization),
+      addressLine1: str(src.addressLine1),
+      addressLine2: str(src.addressLine2),
+      city: str(src.city),
+      region: str(src.region),
+      postalCode: str(src.postalCode, 30),
+      country: str(src.country),
+      phone: str(src.phone, 40),
+      email: str(src.email)
+    };
+  }
+
+  getAddresses(profileId) {
+    const target = this._targetFor(profileId);
+    if (target !== this) return target.getAddresses();
+    return this._readOwnAddresses();
+  }
+
+  addAddress(entry = {}, profileId) {
+    const target = this._targetFor(profileId);
+    if (target !== this) return target.addAddress(entry);
+    const clean = this._cleanAddressFields(entry);
+    if (!clean.fullName) {
+      return { ok: false, error: 'Full name cannot be empty.', addresses: this._readOwnAddresses() };
+    }
+    if (!clean.addressLine1 && !clean.city && !clean.postalCode) {
+      return { ok: false, error: 'Enter at least a street, city, or postal code.', addresses: this._readOwnAddresses() };
+    }
+    const list = [...this._readOwnAddresses()];
+    const record = { ...clean, id: 'addr-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6), createdAt: Date.now(), updatedAt: Date.now() };
+    list.unshift(record);
+    this._write('addresses', list);
+    return { ok: true, addresses: this._readOwnAddresses() };
+  }
+
+  updateAddress(id, entry = {}, profileId) {
+    const target = this._targetFor(profileId);
+    if (target !== this) return target.updateAddress(id, entry);
+    const list = [...this._readOwnAddresses()];
+    const idx = list.findIndex((a) => a && a.id === id);
+    if (idx === -1) {
+      return { ok: false, error: 'Address not found.', addresses: this._readOwnAddresses() };
+    }
+    const clean = this._cleanAddressFields({ ...list[idx], ...entry });
+    if (!clean.fullName) {
+      return { ok: false, error: 'Full name cannot be empty.', addresses: this._readOwnAddresses() };
+    }
+    list[idx] = { ...list[idx], ...clean, updatedAt: Date.now() };
+    this._write('addresses', list);
+    return { ok: true, addresses: this._readOwnAddresses() };
+  }
+
+  removeAddress(id, profileId) {
+    const target = this._targetFor(profileId);
+    if (target !== this) return target.removeAddress(id);
+    const list = this._readOwnAddresses().filter((a) => a && a.id !== id);
+    this._write('addresses', list);
+    return this._readOwnAddresses();
+  }
+
+  clearAddresses(profileId) {
+    const target = this._targetFor(profileId);
+    if (target !== this) return target.clearAddresses();
+    this._write('addresses', []);
+    return [];
+  }
+
+  // [Wave2-D] Payment methods autofill (gap 6.2). Card numbers are stored
+  // encrypted with safeStorage when available (same pattern as passwords);
+  // only brand + last 4 digits are kept in the clear. The UI receives
+  // masked entries; the full number is only returned by
+  // getPaymentMethodsForAutofill (used by the page fill engine, same trust
+  // level as passwords:get).
+  _encryptSecretString(secret) {
+    const value = String(secret ?? '');
+    if (this._isEncryptionAvailable()) {
+      try {
+        return { encryptedSecret: safeStorage.encryptString(value).toString('base64') };
+      } catch (err) {
+        console.warn('[Storage] Failed to encrypt payment secret:', err.message);
+      }
+    } else {
+      this._warnEncryptionUnavailableOnce();
+    }
+    return { secret: value };
+  }
+
+  _decryptSecretString(record) {
+    if (!record || typeof record !== 'object') return '';
+    if (typeof record.encryptedSecret === 'string') {
+      if (this._isEncryptionAvailable()) {
+        try {
+          return safeStorage.decryptString(Buffer.from(record.encryptedSecret, 'base64'));
+        } catch (err) {
+          console.warn('[Storage] Failed to decrypt payment secret:', err.message);
+          return '';
+        }
+      }
+      this._warnEncryptionUnavailableOnce();
+      return '';
+    }
+    return typeof record.secret === 'string' ? record.secret : '';
+  }
+
+  _detectCardBrand(digits) {
+    if (/^4/.test(digits)) return 'Visa';
+    if (/^(5[1-5]|2[2-7])/.test(digits)) return 'Mastercard';
+    if (/^3[47]/.test(digits)) return 'Amex';
+    if (/^6(011|5)/.test(digits)) return 'Discover';
+    return 'Card';
+  }
+
+  _luhnValid(digits) {
+    if (!/^\d{13,19}$/.test(digits)) return false;
+    let sum = 0;
+    let dbl = false;
+    for (let i = digits.length - 1; i >= 0; i -= 1) {
+      let d = Number(digits[i]);
+      if (dbl) {
+        d *= 2;
+        if (d > 9) d -= 9;
+      }
+      sum += d;
+      dbl = !dbl;
+    }
+    return sum % 10 === 0;
+  }
+
+  _readOwnPaymentMethods() {
+    const raw = this.get('paymentMethods');
+    return Array.isArray(raw) ? raw.filter((m) => m && typeof m === 'object') : [];
+  }
+
+  _maskPaymentMethod(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const { encryptedNumber, number, ...rest } = raw;
+    return { ...rest, number: '', last4: raw.last4 || '' };
+  }
+
+  _decodePaymentMethod(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const { encryptedNumber, number, ...rest } = raw;
+    return { ...rest, number: this._decryptSecretString({ encryptedSecret: encryptedNumber, secret: number }) };
+  }
+
+  getPaymentMethods(profileId) {
+    const target = this._targetFor(profileId);
+    if (target !== this) return target.getPaymentMethods();
+    return this._readOwnPaymentMethods().map((m) => this._maskPaymentMethod(m));
+  }
+
+  getPaymentMethodsForAutofill(profileId) {
+    const target = this._targetFor(profileId);
+    if (target !== this) return target.getPaymentMethodsForAutofill();
+    return this._readOwnPaymentMethods().map((m) => this._decodePaymentMethod(m));
+  }
+
+  addPaymentMethod(entry = {}, profileId) {
+    const target = this._targetFor(profileId);
+    if (target !== this) return target.addPaymentMethod(entry);
+    const digits = String(entry.number || '').replace(/\D/g, '');
+    if (!this._luhnValid(digits)) {
+      return { ok: false, error: 'Enter a valid card number.', paymentMethods: this.getPaymentMethods() };
+    }
+    const month = Number(entry.expiryMonth);
+    const year = Number(entry.expiryYear);
+    const nowYear = new Date().getFullYear();
+    if (!Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(year) || year < nowYear || year > nowYear + 20) {
+      return { ok: false, error: 'Enter a valid expiry month and year.', paymentMethods: this.getPaymentMethods() };
+    }
+    const name = typeof entry.cardholderName === 'string' ? entry.cardholderName.trim().slice(0, 120) : '';
+    if (!name) {
+      return { ok: false, error: 'Cardholder name cannot be empty.', paymentMethods: this.getPaymentMethods() };
+    }
+    const enc = this._encryptSecretString(digits);
+    const list = [...this._readOwnPaymentMethods()];
+    const record = {
+      id: 'card-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      label: typeof entry.label === 'string' ? entry.label.trim().slice(0, 60) : '',
+      cardholderName: name,
+      brand: this._detectCardBrand(digits),
+      last4: digits.slice(-4),
+      expiryMonth: month,
+      expiryYear: year,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      ...(enc.encryptedSecret ? { encryptedNumber: enc.encryptedSecret } : { number: enc.secret })
+    };
+    list.unshift(record);
+    this._write('paymentMethods', list);
+    return { ok: true, paymentMethods: this.getPaymentMethods() };
+  }
+
+  updatePaymentMethod(id, entry = {}, profileId) {
+    const target = this._targetFor(profileId);
+    if (target !== this) return target.updatePaymentMethod(id, entry);
+    const list = [...this._readOwnPaymentMethods()];
+    const idx = list.findIndex((m) => m && m.id === id);
+    if (idx === -1) {
+      return { ok: false, error: 'Card not found.', paymentMethods: this.getPaymentMethods() };
+    }
+    const current = list[idx];
+    const next = { ...current };
+    if (typeof entry.label === 'string') next.label = entry.label.trim().slice(0, 60);
+    if (typeof entry.cardholderName === 'string' && entry.cardholderName.trim()) {
+      next.cardholderName = entry.cardholderName.trim().slice(0, 120);
+    }
+    if (entry.expiryMonth !== undefined && entry.expiryYear !== undefined) {
+      const month = Number(entry.expiryMonth);
+      const year = Number(entry.expiryYear);
+      const nowYear = new Date().getFullYear();
+      if (!Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(year) || year < nowYear || year > nowYear + 20) {
+        return { ok: false, error: 'Enter a valid expiry month and year.', paymentMethods: this.getPaymentMethods() };
+      }
+      next.expiryMonth = month;
+      next.expiryYear = year;
+    }
+    if (typeof entry.number === 'string' && entry.number.trim()) {
+      const digits = entry.number.replace(/\D/g, '');
+      if (!this._luhnValid(digits)) {
+        return { ok: false, error: 'Enter a valid card number.', paymentMethods: this.getPaymentMethods() };
+      }
+      const enc = this._encryptSecretString(digits);
+      delete next.number;
+      delete next.encryptedNumber;
+      if (enc.encryptedSecret) next.encryptedNumber = enc.encryptedSecret;
+      else next.number = enc.secret;
+      next.brand = this._detectCardBrand(digits);
+      next.last4 = digits.slice(-4);
+    }
+    next.updatedAt = Date.now();
+    list[idx] = next;
+    this._write('paymentMethods', list);
+    return { ok: true, paymentMethods: this.getPaymentMethods() };
+  }
+
+  removePaymentMethod(id, profileId) {
+    const target = this._targetFor(profileId);
+    if (target !== this) return target.removePaymentMethod(id);
+    const list = this._readOwnPaymentMethods().filter((m) => m && m.id !== id);
+    this._write('paymentMethods', list);
+    return this.getPaymentMethods();
+  }
+
+  clearPaymentMethods(profileId) {
+    const target = this._targetFor(profileId);
+    if (target !== this) return target.clearPaymentMethods();
+    this._write('paymentMethods', []);
+    return [];
   }
 
   importPasswords(entries = [], profileId) {

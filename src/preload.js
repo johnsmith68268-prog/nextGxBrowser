@@ -86,6 +86,11 @@ contextBridge.exposeInMainWorld('gxAPI', {
 
   // Extra Power Features
   setZoom: (action) => ipcRenderer.invoke('tabs:zoom', action),
+  // [URLBAR-9.2] Per-site zoom store (bridge for the ipc.js handlers above).
+  getSiteZoom: (origin) => ipcRenderer.invoke('zoom:get-site', origin),
+  saveSiteZoom: (origin, factor) => ipcRenderer.invoke('zoom:save-site', { origin, factor }),
+  // [URLBAR-3.3] Certificate of the active tab's page (may report unavailable).
+  getSiteCertificate: () => ipcRenderer.invoke('site:certificate'),
   printPage: () => ipcRenderer.invoke('tabs:print'),
   captureScreenshot: () => ipcRenderer.invoke('tabs:screenshot'),
   startAreaScreenshot: () => ipcRenderer.invoke('tabs:screenshot-area-start'),
@@ -93,6 +98,30 @@ contextBridge.exposeInMainWorld('gxAPI', {
   cancelAreaScreenshot: () => ipcRenderer.invoke('tabs:screenshot-area-cancel'),
   savePageAsPdf: () => ipcRenderer.invoke('tabs:save-pdf'),
   toggleReaderMode: () => ipcRenderer.invoke('tabs:reader-mode'),
+  // [TABS-W2] Chrome-parity Wave 2 (worker E) bridge — tab actions, reading
+  // list, extraction-based reader mode, omnibox permission chips. Handlers
+  // live in src/main/tabs.js (owned by worker E); this block only exposes
+  // them to the internal UI. Added as one block to keep the shared bridge
+  // diff contained.
+  muteTab: (tabId, muted) =>
+    ipcRenderer.invoke(
+      'tabs:mute',
+      typeof tabId === 'object' && tabId !== null ? tabId : { tabId, muted }
+    ),
+  getTabMuteState: (tabId) => ipcRenderer.invoke('tabs:mute-state', { tabId }),
+  closeTabsToRight: (tabId) => ipcRenderer.invoke('tabs:close-right', { tabId }),
+  moveTabToNewWindow: (tabId) => ipcRenderer.invoke('tabs:move-to-new-window', { tabId }),
+  toggleReaderModeExtract: () => ipcRenderer.invoke('tabs:reader-mode-extract'),
+  getReadingList: () => ipcRenderer.invoke('reading-list:get'),
+  addReadingList: (payload) => ipcRenderer.invoke('reading-list:add', payload || {}),
+  removeReadingList: (id) =>
+    ipcRenderer.invoke(
+      'reading-list:remove',
+      typeof id === 'object' && id !== null ? id : { id }
+    ),
+  markReadingListRead: (id, read) => ipcRenderer.invoke('reading-list:mark-read', { id, read }),
+  notifyPermissionPromptState: (payload) =>
+    ipcRenderer.invoke('ui:permission-prompt-state', payload || {}),
   findInPage: (text, forward) => ipcRenderer.invoke('tabs:find', { text, forward }),
   stopFindInPage: () => ipcRenderer.invoke('tabs:stop-find'),
   newWindow: (options) => ipcRenderer.invoke('window:new', options),
@@ -232,6 +261,9 @@ contextBridge.exposeInMainWorld('gxAPI', {
   onSettingsUpdate: (cb) => ipcRenderer.on('settings:update', (_e, data) => cb(data)),
   onBookmarksUpdate: (cb) => ipcRenderer.on('bookmarks:update', (_e, data) => cb(data)),
   onPermissionsUpdate: (cb) => ipcRenderer.on('permissions:update', (_e, data) => cb(data)),
+  // [TABS-W2] Omnibox permission-chip lifecycle (gap 1.5) + tab mute state.
+  onPermissionPromptState: (cb) => ipcRenderer.on('permission-prompt:state', (_e, data) => cb(data)),
+  onTabMuteState: (cb) => ipcRenderer.on('tabs:mute-state', (_e, data) => cb(data)),
   onProfilesUpdate: (cb) => ipcRenderer.on('profiles:update', (_e, data) => cb(data)),
   onShortcutAction: (cb) => ipcRenderer.on('shortcut:action', (_e, action) => cb(action)),
   onPopoverData: (cb) => ipcRenderer.on('popover:data', (_e, data) => cb(data)),

@@ -241,6 +241,23 @@ function createBrowserWindow({ incognito = false, restoreTabs = null, profileId 
       if (ctx.popoverView.webContents) webContentsToWinId.delete(ctx.popoverView.webContents.id);
       ctx.popoverView = null;
     }
+    // [FIXUP] Destroy the window's remaining tab views. closeTab() does this
+    // per tab, but a window closed with tabs still open never ran it — the
+    // views stayed alive (verified: a closed private window's newtab target
+    // still answered CDP). The window is already destroyed here, so only the
+    // WebContents need closing; session data was saved on 'close' already.
+    if (ctx.tabs instanceof Map) {
+      for (const tab of ctx.tabs.values()) {
+        if (tab && tab.view) {
+          try {
+            const wc = tab.view.webContents;
+            if (wc && typeof wc.isDestroyed === 'function' && !wc.isDestroyed()) wc.close();
+          } catch (_) {}
+          tab.view = null;
+        }
+      }
+      ctx.tabs.clear();
+    }
     player.onWindowClosed(ctx);
     windowContexts.delete(win.id);
     if (ctx.incognito) {
@@ -445,6 +462,25 @@ function createBrowserWindow({ incognito = false, restoreTabs = null, profileId 
 function openStartupWindows() {
   const activeProfileId = state.storage.getActiveProfileId();
   const settings = state.storage.getSettings(activeProfileId);
+  // [FIXUP-2] (Chrome parity gap 5.3) "Open a specific page or set of
+  // pages": open the configured startup URLs instead of restoring the last
+  // session or showing the new tab page. Reuses the session-restore path
+  // with a synthesized spec, so the URLs get the same sanitization and
+  // lazy-restore behaviour as restored tabs. An empty list falls through
+  // to a plain new-tab window below.
+  if (settings.startupMode === 'urls') {
+    const urls = Array.isArray(settings.startupUrls)
+      ? settings.startupUrls.filter((u) => typeof u === 'string' && u.trim())
+      : [];
+    if (urls.length > 0) {
+      createBrowserWindow({
+        incognito: false,
+        profileId: activeProfileId,
+        restoreTabs: { tabs: urls.map((url) => ({ url })), activeTabIndex: 0 }
+      });
+      return;
+    }
+  }
   if (settings.restoreSession !== false) {
     const saved = state.storage.getSession(activeProfileId);
     const savedWindows = Array.isArray(saved?.windows)

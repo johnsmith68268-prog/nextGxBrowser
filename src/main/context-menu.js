@@ -9,6 +9,9 @@ const { readClipboardText, writeClipboardText } = require('./clipboard-utils');
 
 const tabsMod = () => require('./tabs');
 const windowsMod = () => require('./windows');
+// [TABS-W2] Lazy requires avoid cycles (popovers.js requires context-menu
+// indirectly via tabs.js; tabs.js requires this module).
+const popoversMod = () => require('./popovers');
 
 function getSearchEngineMeta() {
   const engine = state.storage?.getSettings?.()?.searchEngine || 'google';
@@ -377,6 +380,41 @@ function attachWebContentsContextMenu(ctx, wc, { isSidebar = false } = {}) {
           accelerator: 'CmdOrCtrl+P',
           click: () => {
             if (!wc.isDestroyed()) wc.print();
+          }
+        },
+        // [TABS-W2] Chrome parity gap 9.4 — Create QR Code for this page.
+        // The QR itself is rendered locally in the popover (popover.html
+        // embeds a small QR encoder; no network dependency, no library).
+        {
+          label: 'Create QR Code for this page',
+          enabled: hasWebUrl,
+          click: () => {
+            if (!hasWebUrl || !ctx.win || ctx.win.isDestroyed()) return;
+            const [cw] = ctx.win.getContentSize();
+            popoversMod().openPopover(ctx, {
+              kind: 'qr-code',
+              x: Math.max(8, Math.round(cw / 2 - 140)),
+              y: Math.round(110),
+              width: 280,
+              height: 330,
+              payload: { url: pageUrl, title: pageTitle }
+            });
+          }
+        },
+        // [TABS-W2] Chrome parity gap 9.6 — Open in reading mode
+        // (readability-style extraction, done locally in tabs.js).
+        {
+          label: 'Open in reading mode',
+          accelerator: 'Alt+Shift+R',
+          enabled: hasWebUrl,
+          click: async () => {
+            if (!hasWebUrl) return;
+            const res = await tabsMod().toggleReaderModeExtract(ctx);
+            if (res && !res.ok && res.error) {
+              ctx.win?.webContents.send('ui:toast', res.error);
+            } else if (res && res.ok) {
+              ctx.win?.webContents.send('ui:toast', res.active ? 'Reader View Enabled' : 'Reader View Off');
+            }
           }
         },
         { type: 'separator' },
