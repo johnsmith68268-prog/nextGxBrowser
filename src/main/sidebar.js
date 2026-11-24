@@ -39,6 +39,18 @@ const { createTab } = require('./tabs');
 
 const SIDEBAR_AUDIO_HOLD_MS = 3000;
 const SIDEBAR_OPEN_GRACE_MS = 120;
+// [Fix2 A5] Resize guard: while a drag is in progress (or just ended) the
+// unpinned panel must NOT auto-close. The drag signals main on every move
+// via sidebar:set-width, and a tab-view focus event during the drag used
+// to close the panel mid-drag (the 120 ms open-grace only covers the
+// first moments after opening). 800 ms after the last resize signal the
+// guard lifts and normal outside-click/focus closing resumes.
+const SIDEBAR_RESIZE_GUARD_MS = 800;
+// [Fix2 Discord] A sidebar service that never finishes loading (blocked
+// network, proxy, captive portal) used to sit on a blank panel forever
+// with no state at all. After this long with isLoading still true the
+// panel reports a timeout error instead, so the UI can show retry UI.
+const SIDEBAR_LOAD_TIMEOUT_MS = 25000;
 
 const SIDEBAR_SERVICES = {
   youtube: { key: 'youtube', title: 'YouTube', url: 'https://www.youtube.com' },
@@ -71,6 +83,63 @@ function clearSidebarAudioHoldTimer(meta) {
   }
 }
 
+function clearSidebarLoadTimer(meta) {
+  if (meta && meta._loadTimer) {
+    clearTimeout(meta._loadTimer);
+    meta._loadTimer = null;
+  }
+}
+
+function setSidebarLoadError(meta, description) {
+  if (!meta) return;
+  clearSidebarLoadTimer(meta);
+  meta.loadError = typeof description === 'string' && description ? description.slice(0, 300) : 'Failed to load.';
+  meta.loadTimedOut = false;
+}
+
+function clearSidebarLoadError(meta) {
+  if (!meta) return;
+  clearSidebarLoadTimer(meta);
+  meta.loadError = '';
+  meta.loadTimedOut = false;
+}
+
+// Pure meta factory (unit-testable): every service view starts loading
+// with no error; the watchdog / did-fail-load fill loadError in later.
+function createSidebarServiceMeta(service, initialUrl) {
+  return {
+    key: service.key,
+    title: service.title,
+    defaultUrl: service.url,
+    url: initialUrl,
+    failedUrl: '',
+    isLoading: true,
+    loadError: '',
+    loadTimedOut: false,
+    audible: false,
+    rawAudible: false,
+    lastActiveAt: Date.now(),
+    suspended: false,
+    _audioHoldTimer: null,
+    _loadTimer: null
+  };
+}
+
+function armSidebarLoadTimer(ctx, service, meta) {
+  if (!meta || service.internal) return;
+  clearSidebarLoadTimer(meta);
+  meta._loadTimer = setTimeout(() => {
+    meta._loadTimer = null;
+    if (!meta.isLoading) return;
+    meta.loadTimedOut = true;
+    meta.loadError = 'Timed out while loading — the service may be blocked or offline. Retry from the panel header.';
+    broadcastSidebarState(ctx);
+  }, SIDEBAR_LOAD_TIMEOUT_MS);
+  if (meta._loadTimer && typeof meta._loadTimer.unref === 'function') {
+    meta._loadTimer.unref();
+  }
+}
+
 function createSidebarPanelState() {
   const s = state.storage ? state.storage.getSettings() : {};
   return {
@@ -81,7 +150,11 @@ function createSidebarPanelState() {
     open: false,
     openedAt: 0,
     pinned: Boolean(s.sidebarPanelPinned),
-    width: clampSidebarWidth(s.sidebarPanelWidth)
+    width: clampSidebarWidth(s.sidebarPanelWidth),
+    // [Fix2 A5] Resize-drag guard state (see SIDEBAR_RESIZE_GUARD_MS).
+    resizing: false,
+    lastResizeAt: 0,
+    _resizeGuardTimer: null
   };
 }
 
@@ -98,7 +171,51 @@ function ensureSidebarPanelState(ctx) {
   }
   ctx.sidebarPanel.width = clampSidebarWidth(ctx.sidebarPanel.width);
   ctx.sidebarPanel.pinned = Boolean(ctx.sidebarPanel.pinned);
+  ctx.sidebarPanel.resizing = Boolean(ctx.sidebarPanel.resizing);
+  ctx.sidebarPanel.lastResizeAt = Number(ctx.sidebarPanel.lastResizeAt) || 0;
   return ctx.sidebarPanel;
+}
+
+// Pure predicate (unit-testable): is the resize guard active right now?
+function isSidebarResizeGuardActive(panel, nowMs = Date.now()) {
+  if (!panel) return false;
+  if (panel.resizing) return true;
+  const last = Number(panel.lastResizeAt) || 0;
+  return last > 0 && nowMs - last < SIDEBAR_RESIZE_GUARD_MS;
+}
+
+// Explicit drag signal (sidebar:resize-start / sidebar:resize-end IPC).
+// The renderer calls these around a drag; setSidebarWidth also maintains
+// the guard, so drags keep working even before the renderer wires them.
+function setSidebarResizing(ctx, resizing) {
+  if (!ctx) return serializeSidebarState(ctx);
+  const panel = ensureSidebarPanelState(ctx);
+  panel.resizing = Boolean(resizing);
+  if (panel.resizing) {
+    panel.lastResizeAt = Date.now();
+    if (panel._resizeGuardTimer) {
+      clearTimeout(panel._resizeGuardTimer);
+      panel._resizeGuardTimer = null;
+    }
+  } else if (panel._resizeGuardTimer) {
+    clearTimeout(panel._resizeGuardTimer);
+    panel._resizeGuardTimer = null;
+  }
+  return serializeSidebarState(ctx);
+}
+
+function noteSidebarResizeActivity(panel) {
+  if (!panel) return;
+  panel.resizing = true;
+  panel.lastResizeAt = Date.now();
+  if (panel._resizeGuardTimer) clearTimeout(panel._resizeGuardTimer);
+  panel._resizeGuardTimer = setTimeout(() => {
+    panel._resizeGuardTimer = null;
+    panel.resizing = false;
+  }, SIDEBAR_RESIZE_GUARD_MS);
+  if (panel._resizeGuardTimer && typeof panel._resizeGuardTimer.unref === 'function') {
+    panel._resizeGuardTimer.unref();
+  }
 }
 
 function resolveSidebarService(keyOrOpts) {
@@ -211,6 +328,13 @@ function serializeSidebarState(ctx) {
     currentUrl,
     isInternal: Boolean(activeService?.internal),
     isLoading: Boolean(activeMeta?.isLoading),
+    // [Fix2 Discord] Loading-failure state for the panel chrome: '' while
+    // healthy, otherwise a human-readable error + whether it was a timeout.
+    // In this VM's MITM-proxy environment Discord genuinely cannot load;
+    // this surfaces that honestly with a retry affordance instead of a
+    // blank white panel.
+    loadError: activeMeta?.loadError || '',
+    loadTimedOut: Boolean(activeMeta?.loadTimedOut),
     pinned: Boolean(panel.pinned),
     width: clampedWidth,
     effectiveWidth,
@@ -318,19 +442,7 @@ function buildWebContentsViewForSidebarService(ctx, service) {
   });
 
   const initialUrl = !service.internal ? panel.savedUrls.get(service.key) || service.url : service.url;
-  const meta = {
-    key: service.key,
-    title: service.title,
-    defaultUrl: service.url,
-    url: initialUrl,
-    failedUrl: '',
-    isLoading: true,
-    audible: false,
-    rawAudible: false,
-    lastActiveAt: Date.now(),
-    suspended: false,
-    _audioHoldTimer: null
-  };
+  const meta = createSidebarServiceMeta(service, initialUrl);
 
   panel.views.set(service.key, view);
   panel.meta.set(service.key, meta);
@@ -357,11 +469,14 @@ function buildWebContentsViewForSidebarService(ctx, service) {
 
   wc.on('did-start-loading', () => {
     meta.isLoading = true;
+    clearSidebarLoadError(meta);
+    armSidebarLoadTimer(ctx, service, meta);
     broadcastSidebarState(ctx);
   });
 
   wc.on('did-stop-loading', () => {
     meta.isLoading = false;
+    clearSidebarLoadError(meta);
     state.adBlocker.injectCosmeticFilters(wc);
     const s = state.storage.getSettings();
     if (s.forceDarkWeb && /^https?:/i.test(meta.url)) {
@@ -403,6 +518,11 @@ function buildWebContentsViewForSidebarService(ctx, service) {
     const canLoadErrorPage = !wc.isDestroyed();
     meta.isLoading = canLoadErrorPage;
     meta.failedUrl = failedUrl;
+    // [Fix2 Discord] Record the failure for the panel chrome so a service
+    // that can never load (e.g. Discord behind this VM's MITM proxy) shows
+    // an error + retry instead of a blank panel. The error page itself is
+    // still loaded below; loadError is cleared when a later load succeeds.
+    setSidebarLoadError(meta, errorDescription || `Failed to load (code ${errorCode}).`);
     meta.url = errorPageUrl;
     broadcastSidebarState(ctx);
 
@@ -470,10 +590,12 @@ function buildWebContentsViewForSidebarService(ctx, service) {
     });
     wc.once('destroyed', () => {
       clearSidebarAudioHoldTimer(meta);
+      clearSidebarLoadTimer(meta);
     });
   } else {
     wc.once('destroyed', () => {
       clearSidebarAudioHoldTimer(meta);
+      clearSidebarLoadTimer(meta);
       playerMod().onWebContentsDestroyed(wc.id);
     });
   }
@@ -586,6 +708,10 @@ function closeSidebarIfUnpinned(ctx, { restoreFocus = false, ignoreGrace = false
   if (!ctx || !ctx.win || ctx.win.isDestroyed()) return false;
   const panel = ensureSidebarPanelState(ctx);
   if (!panel || !panel.open || panel.pinned) return false;
+  // [Fix2 A5] Never auto-close while a resize drag is in progress (or
+  // just ended): tab-view focus events fired during a drag used to kill
+  // the panel mid-drag. Explicit closes (closeSidebarPanel) are unaffected.
+  if (isSidebarResizeGuardActive(panel)) return false;
   if (!ignoreGrace && Date.now() - (panel.openedAt || 0) < SIDEBAR_OPEN_GRACE_MS) {
     return false;
   }
@@ -608,6 +734,7 @@ function suspendSidebarServiceView(ctx, serviceKey) {
   }
 
   clearSidebarAudioHoldTimer(meta);
+  clearSidebarLoadTimer(meta);
   const wc = view.webContents;
   if (wc) {
     webContentsToWinId.delete(wc.id);
@@ -635,7 +762,11 @@ function suspendSidebarServiceView(ctx, serviceKey) {
 }
 
 function suspendIdleSidebarViews(timeoutMs) {
-  const safeTimeout = Number.isFinite(Number(timeoutMs)) && Number(timeoutMs) > 0 ? Number(timeoutMs) : 10 * 60 * 1000;
+  // timeoutMs === 0 means "suspend every eligible view right now"
+  // (Hibernate Now); otherwise idle views older than timeoutMs suspend.
+  const num = Number(timeoutMs);
+  const safeTimeout =
+    num === 0 ? 0 : Number.isFinite(num) && num > 0 ? num : 10 * 60 * 1000;
   const now = Date.now();
   let suspendedCount = 0;
 
@@ -733,6 +864,11 @@ function setSidebarWidth(ctx, rawWidth, { persist = true } = {}) {
   const panel = ensureSidebarPanelState(ctx);
   const clamped = clampSidebarWidth(rawWidth);
   panel.width = clamped;
+  // [Fix2 A5] Every drag move reports a width (persist:false during the
+  // drag, persist:true on release), so stamping the guard here covers the
+  // whole drag even before the renderer wires resize-start/resize-end.
+  // Persisting still happens exactly once, on release (persist:true).
+  noteSidebarResizeActivity(panel);
 
   if (persist) {
     if (state.storage) {
@@ -838,6 +974,7 @@ function cleanupSidebarPanelViews(ctx) {
   if (ctx.sidebarPanel.meta instanceof Map) {
     for (const meta of ctx.sidebarPanel.meta.values()) {
       clearSidebarAudioHoldTimer(meta);
+      clearSidebarLoadTimer(meta);
     }
     ctx.sidebarPanel.meta.clear();
   }
@@ -848,8 +985,16 @@ function cleanupSidebarPanelViews(ctx) {
 
 module.exports = {
   SIDEBAR_SERVICES,
+  SIDEBAR_OPEN_GRACE_MS,
+  SIDEBAR_RESIZE_GUARD_MS,
+  SIDEBAR_LOAD_TIMEOUT_MS,
   clampSidebarWidth,
   createSidebarPanelState,
+  createSidebarServiceMeta,
+  setSidebarLoadError,
+  clearSidebarLoadError,
+  isSidebarResizeGuardActive,
+  setSidebarResizing,
   ensureSidebarPanelState,
   resolveSidebarService,
   getActiveSidebarView,

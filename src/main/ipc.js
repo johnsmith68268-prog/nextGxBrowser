@@ -52,7 +52,7 @@ const {
   getAllTabWebContents,
   syncAdblockCosmeticFilters
 } = require('./broadcast');
-const { updateActiveViewBounds } = require('./layout');
+const { updateActiveViewBounds, setShellModalOpen } = require('./layout');
 const {
   getCustomWallpaperDataUrl,
   saveCustomWallpaperPayload,
@@ -94,6 +94,7 @@ const {
   toggleSidebarPanel,
   setSidebarPinned,
   setSidebarWidth,
+  setSidebarResizing,
   reloadSidebarPanel,
   openSidebarPanelInNewTab
 } = require('./sidebar');
@@ -114,8 +115,10 @@ const {
   savePageAsPdf
 } = require('./screenshots');
 const { resolvePermissionPrompt } = require('./permissions');
-const { collectSystemStats, broadcastSystemStatsNow } = require('./stats');
+const { collectSystemStats, broadcastSystemStatsNow, hibernateNow } = require('./stats');
 const gxControl = require('./gxcontrol');
+const { togglePanic, triggerPanic, restorePanic, getPanicState } = require('./panic');
+const { readModPack, sanitizeModRegistry, buildModSettingsPatch, getModStatus } = require('./gxmods');
 const { registerPlayerIpcHandlers } = require('./player');
 const { registerGxCornerIpcHandlers } = require('./gxcorner');
 const { getSessionForProfile, registerProfileIpcHandlers } = require('./profiles');
@@ -488,6 +491,88 @@ function registerIpcHandlers() {
   handleInternal('tabs:pin', (e, tabId) => togglePinTab(getCtxFromSender(e.sender), tabId));
   handleInternal('tabs:sleep', (e, tabId) => sleepTab(getCtxFromSender(e.sender), tabId));
   handleInternal('tabs:sleep-background', (e) => sleepBackgroundTabs(getCtxFromSender(e.sender)));
+  // [Fix2 A6] Hibernate Now: sleep every eligible background tab in every
+  // window + suspend idle sidebar views, and report MEASURED RAM before /
+  // after (never fabricated). Stronger than sleep-background, which only
+  // covers the sending window and reports no numbers.
+  handleInternal('tabs:hibernate-now', () => hibernateNow());
+
+  // [Fix2 Panic] One action hides all tabs (neutral Start page); a second
+  // press — or panic:restore — brings the previous session back. The
+  // toolbar / GX Control entry point is this IPC; the keyboard shortcut is
+  // Ctrl+Shift+P (shortcuts.js).
+  handleInternal('panic:trigger', (e) => triggerPanic(getCtxFromSender(e.sender)));
+  handleInternal('panic:restore', (e) => restorePanic(getCtxFromSender(e.sender)));
+  handleInternal('panic:toggle', (e) => togglePanic(getCtxFromSender(e.sender)));
+  handleInternal('panic:get-state', (e) => getPanicState(getCtxFromSender(e.sender)));
+
+  // [Fix2 GX Mods] LOCAL packs only — no online store, no network fetch.
+  // load opens a folder picker; apply copies a pack wallpaper locally and
+  // sets the theme through settings:update.
+  handleInternal('gxmods:list', () => {
+    const s = state.storage.getSettings();
+    return getModStatus(s);
+  });
+  handleInternal('gxmods:load', async (e) => {
+    const ctx = getCtxFromSender(e.sender);
+    const win = ctx && ctx.win && !ctx.win.isDestroyed() ? ctx.win : null;
+    const res = await dialog.showOpenDialog(win || undefined, {
+      properties: ['openDirectory'],
+      title: 'Load a local GX Mod pack folder'
+    });
+    if (res.canceled || !res.filePaths || !res.filePaths[0]) {
+      return { ok: false, canceled: true };
+    }
+    const read = readModPack(res.filePaths[0]);
+    if (!read.ok) return { ok: false, error: read.error };
+    const s = state.storage.getSettings();
+    const registry = sanitizeModRegistry(s.gxModPacks || []);
+    const existingIdx = registry.findIndex((p) => p.path === read.pack.path);
+    if (existingIdx === -1) registry.push(read.pack);
+    else registry[existingIdx] = read.pack;
+    state.storage.updateSettings({ gxModPacks: registry });
+    return { ok: true, pack: read.pack, status: getModStatus(state.storage.getSettings()) };
+  });
+  handleInternal('gxmods:apply', (e, id) => {
+    const s = state.storage.getSettings();
+    const packs = sanitizeModRegistry(s.gxModPacks || []);
+    const pack = packs.find((p) => p.id === id);
+    if (!pack) return { ok: false, error: 'Mod pack not found.' };
+    const { patch, warnings } = buildModSettingsPatch(pack);
+    const updated = state.storage.updateSettings({ ...patch, activeGxModId: pack.id });
+    broadcastSettingsUpdate(updated);
+    return { ok: true, pack, warnings, status: getModStatus(updated) };
+  });
+  handleInternal('gxmods:remove', (e, id) => {
+    const s = state.storage.getSettings();
+    const packs = sanitizeModRegistry(s.gxModPacks || []).filter((p) => p.id !== id);
+    const nextActive = s.activeGxModId === id ? '' : s.activeGxModId;
+    const updated = state.storage.updateSettings({ gxModPacks: packs, activeGxModId: nextActive });
+    return { ok: true, status: getModStatus(updated) };
+  });
+  handleInternal('gxmods:get-status', () => getModStatus(state.storage.getSettings()));
+
+  // [Fix2 Sounds] Honest local-audio status. This repo ships NO audio
+  // files — UI sounds are Web Audio synth (src/ui/sounds.js). The toggles
+  // (keyboardSoundsEnabled / backgroundMusicEnabled) are real settings;
+  // soundPackInstalled is true only when the active local Mod pack folder
+  // actually contains audio files.
+  handleInternal('sounds:get-status', () => {
+    const s = state.storage.getSettings();
+    const modStatus = getModStatus(s);
+    return {
+      keyboardSoundsEnabled: Boolean(s.keyboardSoundsEnabled),
+      backgroundMusicEnabled: Boolean(s.backgroundMusicEnabled),
+      uiSoundsEnabled: s.uiSoundsEnabled !== false,
+      uiSoundsVolume: typeof s.uiSoundsVolume === 'number' ? s.uiSoundsVolume : 0.35,
+      soundPackInstalled: modStatus.soundPackInstalled,
+      audioFiles: modStatus.audioFiles,
+      activeModName: modStatus.active ? modStatus.active.name : '',
+      note: modStatus.soundPackInstalled
+        ? 'A local sound pack is installed (files inside the active Mod pack folder).'
+        : 'No sound pack installed — keyboard sounds and background music are off until a local Mod pack with audio files is loaded.'
+    };
+  });
 
   // Workspaces
   handleInternal('workspaces:get', () => getWorkspaces());
@@ -979,6 +1064,22 @@ function registerIpcHandlers() {
   // checklist. The range applies to history (storage.clearHistory); cookies
   // and cache have no time-range API in Electron so they are always cleared
   // for all time — the UI says so.
+  // Market audit bug #36: the Cleaner drawer was one short card over a
+  // large empty space. The drawer now shows the live cache size, which
+  // needs a real reading from the profile session.
+  handleInternal('cleaner:get-cache-size', async (e) => {
+    const ctx = getCtxFromSender(e.sender);
+    const pid = ctx?.profileId || state.storage.getActiveProfileId();
+    const targetSession =
+      ctx && !ctx.incognito && ctx.session ? ctx.session : getSessionForProfile(pid) || session.defaultSession;
+    try {
+      const bytes = await targetSession.getCacheSize();
+      return { bytes: Number(bytes) || 0 };
+    } catch (_) {
+      return { bytes: 0 };
+    }
+  });
+
   handleInternal('cleaner:run', async (e, { cache = true, cookies = false, history = false, range = 'all', downloads = false, passwords = false, autofill = false, siteSettings = false } = {}) => {
     const ctx = getCtxFromSender(e.sender);
     const pid = ctx?.profileId || state.storage.getActiveProfileId();
@@ -1021,6 +1122,25 @@ function registerIpcHandlers() {
       cleared.siteSettings = true;
     }
     return { cleanedAt: Date.now(), cleared };
+  });
+
+  // Market-readiness audit (2026-11-24, bug #2): shell-DOM modals (e.g. New
+  // Profile) are covered by every WebContentsView; main hides the content
+  // views while one is open so the modal is visible and focusable.
+  handleInternal('shell:set-modal-open', (e, open) => {
+    const ctx = getCtxFromSender(e.sender);
+    if (!ctx) return { ok: false };
+    return { ok: setShellModalOpen(ctx, Boolean(open)) };
+  });
+
+  // Market audit bug #30: the rail context menu lives in the popover view,
+  // but the Customize Dock drawer is shell DOM — relay the request to the
+  // shell, which calls openLeftTool() itself.
+  handleInternal('shell:open-left-tool', (e, tool) => {
+    const ctx = getCtxFromSender(e.sender);
+    if (!ctx || !ctx.win || ctx.win.isDestroyed()) return { ok: false };
+    ctx.win.webContents.send('shell:open-left-tool', String(tool || ''));
+    return { ok: true };
   });
 
   handleInternal('popover:open', (e, opts) => openPopover(getCtxFromSender(e.sender), opts || {}));
@@ -1172,6 +1292,12 @@ function registerIpcHandlers() {
     const opts = typeof arg1 === 'object' && arg1 !== null ? arg1 : arg2;
     return setSidebarWidth(ctx, width, opts);
   });
+  // [Fix2 A5] Explicit drag signals. The renderer calls resize-start on
+  // pointerdown on the resizer and resize-end on release, so the unpinned
+  // panel cannot auto-close mid-drag. setSidebarWidth also maintains the
+  // guard, so this is belt-and-braces, not the only mechanism.
+  handleInternal('sidebar:resize-start', (e) => setSidebarResizing(getCtxFromSender(e.sender), true));
+  handleInternal('sidebar:resize-end', (e) => setSidebarResizing(getCtxFromSender(e.sender), false));
   handleInternal('sidebar:get-state', (e) => serializeSidebarState(getCtxFromSender(e.sender)));
 
   // Bookmarks, History, Downloads, Passwords, Notes, Extensions, Settings, Profiles, Import/Export

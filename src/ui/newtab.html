@@ -297,6 +297,10 @@
       width: 100%;
       height: 38px;
       display: block;
+      /* Market audit bug #35: the thumbnails read as flat dark blocks.
+         Brighten slightly and add a top highlight so the gradient reads. */
+      filter: brightness(1.14) saturate(1.1);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 -8px 14px rgba(0, 0, 0, 0.25);
     }
 
     .wp-preset-swatch[data-preset="gx-violet"] { background: var(--nx-wallpaper-gx-violet); }
@@ -581,8 +585,54 @@
       text-align: center;
       max-width: 100%;
       overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      /* Market audit bug #25: long titles were cut to one clipped line.
+         Allow two lines with an ellipsis so the label stays readable. */
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      line-height: 1.25;
+      word-break: break-word;
+    }
+
+    /* Market audit bug #24: undo bar for a deleted Speed Dial. */
+    .dial-undo-bar {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      transform: translateX(-50%);
+      z-index: 60;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 9px 10px 9px 16px;
+      border-radius: 10px;
+      background: var(--bg-surface);
+      border: 1px solid var(--accent);
+      box-shadow: var(--nx-glow-md), 0 10px 28px rgba(0, 0, 0, 0.55);
+      color: var(--text-main);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .dial-undo-bar[hidden] {
+      display: none;
+    }
+
+    .dial-undo-bar button {
+      background: none;
+      border: none;
+      color: var(--accent-bright);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      cursor: pointer;
+      padding: 4px 6px;
+      border-radius: 6px;
+    }
+
+    .dial-undo-bar button:hover {
+      text-decoration: underline;
     }
 
     .tile-edit {
@@ -917,6 +967,29 @@
       display: flex;
       flex-direction: column;
       gap: 10px;
+    }
+
+    /* Fix2-shell (item 4): the Speed Dial Add/Edit modal uses the red brand
+       accent, not the theme accent — same rule as the shell profile modal. */
+    #addModal .modal-box {
+      border-color: #fa1e4e;
+    }
+
+    #addModal .modal-box h3 {
+      color: #ff4d73;
+    }
+
+    #addModal .modal-box input:focus {
+      border-color: #fa1e4e;
+    }
+
+    #addModal .btn.primary {
+      background: #fa1e4e;
+      border-color: #ff4d73;
+    }
+
+    #addModal .btn.primary:hover {
+      background: #ff4d73;
     }
 
     .modal-box h3 {
@@ -1301,6 +1374,13 @@
     </form>
   </div>
 
+  <!-- Market audit bug #24: deleting a Speed Dial was instant and
+       irreversible. A short undo bar lets it be restored. -->
+  <div class="dial-undo-bar" id="dialUndoBar" hidden>
+    <span id="dialUndoText">Speed Dial removed</span>
+    <button type="button" id="btnDialUndo">Undo</button>
+  </div>
+
   <script>
     const dialGrid = document.getElementById('dialGrid');
     const addModal = document.getElementById('addModal');
@@ -1340,8 +1420,10 @@
         card.addEventListener('click', async (e) => {
           if (e.target.closest('.tile-del')) {
             e.stopPropagation();
+            const removed = { title: item.title, url: item.url };
             const updated = await window.gxNewTabAPI.removeSpeedDial(item.id);
             renderDials(updated);
+            showDialUndo(removed);
             return;
           }
           if (e.target.closest('.tile-edit')) {
@@ -1373,6 +1455,29 @@
       editingDialId = null;
       document.getElementById('addDialTitle').textContent = 'Add Speed Dial';
       document.querySelector('#addDialForm button[type="submit"]').textContent = 'Add';
+    }
+
+    // Market audit bug #24: undo bar for a just-deleted Speed Dial.
+    let dialUndoTimer = null;
+    function showDialUndo(removed) {
+      const bar = document.getElementById('dialUndoBar');
+      const text = document.getElementById('dialUndoText');
+      const undoBtn = document.getElementById('btnDialUndo');
+      if (!bar || !removed) return;
+      clearTimeout(dialUndoTimer);
+      text.textContent = `Removed “${removed.title || removed.url}”`;
+      bar.hidden = false;
+      undoBtn.onclick = async () => {
+        clearTimeout(dialUndoTimer);
+        bar.hidden = true;
+        if (window.gxNewTabAPI) {
+          const updated = await window.gxNewTabAPI.addSpeedDial({ title: removed.title, url: removed.url });
+          renderDials(updated);
+        }
+      };
+      dialUndoTimer = setTimeout(() => {
+        bar.hidden = true;
+      }, 5000);
     }
 
     document.getElementById('btnCancelModal').addEventListener('click', () => {

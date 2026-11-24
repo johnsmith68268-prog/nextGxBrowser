@@ -140,19 +140,35 @@
 
       <!-- Right Action Toolbar -->
       <div class="nx-right-toolbar">
+        <!-- Fix2-shell A7: each button sits in its own fixed 29 px slot, so
+             the split toggle never shifts when the PiP button appears. -->
+        <span class="nx-toolbar-slot">
         <button class="toolbar-icon-btn" id="btnSplitView" title="Split View — Open current tab side by side with a new tab" aria-label="Split View" aria-pressed="false">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="4" width="18" height="16" rx="2" />
             <line x1="12" y1="4" x2="12" y2="20" />
           </svg>
         </button>
+        </span>
 
+        <span class="nx-toolbar-slot">
         <button class="toolbar-icon-btn" id="btnPopOutVideo" title="Pop out video — play a video in this tab to enable" aria-label="Pop out video" disabled>
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
             <rect x="2" y="4" width="20" height="15" rx="2" />
             <rect x="11.5" y="10.5" width="8.5" height="6.5" rx="1.2" fill="currentColor" stroke="none" />
           </svg>
         </button>
+        </span>
+
+        <span class="nx-toolbar-slot">
+        <button class="toolbar-icon-btn" id="btnPanic" title="Panic button — instantly hide all tabs (Ctrl+Shift+P), press again to restore" aria-label="Panic button" aria-pressed="false">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 9v4" />
+            <path d="M12 17h.01" />
+            <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
+          </svg>
+        </button>
+        </span>
 
         <button class="toolbar-icon-btn" id="btnScreenshot" title="Capture Full Page Screenshot">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
@@ -491,6 +507,27 @@
 
           <button class="nx-primary-btn" id="btnRunCleaner">Clean Selected Data</button>
           <div class="card-sub" id="cleanerStatusText">Frees disk space and memory caches instantly.</div>
+        </div>
+
+        <!-- Market audit bug #36: the drawer was one short card over a large
+             empty space. Add a live cache readout and a "what gets cleaned"
+             explainer so the drawer earns its height. -->
+        <div class="nx-card">
+          <div class="card-title">Cache Usage</div>
+          <div class="setting-item">
+            <span>Cache currently using</span>
+            <strong id="cleanerCacheSizeText" style="font-size:12.5px;">—</strong>
+          </div>
+          <div class="card-sub">Measured from this profile&apos;s network cache. Cleaning frees this space immediately.</div>
+        </div>
+
+        <div class="nx-card">
+          <div class="card-title">What Gets Cleaned</div>
+          <div class="card-sub" style="line-height:1.6;">
+            <strong>Cached images &amp; files</strong> — temporary copies of sites you visited; safe to clear, sites just reload them.<br />
+            <strong>Cookies &amp; website storage</strong> — signs you out of sites and clears saved site data.<br />
+            <strong>Browsing history</strong> — removes visited pages from History and from address-bar suggestions.
+          </div>
         </div>
       </div>
 
@@ -853,7 +890,7 @@
        toolbar avatar menu, Settings, and the profile popover via
        gxAPI.openCreateProfileModal(). -->
   <div class="nx-modal-backdrop hidden" id="profileModalBackdrop">
-    <div class="nx-modal nx-profile-modal" id="profileModal" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
+    <div class="nx-modal nx-profile-modal" id="profileModal" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle" tabindex="-1">
       <div class="nx-modal-header">
         <h2 class="nx-heading" id="profileModalTitle">Create a new profile</h2>
         <button type="button" class="panel-hdr-btn" id="btnProfileModalClose" title="Close (Esc)" aria-label="Close">✕</button>
@@ -888,6 +925,25 @@
   </div>
   <!-- UX phase: live sidebar width readout while dragging the panel resizer -->
   <div class="nx-resize-badge hidden" id="sidebarResizeBadge" aria-hidden="true">380 px</div>
+
+  <!-- Fix2-shell (item 10): one-screen first-run card. Shown once on the
+       first launch (dismissing persists firstRunSeen via updateSettings);
+       never in Private windows. -->
+  <div class="nx-first-run-card hidden" id="firstRunCard" role="dialog" aria-label="Welcome to nextGx">
+    <button type="button" class="panel-hdr-btn nx-first-run-close" id="btnFirstRunClose" title="Dismiss" aria-label="Dismiss">✕</button>
+    <h2 class="nx-heading">Welcome to nextGx</h2>
+    <p>Your gaming browser, ready to go. Four things worth knowing:</p>
+    <ul class="nx-first-run-list">
+      <li><span class="nx-first-run-dot" aria-hidden="true"></span><div><strong>GX Control</strong><span>Limit RAM, CPU and network from the sidebar — keep games smooth while you browse.</span></div></li>
+      <li><span class="nx-first-run-dot" aria-hidden="true"></span><div><strong>Profiles</strong><span>Keep Work and Gaming separate — cookies, history and bookmarks stay apart, all on this device.</span></div></li>
+      <li><span class="nx-first-run-dot" aria-hidden="true"></span><div><strong>Split view</strong><span>Two tabs side by side — right-click a tab, or use the split button in the toolbar.</span></div></li>
+      <li><span class="nx-first-run-dot" aria-hidden="true"></span><div><strong>Picture-in-Picture</strong><span>Playing a video? Pop it out into a floating window from the toolbar or the Player panel.</span></div></li>
+    </ul>
+    <div class="nx-first-run-actions">
+      <button type="button" class="nx-btn nx-btn-ghost" id="btnFirstRunGotIt">Got it</button>
+      <button type="button" class="nx-btn nx-btn-primary" id="btnFirstRunGx">Open GX Control</button>
+    </div>
+  </div>
 
   <script src="sounds.js"></script>
   <script src="renderer.js"></script>

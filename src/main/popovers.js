@@ -35,6 +35,18 @@ const POPOVER_KIND_SPECS = {
     minH: 100,
     maxH: 540
   },
+  // Market audit bug #30 (2026-11-24): right-click on a sidebar rail icon
+  // had no menu at all. Small menu: Open panel / Hide from rail / Customize.
+  'rail-context': {
+    isMenu: true,
+    align: 'left',
+    defaultW: 220,
+    defaultH: 132,
+    minW: 200,
+    maxW: 280,
+    minH: 100,
+    maxH: 220
+  },
   'permission-prompt': {
     isMenu: false,
     align: 'left',

@@ -103,8 +103,46 @@ function bringOverlaysToFront(ctx) {
   }
 }
 
+function hideAllContentViews(ctx) {
+  if (!ctx) return;
+  for (const tab of ctx.tabs?.values() || []) {
+    if (tab?.view) hideView(tab.view);
+  }
+  if (ctx.sidebarPanelFrameView) hideView(ctx.sidebarPanelFrameView);
+  if (ctx.sidebarPanel?.views instanceof Map) {
+    for (const view of ctx.sidebarPanel.views.values()) {
+      if (view) hideView(view);
+    }
+  }
+  if (ctx.popoverView) hideView(ctx.popoverView);
+  if (ctx.extensionPopupView) hideView(ctx.extensionPopupView);
+  if (ctx.screenshotView) hideView(ctx.screenshotView);
+}
+
+// Market-readiness audit (2026-11-24, bug #2): shell-DOM overlays such as the
+// New Profile modal live in the BrowserWindow's own webContents, which sits
+// UNDER every WebContentsView (tabs, sidebar panels, popovers). While a shell
+// modal is open the content views must be hidden, or the modal is invisible
+// and keyboard focus stays trapped in the webview. Restored on close.
+function setShellModalOpen(ctx, open) {
+  if (!ctx || !ctx.win || ctx.win.isDestroyed()) return false;
+  ctx.shellModalOpen = Boolean(open);
+  if (ctx.shellModalOpen) {
+    try {
+      ctx.win.focus();
+    } catch (_) {}
+  }
+  updateActiveViewBounds(ctx);
+  return true;
+}
+
 function updateActiveViewBounds(ctx) {
   if (!ctx || !ctx.win || ctx.win.isDestroyed()) return;
+
+  if (ctx.shellModalOpen) {
+    hideAllContentViews(ctx);
+    return;
+  }
 
   if (ctx.fullscreen && ctx.fullscreen.active) {
     const { shouldExitFullscreenOnLayout, exitFullscreen, applyFullscreenBounds } = fullscreenMod();
@@ -234,6 +272,8 @@ module.exports = {
   setViewVisible,
   hideView,
   showView,
+  hideAllContentViews,
+  setShellModalOpen,
   bringOverlaysToFront,
   updateActiveViewBounds
 };

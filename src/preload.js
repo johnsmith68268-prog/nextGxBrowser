@@ -128,6 +128,8 @@ contextBridge.exposeInMainWorld('gxAPI', {
   newWindow: (options) => ipcRenderer.invoke('window:new', options),
   toggleFullscreen: () => ipcRenderer.invoke('window:fullscreen'),
   clearBrowsingData: (options) => ipcRenderer.invoke('cleaner:run', options),
+  // Market audit bug #36: live cache size for the GX Cleaner drawer.
+  getCacheSize: () => ipcRenderer.invoke('cleaner:get-cache-size'),
 
   // Floating Popover Overlay Management
   openPopover: (options) => ipcRenderer.invoke('popover:open', options),
@@ -160,6 +162,16 @@ contextBridge.exposeInMainWorld('gxAPI', {
   openSidebarInNewTab: () => ipcRenderer.invoke('sidebar:open-in-new-tab'),
   openSidebarPanelInNewTab: () => ipcRenderer.invoke('sidebar:open-in-new-tab'),
   setSidebarWidth: (width, opts) => ipcRenderer.invoke('sidebar:set-width', width, opts),
+  // [Fix2 A5] Drag signals so the unpinned panel cannot auto-close mid-drag.
+  setSidebarResizing: (resizing) =>
+    ipcRenderer.invoke(resizing ? 'sidebar:resize-start' : 'sidebar:resize-end'),
+  // Shell-DOM modal overlay (market audit bug #2): hides content views while
+  // a shell modal (e.g. New Profile) is open so it is visible and focusable.
+  setShellModalOpen: (open) => ipcRenderer.invoke('shell:set-modal-open', Boolean(open)),
+  // Rail context menu (market audit bug #30): ask the shell to open a left
+  // system drawer (e.g. Customize Dock) from the popover view.
+  openLeftTool: (tool) => ipcRenderer.invoke('shell:open-left-tool', tool),
+  onOpenLeftTool: (cb) => ipcRenderer.on('shell:open-left-tool', (_e, tool) => cb(tool)),
   getSidebarState: () => ipcRenderer.invoke('sidebar:get-state'),
 
   // Bookmarks
@@ -173,6 +185,11 @@ contextBridge.exposeInMainWorld('gxAPI', {
 
   // History
   getHistory: () => ipcRenderer.invoke('history:get'),
+  // [Fix2 #20] History/bookmark writes already broadcast history:update
+  // from main (tabs.js / ipc.js); the shell subscribes here so the
+  // omnibox suggestion cache can be invalidated on write instead of
+  // waiting out its 30 s TTL.
+  onHistoryUpdate: (cb) => ipcRenderer.on('history:update', (_e, data) => cb(data)),
   clearHistory: (range) => ipcRenderer.invoke('history:clear', range),
   removeHistoryItem: (id) => ipcRenderer.invoke('history:remove', id),
   getClosedTabs: () => ipcRenderer.invoke('history:closed-get'),
@@ -228,6 +245,26 @@ contextBridge.exposeInMainWorld('gxAPI', {
   // System / RAM Saver Stats & GX Control
   getSystemStats: () => ipcRenderer.invoke('system:stats'),
   getGxControlState: () => ipcRenderer.invoke('gxcontrol:get-state'),
+  // [Fix2 A6] Hibernate Now — hibernates all eligible background tabs +
+  // idle sidebar views and returns MEASURED RAM before/after.
+  hibernateNow: () => ipcRenderer.invoke('tabs:hibernate-now'),
+
+  // [Fix2 Panic] Hide everything / restore the previous session.
+  triggerPanic: () => ipcRenderer.invoke('panic:trigger'),
+  restorePanic: () => ipcRenderer.invoke('panic:restore'),
+  togglePanic: () => ipcRenderer.invoke('panic:toggle'),
+  getPanicState: () => ipcRenderer.invoke('panic:get-state'),
+
+  // [Fix2 GX Mods] Local packs only — no online store.
+  listGxMods: () => ipcRenderer.invoke('gxmods:list'),
+  loadGxMod: () => ipcRenderer.invoke('gxmods:load'),
+  applyGxMod: (id) => ipcRenderer.invoke('gxmods:apply', id),
+  removeGxMod: (id) => ipcRenderer.invoke('gxmods:remove', id),
+  getGxModStatus: () => ipcRenderer.invoke('gxmods:get-status'),
+
+  // [Fix2 Sounds] Honest local-audio status (no sound pack installed
+  // unless a local Mod pack folder contains audio files).
+  getSoundsStatus: () => ipcRenderer.invoke('sounds:get-status'),
 
   // Video Pop-Out (Native PiP) & Sidebar Player
   popOutVideo: (tabId) => ipcRenderer.invoke('video:pop-out', tabId),

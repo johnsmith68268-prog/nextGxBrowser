@@ -277,7 +277,18 @@ if (internalPageKind === 'webui') {
     chooseDownloadLocation: () => ipcRenderer.invoke('downloads:choose-location'),
     resetSettings: () => ipcRenderer.invoke('settings:reset'),
     getAppVersion: () => ipcRenderer.invoke('app:version'),
-    setDefaultBrowser: () => ipcRenderer.invoke('app:set-default-browser')
+    setDefaultBrowser: () => ipcRenderer.invoke('app:set-default-browser'),
+    // [Fix2 integration] GX Features: Panic button, local Mod packs, sounds
+    // status. The shell (gxAPI in preload.js) already exposes panic + mods;
+    // the Settings page runs under this preload, so it needs them here too.
+    triggerPanic: () => ipcRenderer.invoke('panic:trigger'),
+    getPanicState: () => ipcRenderer.invoke('panic:get-state'),
+    listGxMods: () => ipcRenderer.invoke('gxmods:list'),
+    loadGxMod: () => ipcRenderer.invoke('gxmods:load'),
+    applyGxMod: (id) => ipcRenderer.invoke('gxmods:apply', id),
+    removeGxMod: (id) => ipcRenderer.invoke('gxmods:remove', id),
+    getGxModStatus: () => ipcRenderer.invoke('gxmods:get-status'),
+    getSoundsStatus: () => ipcRenderer.invoke('sounds:get-status')
   });
 }
 
@@ -2327,3 +2338,170 @@ function buildMainWorldMediaCaptureHook(symKey, bridgeName) {
     }
   })()`;
 }
+
+// ---------------------------------------------------------------------------
+// Page effects — Shaders + RGX-like video enhance ("Enhance (filter)").
+// [Fix2] Pure CSS filters, applied from the preload's isolated world so a
+// page can never break because of them: any failure leaves the page
+// untouched, and with no GPU Chromium still renders CSS filters in
+// software. Presets are duplicated (small, by design) from
+// src/main/pagefx.js — sandboxed preloads cannot require() relative
+// modules, the same pattern as the YouTube adstrip above; keep in sync.
+// Shaders default off; video enhance is CSS contrast/saturate/brightness
+// only — it is NOT AI upscaling and must never be labelled as such.
+// Top frame + http(s) web pages only; internal pages are untouched.
+// Live updates arrive via 'settings:update' (broadcast.js now sends it to
+// every tab view, not just internal pages).
+// ---------------------------------------------------------------------------
+(function initNextGxPageFx() {
+  try {
+    if (window !== window.top || internalPageKind) return;
+    const proto = window.location.protocol;
+    if (proto !== 'http:' && proto !== 'https:') return;
+
+    const STYLE_ID = 'nextgx-pagefx-style';
+    const SHADERS = {
+      none: '',
+      grayscale: 'grayscale(1)',
+      sepia: 'sepia(1)',
+      warm: 'sepia(0.35) saturate(1.2) hue-rotate(-10deg)',
+      cool: 'hue-rotate(15deg) saturate(1.1)',
+      'high-contrast': 'contrast(1.35) saturate(1.1)',
+      vignette: 'contrast(1.05) brightness(0.97)',
+      night: 'brightness(0.85) contrast(1.05)'
+    };
+    // "Enhance (filter)" — NOT AI upscaling.
+    const VIDEO_FX = {
+      off: '',
+      sharp: 'contrast(1.15) saturate(1.15) brightness(1.05)',
+      vivid: 'contrast(1.2) saturate(1.5) brightness(1.03)',
+      cinema: 'contrast(1.1) saturate(0.9) brightness(0.98) sepia(0.15)'
+    };
+
+    let currentShader = 'none';
+    let currentVideoFx = 'off';
+    let observer = null;
+
+    function shaderCss(preset) {
+      const filter = Object.prototype.hasOwnProperty.call(SHADERS, preset) ? SHADERS[preset] : '';
+      if (!filter) return '';
+      let css = 'html { filter: ' + filter + ' !important; }';
+      if (preset === 'vignette') {
+        css +=
+          ' html::after { content: ""; position: fixed; inset: 0; pointer-events: none; ' +
+          'background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.35) 100%); z-index: 2147483647; }';
+      }
+      return css;
+    }
+
+    function applyShader() {
+      try {
+        const doc = window.document;
+        if (!doc) return;
+        let style = doc.getElementById(STYLE_ID);
+        const css = shaderCss(currentShader);
+        if (!css) {
+          if (style && style.parentNode) style.parentNode.removeChild(style);
+          return;
+        }
+        if (!style) {
+          style = doc.createElement('style');
+          style.id = STYLE_ID;
+          style.setAttribute('data-nextgx', 'shader');
+          const parent = doc.head || doc.documentElement;
+          if (parent) parent.appendChild(style);
+        }
+        if (style.textContent !== css) style.textContent = css;
+      } catch (_) {}
+    }
+
+    function applyVideoFxTo(video) {
+      try {
+        if (!video || video.nodeName !== 'VIDEO') return;
+        const filter = Object.prototype.hasOwnProperty.call(VIDEO_FX, currentVideoFx)
+          ? VIDEO_FX[currentVideoFx]
+          : '';
+        if (!filter) {
+          if (video.dataset.nextgxFxApplied === '1') {
+            video.style.filter = video.dataset.nextgxPrevFilter || '';
+            delete video.dataset.nextgxFxApplied;
+            delete video.dataset.nextgxPrevFilter;
+          }
+          return;
+        }
+        if (video.dataset.nextgxFxApplied !== '1') {
+          video.dataset.nextgxPrevFilter = video.style.filter || '';
+          video.dataset.nextgxFxApplied = '1';
+        }
+        if (video.style.filter !== filter) video.style.filter = filter;
+      } catch (_) {}
+    }
+
+    function applyVideoFx() {
+      try {
+        const videos = window.document.querySelectorAll('video');
+        for (let i = 0; i < videos.length; i++) applyVideoFxTo(videos[i]);
+      } catch (_) {}
+    }
+
+    function applyAll() {
+      applyShader();
+      applyVideoFx();
+    }
+
+    function applySettings(s) {
+      if (!s || typeof s !== 'object') return;
+      const nextShader = Object.prototype.hasOwnProperty.call(SHADERS, s.shaderPreset)
+        ? s.shaderPreset
+        : 'none';
+      const nextVideo = Object.prototype.hasOwnProperty.call(VIDEO_FX, s.videoEnhancePreset)
+        ? s.videoEnhancePreset
+        : 'off';
+      const changed = nextShader !== currentShader || nextVideo !== currentVideoFx;
+      currentShader = nextShader;
+      currentVideoFx = nextVideo;
+      if (changed) applyAll();
+    }
+
+    function startObserver() {
+      try {
+        if (observer || !window.MutationObserver || !window.document.documentElement) return;
+        observer = new window.MutationObserver((mutations) => {
+          for (const m of mutations) {
+            for (const node of m.addedNodes || []) {
+              if (!node) continue;
+              if (node.nodeName === 'VIDEO') applyVideoFxTo(node);
+              else if (node.querySelectorAll) {
+                const nested = node.querySelectorAll('video');
+                for (let i = 0; i < nested.length; i++) applyVideoFxTo(nested[i]);
+              }
+            }
+          }
+        });
+        observer.observe(window.document.documentElement, { childList: true, subtree: true });
+      } catch (_) {}
+    }
+
+    // Settings arrive async; apply on load and on every later change.
+    try {
+      ipcRenderer
+        .invoke('settings:get')
+        .then((s) => {
+          applySettings(s);
+          startObserver();
+          applyAll();
+        })
+        .catch(() => {});
+    } catch (_) {}
+    try {
+      ipcRenderer.on('settings:update', (_e, s) => {
+        applySettings(s);
+      });
+    } catch (_) {}
+    // If the DOM is already there, start observing immediately so videos
+    // added before settings arrive still get the filter.
+    try {
+      if (window.document.documentElement) startObserver();
+    } catch (_) {}
+  } catch (_) {}
+})();

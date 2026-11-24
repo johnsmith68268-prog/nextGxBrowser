@@ -1,4 +1,5 @@
 const SIDEBAR_ICON_WIDTH = 50;
+const RAIL_EXPANDED_WIDTH = 184;
 const TOP_CHROME_HEIGHT = 82;
 const BOOKMARKS_BAR_HEIGHT = 30;
 const FIND_BAR_HEIGHT = 38;
@@ -42,6 +43,10 @@ let activeDlCategory = 'all';
 
 let activeLeftTool = null;
 let activeRightDrawer = null;
+// Fix2-shell A2: mirrors the rail's expanded class (setRailExpanded) so
+// syncLayoutOffsets can shift the drawer/panel offset without touching the
+// const nxSidebarEl before it is initialised.
+let railExpandedState = false;
 let findBarOpen = false;
 let bookmarksBarVisible = true;
 let openBookmarkFolderName = null;
@@ -222,11 +227,19 @@ function getEffectiveSidebarPanelWidth(rawWidth) {
 }
 
 function syncLayoutOffsets() {
+  // Fix2-shell A2: an expanded rail is a 184 px absolute overlay, so an
+  // open left drawer / pinned sidebar panel must start at its edge, not at
+  // the collapsed 50 px edge — otherwise the drawer slides underneath the
+  // rail (audit A2) and the webview would start under the drawer. The CSS
+  // sibling rules in styles.css move the drawer/panel; this keeps the
+  // native view offset in step. A floating (unpinned) panel is an overlay
+  // and needs no offset change.
+  const railShift = railExpandedState ? RAIL_EXPANDED_WIDTH - SIDEBAR_ICON_WIDTH : 0;
   let left = SIDEBAR_ICON_WIDTH;
   if (activeLeftTool) {
-    left += LEFT_TOOL_WIDTH;
+    left += LEFT_TOOL_WIDTH + railShift;
   } else if (sidebarPanelState.open && sidebarPanelState.pinned) {
-    left += getEffectiveSidebarPanelWidth(sidebarPanelState.width);
+    left += getEffectiveSidebarPanelWidth(sidebarPanelState.width) + railShift;
   }
 
   let right = 0;
@@ -885,6 +898,8 @@ function buildTabElement(tab, group, state, activeWsGroupsList, otherClosableCou
     suppressTabClickUntil = Date.now() + 300;
     el.classList.add('dragging');
     setTabDraggingState(true);
+    // Market audit bug #32: hide any hover preview the moment a drag starts.
+    hideTabHoverCard();
     if (e.dataTransfer) {
       e.dataTransfer.effectAllowed = 'move';
       e.dataTransfer.setData('application/x-nextgx-tab-id', tab.id);
@@ -965,11 +980,19 @@ function buildTabElement(tab, group, state, activeWsGroupsList, otherClosableCou
     // [TABS-W2] Gap 8.2 — extra fields the tab menu needs (index, tabs to
     // the right, mute state, URL). tabsToRight counts unpinned same-workspace
     // tabs after this one, matching closeTabsToRight in tabs.js.
-    const tabIndex = state.tabs.findIndex((t) => t.id === tab.id);
-    const tabsToRight = state.tabs
+    // Market audit bug #9: the tab element is REUSED across state updates
+    // (renderTabs fast path when the structure key is unchanged), so the
+    // `tab`/`state` closed over here predate the video starting — the menu
+    // always saw hasPlayingVideo=false even while a video played (the Player
+    // panel, fed by main, showed PLAYING the whole time). Resolve the live
+    // tab and state from currentState at menu-open time instead.
+    const liveState = currentState || state;
+    const liveTab = liveState.tabs?.find((t) => t.id === tab.id) || tab;
+    const tabIndex = liveState.tabs.findIndex((t) => t.id === tab.id);
+    const tabsToRight = liveState.tabs
       .slice(tabIndex + 1)
       .filter(
-        (t) => !t.pinned && (t.workspaceId || 'default') === (tab.workspaceId || 'default')
+        (t) => !t.pinned && (t.workspaceId || 'default') === (liveTab.workspaceId || 'default')
       ).length;
     window.gxAPI.openPopover({
       kind: 'tab-context',
@@ -983,34 +1006,34 @@ function buildTabElement(tab, group, state, activeWsGroupsList, otherClosableCou
         index: tabIndex,
         tabsToRight,
         muted: tabMuteMap.get(tab.id) === true,
-        url: tab.url || '',
-        pinned: Boolean(tab.pinned),
-        sleeping: Boolean(tab.sleeping),
-        hasPlayingVideo: Boolean(tab.hasPlayingVideo),
-        pipActive: Boolean(tab.pipActive),
-        videoTitle: tab.videoTitle || '',
-        isActive: tab.id === state.activeTabId,
-        splitActive: Boolean(state.split),
-        splitVisible: Boolean(state.split && state.split.visible),
+        url: liveTab.url || '',
+        pinned: Boolean(liveTab.pinned),
+        sleeping: Boolean(liveTab.sleeping),
+        hasPlayingVideo: Boolean(liveTab.hasPlayingVideo),
+        pipActive: Boolean(liveTab.pipActive),
+        videoTitle: liveTab.videoTitle || '',
+        isActive: tab.id === liveState.activeTabId,
+        splitActive: Boolean(liveState.split),
+        splitVisible: Boolean(liveState.split && liveState.split.visible),
         isSplitPane: Boolean(
-          state.split && (tab.id === state.split.leftTabId || tab.id === state.split.rightTabId)
+          liveState.split && (tab.id === liveState.split.leftTabId || tab.id === liveState.split.rightTabId)
         ),
-        splitPaneSide: state.split
-          ? tab.id === state.split.leftTabId
+        splitPaneSide: liveState.split
+          ? tab.id === liveState.split.leftTabId
             ? 'left'
-            : tab.id === state.split.rightTabId
+            : tab.id === liveState.split.rightTabId
             ? 'right'
             : null
           : null,
-        splitFocusedPane: state.split?.focusedPane || null,
-        groupId: tab.pinned ? null : tab.groupId || null,
+        splitFocusedPane: liveState.split?.focusedPane || null,
+        groupId: liveTab.pinned ? null : liveTab.groupId || null,
         groupName: group ? group.name : '',
-        workspaceId: tab.workspaceId || 'default',
+        workspaceId: liveTab.workspaceId || 'default',
         groups: activeWsGroupsList,
-        workspaces: state.windowIncognito ? [] : state.workspaces || [],
-        windowIncognito: Boolean(state.windowIncognito),
+        workspaces: liveState.windowIncognito ? [] : liveState.workspaces || [],
+        windowIncognito: Boolean(liveState.windowIncognito),
         canCloseOthers: otherClosableCount > 0,
-        totalTabs: state.tabs.length
+        totalTabs: liveState.tabs.length
       }
     });
   });
@@ -1098,10 +1121,25 @@ function buildGroupPillElement(group, groupTabs, state) {
       } — Click to expand, right-click to edit`
     : `${group.name} (${groupTabs.length} ${groupTabs.length === 1 ? 'tab' : 'tabs'}) — Click to collapse, right-click to edit`;
 
+  // Market audit bug #14: a collapsed pill only showed the group name and
+  // count, so the active tab inside was invisible. Show the active tab's
+  // favicon + title in the pill so it stays identifiable while collapsed.
+  const activeTabHtml =
+    isCollapsed && activeTabInGroup
+      ? `<span class="group-active-tab" title="${escapeHtml(activeTabInGroup.title || '')}">
+          ${
+            activeTabInGroup.favicon
+              ? `<img class="group-active-favicon" src="${escapeHtml(activeTabInGroup.favicon)}" alt="" onerror="this.remove()" />`
+              : '<span class="group-active-dot"></span>'
+          }
+          <span class="group-active-title">${escapeHtml(activeTabInGroup.title || 'Untitled')}</span>
+        </span>`
+      : '';
   pill.innerHTML = `
     <span class="group-dot"></span>
     <span class="group-name">${escapeHtml(group.name || 'Group')}</span>
     <span class="group-count">${groupTabs.length}</span>
+    ${activeTabHtml}
     <svg class="group-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
   `;
 
@@ -1314,6 +1352,9 @@ function getTabHoverCardEl() {
 function scheduleTabHoverCard(tab, group, tabEl) {
   hideTabHoverCard();
   if (settingsState.tabHoverPreview === false) return;
+  // Market audit bug #32: the preview card popped up mid-drag. A tab drag
+  // is in progress (draggedTabId set on dragstart), so never schedule one.
+  if (draggedTabId) return;
   tabHoverTimer = setTimeout(() => {
     const card = getTabHoverCardEl();
     // Memory readout (Chrome-style): per-tab RAM/CPU from the last
@@ -1323,7 +1364,19 @@ function scheduleTabHoverCard(tab, group, tabEl) {
       hoverStat && typeof hoverStat.ramMB === 'number'
         ? `Memory: ${hoverStat.ramMB} MB${hoverStat.cpuPercent !== null && hoverStat.cpuPercent !== undefined ? ` • CPU: ${formatCpuPct(hoverStat.cpuPercent)}` : ''}${hoverStat.cpuThrottled ? ' • Throttled' : ''}`
         : '';
+    // Fix2-shell (item 6): thumbnail strip. There is no live per-tab
+    // screenshot pipeline in the shell — captureScreenshot is the manual
+    // full-page tool for the active tab only, and inventing a per-tab
+    // capture loop would cost a screenshot per hover — so the thumbnail is
+    // the tab's favicon shown large on a gradient tile, with the title's
+    // initial as the fallback when the favicon is missing or dead.
+    const thumbLetter = (tab.title || 'Start Page').match(/[A-Za-z0-9]/)?.[0].toUpperCase() || 'N';
     card.innerHTML = `
+      <div class="tab-hover-thumb"><span class="tab-hover-thumb-letter">${escapeHtml(thumbLetter)}</span>${
+        tab.favicon
+          ? `<img class="tab-hover-thumb-img" src="${escapeHtml(tab.favicon)}" alt="" onerror="this.remove()" />`
+          : ''
+      }</div>
       <div class="tab-hover-head">
         ${
           tab.favicon
@@ -1413,7 +1466,12 @@ async function getHistoryForSuggestions() {
   } catch (_) {
     historyCache = [];
   }
-  historyCacheAt = now;
+  // Market audit bug #20: the 30 s cache was populated empty on the first
+  // keystroke (before any history existed), so suggestions stayed silently
+  // empty for 30 s. Only cache non-empty results; an empty fetch retries
+  // on the next keystroke.
+  if (historyCache.length) historyCacheAt = now;
+  else historyCacheAt = 0;
   return historyCache;
 }
 
@@ -1628,8 +1686,21 @@ function renderTabs(state) {
       for (const tab of wsUnpinnedTabs) {
         const grp = tab.groupId ? groupById.get(tab.groupId) || null : null;
         if (grp && grp.collapsed) {
+          // Fix2-shell (item 12), fast path: the active tab of a collapsed
+          // group stays rendered in the strip. If it has no element yet,
+          // fall through to the full rebuild (allFound = false) so one is
+          // created; a stale element for a tab that is no longer active is
+          // removed so it cannot linger visibly after a tab switch.
           if (tab.id === state.activeTabId) {
             activeCollapsedPillEl = tabsContainer.querySelector(`.nx-group-pill[data-group-id="${CSS.escape(grp.id)}"]`);
+            const el = existingTabsById.get(tab.id);
+            if (!el) { allFound = false; break; }
+            patchTabElementInPlace(el, tab, grp, state);
+            el.classList.add('active-in-collapsed-group');
+            activeTabEl = el;
+          } else {
+            const stale = existingTabsById.get(tab.id);
+            if (stale) stale.remove();
           }
           continue;
         }
@@ -1692,8 +1763,20 @@ function renderTabs(state) {
     tabsContainer.appendChild(pillEl);
 
     if (group.collapsed) {
-      if (groupTabs.some((t) => t.id === state.activeTabId)) {
+      // Fix2-shell (item 12): collapsing a group must NOT hide the active
+      // tab. Chose "keep it visible" over "switch active tab first": switching
+      // would steal the user's context (and could trigger navigation/state
+      // loss in the newly-activated tab). The active tab stays rendered right
+      // after the pill, marked .active-in-collapsed-group; every other tab
+      // in the group stays hidden until the group is expanded. The pill
+      // keeps its active-tab favicon/title preview (prior MA-14 fix).
+      const activeInGroup = groupTabs.find((t) => t.id === state.activeTabId);
+      if (activeInGroup) {
         activeCollapsedPillEl = pillEl;
+        const el = buildTabElement(activeInGroup, group, state, activeWsGroupsList, wsUnpinnedTabs.length - 1);
+        el.classList.add('active-in-collapsed-group');
+        tabsContainer.appendChild(el);
+        activeTabEl = el;
       }
       continue;
     }
@@ -1895,6 +1978,29 @@ function handleTabStripDrop(e) {
 tabsContainer.addEventListener('dragenter', handleTabStripDragHover);
 tabsContainer.addEventListener('dragover', handleTabStripDragHover);
 tabsContainer.addEventListener('drop', handleTabStripDrop);
+
+// Market audit bug #13: a tab favicon img has an inline onerror that hides
+// it with no fallback, so a pinned tab (icon-only, 36 px) whose favicon 404s
+// becomes an empty rectangle. Error events do not bubble, so listen in the
+// capture phase and swap the dead img for the same globe SVG used when no
+// favicon URL is present at all.
+document.addEventListener(
+  'error',
+  (e) => {
+    const t = e.target;
+    if (!t || !t.classList || !t.classList.contains('tab-favicon')) return;
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'tab-favicon tab-favicon-fallback');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '1.8');
+    svg.innerHTML =
+      '<circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3a15.3 15.3 0 0 1 0 18a15.3 15.3 0 0 1 0-18z"></path>';
+    t.replaceWith(svg);
+  },
+  true
+);
 
 if (tabsStrip) {
   tabsStrip.addEventListener('dragenter', handleTabStripDragHover);
@@ -2103,6 +2209,47 @@ addressForm.addEventListener('submit', (e) => {
     window.gxAPI.navigate(val);
     addressInput.blur();
   }
+});
+
+// [Fix2 integration] Panic button (toolbar): hides all tabs instantly,
+// press again (or Ctrl+Shift+P) to restore. The button reflects state.
+const btnPanic = document.getElementById('btnPanic');
+async function refreshPanicButton() {
+  if (!btnPanic || !window.gxAPI.getPanicState) return;
+  try {
+    const st = await window.gxAPI.getPanicState();
+    const active = Boolean(st && st.active);
+    btnPanic.classList.toggle('active', active);
+    btnPanic.setAttribute('aria-pressed', active ? 'true' : 'false');
+    btnPanic.title = active
+      ? 'Panic active — click to restore your tabs (Ctrl+Shift+P)'
+      : 'Panic button — instantly hide all tabs (Ctrl+Shift+P), press again to restore';
+  } catch (_) {
+    /* panic state unavailable — button still toggles */
+  }
+}
+if (btnPanic) {
+  btnPanic.addEventListener('click', async () => {
+    window.gxSounds?.playClick();
+    if (window.gxAPI.togglePanic) await window.gxAPI.togglePanic();
+    refreshPanicButton();
+  });
+  refreshPanicButton();
+}
+
+// [Fix2 integration] Keyboard sounds: a subtle synth click on character
+// key presses while the setting is on (throttled so fast typing does not
+// stack sounds). Background music has no audio files in the repo — its
+// toggle is a real setting, reported honestly in Settings.
+let lastKeySoundAt = 0;
+document.addEventListener('keydown', (e) => {
+  if (!settingsState || !settingsState.keyboardSoundsEnabled) return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (typeof e.key !== 'string' || e.key.length !== 1) return;
+  const now = Date.now();
+  if (now - lastKeySoundAt < 60) return;
+  lastKeySoundAt = now;
+  window.gxSounds?.playClick();
 });
 
 addressInput.addEventListener('focus', () => {
@@ -2668,14 +2815,35 @@ function openProfileModal() {
   renderProfileModalPreview();
   profileModalLastFocus = document.activeElement;
   profileModalOpen = true;
+  // The modal can be opened from the profiles popover — close it first so
+  // its view cannot sit above the modal or stay hidden-but-open afterwards.
+  try {
+    window.gxAPI?.closePopover?.();
+  } catch (_) {}
   profileModalBackdrop.classList.remove('hidden');
+  // Market audit bug #2: the shell DOM sits UNDER every WebContentsView, so
+  // ask main to hide the content views while the modal is open — otherwise
+  // the modal is invisible and focus stays trapped in the webview.
+  try {
+    window.gxAPI?.setShellModalOpen?.(true);
+  } catch (_) {}
   if (profileModalName) profileModalName.focus();
+  // Fix2-shell A1: if the name input did not take focus (e.g. the hidden
+  // webview kept it), keyboard events never reach the shell and Escape
+  // cannot dismiss the modal — fall back to the modal element itself.
+  if (document.activeElement !== profileModalName && profileModalEl) {
+    profileModalEl.focus();
+    if (profileModalName) profileModalName.focus();
+  }
 }
 
 function closeProfileModal() {
   if (!profileModalBackdrop || !profileModalOpen) return;
   profileModalOpen = false;
   profileModalBackdrop.classList.add('hidden');
+  try {
+    window.gxAPI?.setShellModalOpen?.(false);
+  } catch (_) {}
   if (profileModalLastFocus && typeof profileModalLastFocus.focus === 'function') {
     try { profileModalLastFocus.focus(); } catch (_) {}
   }
@@ -2684,6 +2852,12 @@ function closeProfileModal() {
 if (profileModalBackdrop) {
   profileModalBackdrop.addEventListener('click', (e) => {
     if (e.target === profileModalBackdrop) closeProfileModal();
+    // Fix2-shell A1: the × button must dismiss the modal even if its own
+    // direct listener never fires (audit: × did nothing). Delegated here so
+    // any click landing on the button — or its text node — closes it.
+    else if (e.target && e.target.closest && e.target.closest('#btnProfileModalClose')) {
+      closeProfileModal();
+    }
   });
   profileModalBackdrop.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
@@ -2710,6 +2884,26 @@ if (profileModalBackdrop) {
     }
   });
 }
+
+// Fix2-shell A1: Escape must dismiss the profile modal even when focus or
+// event routing bypasses the backdrop's own keydown listener (audit: Esc
+// did nothing while typing in the name field). Capture phase, so no other
+// shell handler can swallow it first; the keyup listener covers the case
+// where the keydown never reaches the renderer at all (e.g. it went to a
+// hidden webview) and the key is released after focus returns to the shell.
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && profileModalOpen) {
+    e.preventDefault();
+    e.stopPropagation();
+    closeProfileModal();
+  }
+}, true);
+document.addEventListener('keyup', (e) => {
+  if (e.key === 'Escape' && profileModalOpen) {
+    e.preventDefault();
+    closeProfileModal();
+  }
+}, true);
 
 if (profileModalName) {
   profileModalName.addEventListener('input', () => {
@@ -2783,6 +2977,12 @@ if (profileModalForm) {
 // Opened from Settings / the profile popover, via main (profiles.js).
 window.gxAPI.onOpenCreateProfileModal?.(() => openProfileModal());
 
+// Market audit bug #30: the rail context menu (popover view) asks the shell
+// to open a left system drawer (e.g. Customize Dock) — relayed via main.
+window.gxAPI.onOpenLeftTool?.((tool) => {
+  if (typeof openLeftTool === 'function' && tool) openLeftTool(tool);
+});
+
 // ================================================================
 // UX PHASE — expandable sidebar rail (overlay flyout, labels)
 // ================================================================
@@ -2792,6 +2992,7 @@ const btnRailExpand = document.getElementById('btnRailExpand');
 function setRailExpanded(expanded, { persist = true } = {}) {
   if (!nxSidebarEl) return;
   nxSidebarEl.classList.toggle('expanded', Boolean(expanded));
+  railExpandedState = Boolean(expanded);
   if (btnRailExpand) {
     btnRailExpand.setAttribute('aria-pressed', expanded ? 'true' : 'false');
     btnRailExpand.title = expanded ? 'Collapse sidebar — hide labels' : 'Expand sidebar — show labels';
@@ -2801,6 +3002,9 @@ function setRailExpanded(expanded, { persist = true } = {}) {
   if (persist) {
     try { localStorage.setItem('nx-rail-expanded', expanded ? '1' : '0'); } catch (_) {}
   }
+  // Fix2-shell A2: expanding/collapsing the rail while a drawer or pinned
+  // panel is open changes the native offset (see syncLayoutOffsets).
+  syncLayoutOffsets();
 }
 
 if (btnRailExpand) {
@@ -2810,9 +3014,92 @@ if (btnRailExpand) {
   });
 }
 
+// Market audit bug #30: right-click on a rail icon opens a context menu
+// (Open panel / Hide from rail / Customize Dock). The rail buttons carry
+// data-sidebar-item=<key> and data-sidebar-panel or data-service-url.
+if (nxSidebarEl) {
+  nxSidebarEl.addEventListener('contextmenu', (e) => {
+    const btn = e.target && e.target.closest
+      ? e.target.closest('[data-sidebar-item]')
+      : null;
+    if (!btn || !btn.dataset.sidebarItem) return;
+    e.preventDefault();
+    e.stopPropagation();
+    window.gxSounds?.playClick();
+    const key = btn.dataset.sidebarItem;
+    const label = btn.dataset.label || btn.getAttribute('aria-label') || btn.title || key;
+    window.gxAPI.openPopover({
+      kind: 'rail-context',
+      x: Math.round(e.clientX + 2),
+      y: Math.round(e.clientY + 2),
+      width: 220,
+      height: 172,
+      // Fix2-shell (item 9): the menu also offers Pin/Unpin panel. Only
+      // items that open a sidebar panel can be pinned (services + Player);
+      // left-tool items (GX Control/Cleaner) and tab items cannot.
+      payload: {
+        key,
+        title: label,
+        pinned: sidebarPanelState.pinned,
+        canPin: Boolean(btn.dataset.sidebarPanel || btn.dataset.serviceUrl)
+      }
+    });
+  });
+}
+
 try {
   if (localStorage.getItem('nx-rail-expanded') === '1') setRailExpanded(true, { persist: false });
 } catch (_) {}
+
+// ================================================================
+// Fix2-shell (item 10) — one-screen first-run card. Shown once, on the
+// first launch only: dismissing persists `firstRunSeen` through the
+// existing settings channel (gxAPI.updateSettings merges it into the root
+// settings; no new storage API). Never shown in Private windows.
+// ================================================================
+const firstRunCard = document.getElementById('firstRunCard');
+
+function dismissFirstRunCard() {
+  if (!firstRunCard) return;
+  firstRunCard.classList.add('hidden');
+  settingsState = { ...settingsState, firstRunSeen: true };
+  try {
+    window.gxAPI.updateSettings({ firstRunSeen: true });
+  } catch (_) {}
+  // The card is a shell overlay like the profile modal: while it is up the
+  // content views are hidden so it is not occluded by the tab's webview.
+  // Restore them on dismiss, unless the profile modal is open (it owns the
+  // hidden-views state then).
+  try {
+    if (!profileModalOpen) window.gxAPI?.setShellModalOpen?.(false);
+  } catch (_) {}
+}
+
+function maybeShowFirstRunCard() {
+  if (!firstRunCard) return;
+  if (document.documentElement.dataset.incognito === 'true') return;
+  if (settingsState && settingsState.firstRunSeen === true) return;
+  firstRunCard.classList.remove('hidden');
+  try {
+    window.gxAPI?.setShellModalOpen?.(true);
+  } catch (_) {}
+}
+
+// Escape dismisses the card (registered after the profile-modal capture
+// listener, so a modal-open Escape still closes the modal, not the card).
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && firstRunCard && !firstRunCard.classList.contains('hidden')) {
+    e.preventDefault();
+    dismissFirstRunCard();
+  }
+}, true);
+
+document.getElementById('btnFirstRunClose')?.addEventListener('click', dismissFirstRunCard);
+document.getElementById('btnFirstRunGotIt')?.addEventListener('click', dismissFirstRunCard);
+document.getElementById('btnFirstRunGx')?.addEventListener('click', () => {
+  dismissFirstRunCard();
+  if (typeof openLeftTool === 'function') openLeftTool('gxControl');
+});
 
 document.getElementById('btnChromeMenu').addEventListener('click', () => {
   window.gxSounds?.playClick();
@@ -2954,6 +3241,14 @@ function applySidebarPanelDOMState() {
   if (nxSidebarEl) {
     nxSidebarEl.classList.toggle('rail-hover-expand', !pinned);
     if (pinned && nxSidebarEl.classList.contains('expanded')) {
+      setRailExpanded(false);
+    }
+    // Market audit bugs #15/#16: a floating panel is a WebContentsView and
+    // always paints above the shell DOM, so an expanded rail's labels would
+    // be clipped/overlapped by the panel. While any panel is open, suppress
+    // hover-expand (CSS .nx-panel-open) and collapse a pinned-expanded rail.
+    nxSidebarEl.classList.toggle('nx-panel-open', isOpen);
+    if (isOpen && nxSidebarEl.classList.contains('expanded')) {
       setRailExpanded(false);
     }
   }
@@ -3117,19 +3412,29 @@ function endSidebarPanelResize() {
 }
 
 if (sidebarPanelResizer) {
-  sidebarPanelResizer.addEventListener('dblclick', (e) => {
-    e.preventDefault();
+  // Market audit bug #17: the dblclick reset never fired — pointerdown calls
+  // preventDefault() + setPointerCapture, which swallows the dblclick event.
+  // Detect a double press manually in pointerdown instead (same 380 px reset).
+  let lastResizerPointerDownAt = 0;
+  const resetSidebarPanelWidth = (clientX) => {
     sidebarPanelState.width = SIDEBAR_PANEL_DEFAULT_WIDTH;
     applySidebarPanelDOMState();
     syncLayoutOffsets();
-    showSidebarResizeBadge(SIDEBAR_PANEL_DEFAULT_WIDTH, e.clientX);
+    showSidebarResizeBadge(SIDEBAR_PANEL_DEFAULT_WIDTH, clientX);
     hideSidebarResizeBadgeSoon();
     window.gxAPI.setSidebarWidth(SIDEBAR_PANEL_DEFAULT_WIDTH, { persist: true });
     showToast('Sidebar width reset to 380 px', { sound: false });
-  });
+  };
   sidebarPanelResizer.addEventListener('pointerdown', (e) => {
     if (e.button !== undefined && e.button !== 0) return;
     e.preventDefault();
+    const now = Date.now();
+    if (now - lastResizerPointerDownAt < 400) {
+      lastResizerPointerDownAt = 0;
+      resetSidebarPanelWidth(e.clientX);
+      return;
+    }
+    lastResizerPointerDownAt = now;
     beginSidebarPanelResize(e.clientX, e.pointerId);
   });
   sidebarPanelResizer.addEventListener('mousedown', (e) => {
@@ -3213,6 +3518,19 @@ function openLeftTool(toolName) {
   activeLeftTool = toolName;
   leftToolTitle.textContent = LEFT_TOOL_TITLES[toolName] || 'System';
   leftToolDrawer.classList.remove('hidden');
+  // Market audit bugs #15/#16: the expanded rail is a z-35 absolute overlay
+  // while the drawer is z-22, so an expanded rail covers the drawer's left
+  // edge. Collapse it and suppress hover-expand while a drawer is open
+  // (same treatment as sidebar panels in applySidebarPanelDOMState).
+  if (nxSidebarEl) {
+    nxSidebarEl.classList.add('nx-panel-open');
+    if (nxSidebarEl.classList.contains('expanded')) {
+      setRailExpanded(false);
+    }
+  }
+  // Market audit bug #36: refresh the live cache readout when the Cleaner
+  // drawer opens.
+  if (toolName === 'gxCleaner') refreshCleanerCacheSize();
 
   document.querySelectorAll('[data-left-tool]').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.leftTool === toolName);
@@ -3230,6 +3548,12 @@ function closeLeftTool() {
   activeLeftTool = null;
   leftToolDrawer.classList.add('hidden');
   document.querySelectorAll('[data-left-tool]').forEach((btn) => btn.classList.remove('active'));
+  // Market audit bugs #15/#16: allow the rail to expand again now that no
+  // drawer is open (but only if no sidebar panel is open either — that state
+  // re-applies the class on its next DOM sync).
+  if (nxSidebarEl && !sidebarPanelState.open) {
+    nxSidebarEl.classList.remove('nx-panel-open');
+  }
   syncLayoutOffsets();
 }
 
@@ -3268,6 +3592,19 @@ document.querySelectorAll('[data-sb-toggle]').forEach((chk) => {
   });
 });
 
+// Market audit bug #36: live cache-size readout for the Cleaner drawer.
+async function refreshCleanerCacheSize() {
+  const el = document.getElementById('cleanerCacheSizeText');
+  if (!el) return;
+  try {
+    const res = await window.gxAPI.getCacheSize?.();
+    const bytes = Number(res?.bytes);
+    el.textContent = Number.isFinite(bytes) && bytes > 0 ? formatBytes(bytes) : 'Empty';
+  } catch (_) {
+    el.textContent = '—';
+  }
+}
+
 document.getElementById('btnRunCleaner').addEventListener('click', async () => {
   const statusEl = document.getElementById('cleanerStatusText');
   statusEl.textContent = 'Optimizing cache & clearing selected data...';
@@ -3278,6 +3615,7 @@ document.getElementById('btnRunCleaner').addEventListener('click', async () => {
   });
   statusEl.textContent = 'Cleaned! Memory & cache optimized.';
   showToast('Browser Cache & Data Cleaned');
+  refreshCleanerCacheSize();
 });
 
 // 4. RIGHT DRAWER (Control Center & Extensions)
@@ -4163,6 +4501,9 @@ function syncSettingsUI(s) {
     volume: typeof s.uiSoundsVolume === 'number' ? s.uiSoundsVolume : 0.35
   });
 
+  // [Fix2 integration] Battery saver: reduce shell motion while enabled.
+  document.body.classList.toggle('battery-saver', Boolean(s.batterySaverEnabled));
+
   applySidebarVisibility(s.sidebarItems || {});
   if (!isResizingSidebarPanel && typeof s.sidebarPanelWidth === 'number') {
     sidebarPanelState.width = clampSidebarPanelWidth(s.sidebarPanelWidth);
@@ -4250,6 +4591,12 @@ window.gxAPI.onDownloadsUpdate((list) => {
 });
 window.gxAPI.onSystemStats((stats) => renderSystemStats(stats));
 window.gxAPI.onSettingsUpdate?.((s) => syncSettingsUI(s));
+// [Fix2 integration] History updates must invalidate the omnibox
+// suggestion cache, or new history stays invisible for up to 30 s.
+window.gxAPI.onHistoryUpdate?.(() => {
+  historyCache = null;
+  historyCacheAt = 0;
+});
 window.gxAPI.onBookmarksUpdate?.((list) => renderBookmarksBar(list));
 window.gxAPI.onProfilesUpdate?.((data) => renderProfileAvatar(data));
 window.gxAPI.onFindResult?.((result) => updateFindMatchCount(result));
@@ -4341,6 +4688,10 @@ window.gxAPI.onShortcutAction((action) => {
 
   settingsState = await window.gxAPI.getSettings();
   syncSettingsUI(settingsState);
+
+  // Fix2-shell (item 10): first-run card, once — never on later launches
+  // (dismissing persists firstRunSeen) and never in Private windows.
+  maybeShowFirstRunCard();
 
   if (window.gxAPI.getSidebarState) {
     const initialSidebar = await window.gxAPI.getSidebarState();

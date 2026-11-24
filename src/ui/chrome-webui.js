@@ -151,6 +151,9 @@ function histRegistrableDomain(rawUrl) {
     const u = new URL(rawUrl || '');
     if (!/^https?:$/.test(u.protocol)) return 'nextGx pages';
     const h = u.hostname.toLowerCase();
+    // Market audit bug #22: IP hosts must not be registrable-domain shortened
+    // ("127.0.0.1" became "0.1"). Return the full IP as the group label.
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h) || h === 'localhost' || h.startsWith('[')) return h;
     const parts = h.split('.').filter(Boolean);
     if (parts.length <= 2) return h;
     const lastTwo = parts.slice(-2).join('.');
@@ -174,7 +177,7 @@ function histRowHtml(item, timeStr) {
       <span style="color:var(--text-secondary);font-size:12px;min-width:65px;">${escapeHtml(timeStr)}</span>
       ${favHtml}
       <div class="row-info">
-        <div class="row-title open-link" data-url="${escapeHtml(item.url)}">${escapeHtml(item.title)}</div>
+        <div class="row-title row-title--clamp2 open-link" data-url="${escapeHtml(item.url)}" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</div>
         <div class="row-sub">${escapeHtml(item.url)}</div>
       </div>
       <span class="visit-count-badge" style="font-size:11.5px;color:var(--text-secondary);background:var(--bg-input);border:1px solid var(--border);padding:3px 9px;border-radius:999px;flex-shrink:0;">${escapeHtml(visitLabel)}</span>
@@ -212,19 +215,28 @@ function openHistEntryMenu(btn, entryId) {
       const action = item.dataset.action;
       const row = mainContainer.querySelector(`.history-item-row[data-id="${CSS.escape(entryId)}"] .open-link`);
       const url = row?.dataset.url || '';
+      // Market audit bug A3: the menu used to stay open after "Remove from
+      // history" (the remove branch skipped closeHistEntryMenu, and the
+      // re-render only replaces mainContainer while the menu lives on
+      // document.body). Every menu action dismisses the menu now.
       if (action === 'open' && url) {
+        closeHistEntryMenu();
         await window.gxChromePagesAPI.createTab({ url, active: true });
       } else if (action === 'copy' && url) {
         try {
           await navigator.clipboard.writeText(url);
           item.textContent = 'Copied!';
         } catch (_) {}
+        // Let the "Copied!" feedback be seen, then dismiss.
+        setTimeout(closeHistEntryMenu, 600);
       } else if (action === 'remove') {
+        closeHistEntryMenu();
         await window.gxChromePagesAPI.removeHistoryItem(entryId);
         histSelected.delete(entryId);
         renderHistoryPage();
+      } else {
+        closeHistEntryMenu();
       }
-      if (action !== 'remove') closeHistEntryMenu();
     });
   });
 }
@@ -256,6 +268,15 @@ async function renderHistoryPage({ force = true } = {}) {
     window.gxChromePagesAPI.getClosedTabs ? window.gxChromePagesAPI.getClosedTabs() : Promise.resolve([])
   ]);
   if (seq !== renderSeq || currentPage !== 'history') return;
+  // Market audit bug #6 (stale bulk bar): the selection used to survive a
+  // history clear, so a "1 selected" bar floated over an empty list.
+  // Prune selected ids that are no longer in the fetched history.
+  if (histSelected.size) {
+    const liveIds = new Set((list || []).map((h) => h && h.id));
+    for (const id of [...histSelected]) {
+      if (!liveIds.has(id)) histSelected.delete(id);
+    }
+  }
   if (searchQuery !== lastHistorySearchKey) {
     lastHistorySearchKey = searchQuery;
     historyVisibleLimit = 100;
@@ -266,6 +287,7 @@ async function renderHistoryPage({ force = true } = {}) {
     q: searchQuery,
     view: histViewMode,
     limit: historyVisibleLimit,
+    sel: [...histSelected].sort(),
     closed: closedTabs || [],
     history: list || []
   });
@@ -296,12 +318,17 @@ async function renderHistoryPage({ force = true } = {}) {
   topRightActions.querySelectorAll('[data-range]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       await window.gxChromePagesAPI.clearHistory(btn.dataset.range);
+      // Market audit bug #6: a clear wipes the entries the bulk bar refers
+      // to, so drop the selection with them (pruning in renderHistoryPage
+      // is the backstop; this makes the bar hide immediately).
+      histSelected.clear();
       renderHistoryPage();
     });
   });
 
   document.getElementById('btnClearAllHistory').addEventListener('click', async () => {
     await window.gxChromePagesAPI.clearHistory('all');
+    histSelected.clear();
     renderHistoryPage();
   });
 
@@ -521,18 +548,32 @@ async function renderHistoryPage({ force = true } = {}) {
     if (!ids.length) return;
     const btn = document.getElementById('btnHistBulkDelete');
     if (btn) btn.disabled = true;
-    for (const id of ids) {
-      await window.gxChromePagesAPI.removeHistoryItem(id);
+    try {
+      for (const id of ids) {
+        await window.gxChromePagesAPI.removeHistoryItem(id);
+        histSelected.delete(id);
+      }
+    } finally {
+      // Market audit bug #6: always drop the (now deleted) selection and
+      // re-render, even if one remove failed, so the bar cannot stick
+      // around claiming entries are still selected.
+      histSelected.clear();
+      renderHistoryPage();
     }
-    histSelected.clear();
-    renderHistoryPage();
   });
 }
 
 // 2. PRO DOWNLOAD MANAGER
-async function renderDownloadsPage({ force = true } = {}) {
+// Market audit bugs #7/#21: the page re-fetches on every 'downloads:update'
+// broadcast, which is correct but racy while a download is progressing
+// (the fetch can land before storage has the newest tick). Accept the
+// broadcast payload as the list when one is supplied, so a progress /
+// completion broadcast updates the rows even if the fetch would lag.
+async function renderDownloadsPage({ force = true, list: listOverride = null } = {}) {
   const seq = ++renderSeq;
-  const list = await window.gxChromePagesAPI.getDownloads();
+  const list = Array.isArray(listOverride)
+    ? listOverride
+    : await window.gxChromePagesAPI.getDownloads();
   if (seq !== renderSeq || currentPage !== 'downloads') return;
 
   const renderKey = JSON.stringify({
@@ -696,30 +737,46 @@ async function renderDownloadsPage({ force = true } = {}) {
     btn.addEventListener('click', () => window.gxChromePagesAPI.showDownloadInFolder(btn.dataset.path));
   });
   mainContainer.querySelectorAll('.pause-dl').forEach((btn) => {
-    btn.addEventListener('click', async (e) => {
-      const id = e.target.closest('.card-row').dataset.id;
+    btn.addEventListener('click', async () => {
+      const id = btn.closest('.dl-item-row')?.dataset.id;
+      if (!id) return;
       await window.gxChromePagesAPI.pauseDownload(id);
       renderDownloadsPage();
     });
   });
   mainContainer.querySelectorAll('.resume-dl').forEach((btn) => {
-    btn.addEventListener('click', async (e) => {
-      const id = e.target.closest('.card-row').dataset.id;
+    btn.addEventListener('click', async () => {
+      const id = btn.closest('.dl-item-row')?.dataset.id;
+      if (!id) return;
       await window.gxChromePagesAPI.resumeDownload(id);
       renderDownloadsPage();
     });
   });
   mainContainer.querySelectorAll('.cancel-dl').forEach((btn) => {
-    btn.addEventListener('click', async (e) => {
-      const id = e.target.closest('.card-row').dataset.id;
+    btn.addEventListener('click', async () => {
+      const id = btn.closest('.dl-item-row')?.dataset.id;
+      if (!id) return;
       await window.gxChromePagesAPI.cancelDownload(id);
       renderDownloadsPage();
     });
   });
   mainContainer.querySelectorAll('.remove-dl').forEach((btn) => {
-    btn.addEventListener('click', async (e) => {
-      const id = e.target.closest('.card-row').dataset.id;
-      await window.gxChromePagesAPI.removeDownload(id);
+    btn.addEventListener('click', async () => {
+      // Market audit bug #7: use the bound button (not e.target, which can
+      // be a child node if the button gains an icon) and remove the row
+      // optimistically so the click always has visible effect; re-render
+      // from storage afterwards, and restore on failure.
+      const row = btn.closest('.dl-item-row');
+      const id = row?.dataset.id;
+      if (!id) return;
+      row.style.opacity = '0.4';
+      btn.disabled = true;
+      try {
+        await window.gxChromePagesAPI.removeDownload(id);
+      } catch (_) {
+        renderDownloadsPage();
+        return;
+      }
       renderDownloadsPage();
     });
   });
@@ -808,7 +865,7 @@ function renderBookmarkRowHtml(bm) {
     <div class="card-row bookmark-item-row" data-id="${escapeHtml(bm.id)}">
       ${buildBookmarkIconHtml(bm)}
       <div class="row-info">
-        <div class="row-title open-bm" data-url="${escapeHtml(bm.url)}">${escapeHtml(bm.title)}</div>
+        <div class="row-title row-title--clamp2 open-bm" data-url="${escapeHtml(bm.url)}" title="${escapeHtml(bm.title)}">${escapeHtml(bm.title)}</div>
         <div class="row-sub">${escapeHtml(bm.url)}</div>
       </div>
       <div class="bm-actions">
@@ -3192,11 +3249,12 @@ async function renderExtensionsPage() {
           </div>
           <div class="ext-bottom">
             <span style="font-size:11.5px;color:var(--success);font-weight:600;">Built-in System Module</span>
-            <label class="nx-switch">
+            <label class="nx-switch" title="Always on — the Media & AI Overlay is a core part of nextGx and cannot be turned off">
               <input type="checkbox" checked disabled />
               <span class="nx-slider"></span>
             </label>
           </div>
+          <div class="row-sub" style="margin-top:6px;">Always on — a core part of nextGx, so it cannot be turned off.</div>
         </div>
       `
     }
@@ -3284,48 +3342,31 @@ async function renderExtensionsPage() {
       ? `<div class="ext-grid">${builtInHtml}${userExtsHtml}</div>`
       : `<div class="section-card"><div class="empty-state">No extensions match "${escapeHtml(searchQuery)}".</div></div>`;
 
-  // [Wave2-D] Keyboard shortcuts (gap 10.1): the browser shortcuts, listed
-  // from the real shortcut map. Extensions don't define custom shortcuts in
-  // nextGx yet, so there are no per-extension bindings to show.
-  const shortcutRows = [
-    ['New tab', 'Ctrl+T'],
-    ['Reopen closed tab', 'Ctrl+Shift+T'],
-    ['New window', 'Ctrl+N'],
-    ['New Private window', 'Ctrl+Shift+N'],
-    ['Close tab', 'Ctrl+W'],
-    ['Reload page', 'Ctrl+R / F5'],
-    ['Focus address bar', 'Ctrl+L'],
-    ['Bookmark this page', 'Ctrl+D'],
-    ['History', 'Ctrl+H'],
-    ['Downloads', 'Ctrl+J'],
-    ['Find in page', 'Ctrl+F'],
-    ['Print', 'Ctrl+P'],
-    ['Zoom reset / in / out', 'Ctrl+0 / Ctrl++ / Ctrl+−'],
-    ['Fullscreen', 'F11'],
-    ['Developer tools', 'F12'],
-    ['Search tabs', 'Ctrl+Shift+A'],
-    ['Switch tabs', 'Ctrl+Tab'],
-    ['Reading mode', 'Alt+Shift+R']
-  ];
+  // Market audit bug #28: this card used to duplicate the full 18-row
+  // keyboard-shortcuts list from Settings, even though extensions define no
+  // custom shortcuts in nextGx yet. Keep only a short pointer to the
+  // canonical list in Settings instead of a second copy.
   const shortcutsCardHtml = `
     <div class="section-card" id="extShortcutsCard">
       <div class="card-header">
         <h2 class="nx-heading">Keyboard shortcuts</h2>
-        <span style="font-size:12px;color:var(--text-secondary);">Extensions don&apos;t define custom shortcuts in nextGx yet</span>
+        <button type="button" class="btn" id="btnExtShortcutsSettings">See all shortcuts in Settings</button>
       </div>
-      ${shortcutRows
-        .map(
-          ([label, keys]) => `
-        <div class="card-row" style="padding:9px 20px;">
-          <div class="row-info"><div class="row-title" style="cursor:default;font-weight:400;">${escapeHtml(label)}</div></div>
-          <span style="font-family:var(--nx-font-mono);font-size:12px;color:var(--accent-bright);background:var(--bg-input);border:1px solid var(--border);padding:3px 9px;border-radius:6px;white-space:nowrap;">${escapeHtml(keys)}</span>
-        </div>`
-        )
-        .join('')}
+      <div class="card-row" style="padding:12px 20px;">
+        <div class="row-info">
+          <div class="row-title" style="cursor:default;font-weight:400;">Extensions don&apos;t define custom shortcuts in nextGx yet.</div>
+          <div class="row-sub">The browser shortcuts (new tab, tab search, split view…) live in Settings.</div>
+        </div>
+      </div>
     </div>
   `;
 
   mainContainer.innerHTML = `${bannersHtml}${shortcutsCardHtml}${gridHtml}`;
+
+  const btnExtShortcuts = document.getElementById('btnExtShortcutsSettings');
+  if (btnExtShortcuts) {
+    btnExtShortcuts.addEventListener('click', () => switchPage('settings'));
+  }
 
   const btnDismiss = document.getElementById('btnDismissExtBanner');
   if (btnDismiss) {
@@ -3826,7 +3867,41 @@ function showWebuiConfirmModal({ title, body, confirmLabel = 'Confirm', danger =
   });
 }
 
-// [Wave2-D] Settings page state (gaps 5.1–5.9, 5.11, 5.13, 5.14).
+// Market audit bug #24 — Speed Dial delete confirm (shared helper).
+// The live delete site is the new tab page (src/ui/newtab.html), which
+// already shows an undo bar after a delete ("Removed …" + Undo, 5 s).
+// This helper is the WebUI-side confirm-then-delete used wherever a Speed
+// Dial is removed from chrome-webui code, and the pattern newtab should
+// follow if its undo bar is ever replaced: confirm first, then remove,
+// then offer restore. It is deliberately API-agnostic: pass the remove /
+// restore calls for the page you are on (gxNewTabAPI.removeSpeedDial /
+// addSpeedDial on the new tab page, gxChromePagesAPI equivalents if a
+// WebUI page ever manages dials). Returns true when the dial was removed.
+// WIRING NEEDED (newtab.html, not this file — owned by another agent):
+// in the `.tile-del` click handler, replace the direct
+// `removeSpeedDial(item.id)` + `showDialUndo(removed)` with
+// `await requestSpeedDialDelete({ title: item.title, url: item.url,
+// remove: () => window.gxNewTabAPI.removeSpeedDial(item.id),
+// restore: () => window.gxNewTabAPI.addSpeedDial({ title: item.title,
+// url: item.url }) })` and re-render from its returned list; keep
+// showDialUndo as the undo step after a confirmed delete.
+async function requestSpeedDialDelete({ title, url, remove, restore, onRemoved } = {}) {
+  const label = title || url || 'this Speed Dial tile';
+  const confirmed = await showWebuiConfirmModal({
+    title: 'Remove Speed Dial?',
+    body: `Remove “${label}” from your Speed Dial? You can undo this right after deleting it.`,
+    confirmLabel: 'Remove',
+    danger: true
+  });
+  if (!confirmed) return false;
+  const updated = typeof remove === 'function' ? await remove() : null;
+  if (typeof onRemoved === 'function') onRemoved(updated);
+  // Undo hook for the caller: restore re-adds the tile. Callers that
+  // already show an undo bar (newtab's showDialUndo) should pass the
+  // removed tile there instead of calling restore directly.
+  requestSpeedDialDelete.lastRemoved = { title, url, restore };
+  return true;
+}
 let searchEngineFormOpen = false;
 let searchEngineEditingId = null;
 let searchEngineError = '';
@@ -4477,7 +4552,9 @@ async function renderSettingsPage() {
     ['Search tabs', 'Ctrl+Shift+A'],
     ['Switch tabs', 'Ctrl+Tab'],
     ['Reading mode', 'Alt+Shift+R'],
-    ['Split view divider (when focused)', '← → resize · Home centres'],
+    // Market audit bug #34: two shortcuts were crammed into one chip.
+    ['Split view divider: resize (when focused)', '← →'],
+    ['Split view divider: centre (when focused)', 'Home'],
     ['Close panel / drawer', 'Esc']
   ];
   const settingsShortcutsHtml = `
@@ -4641,6 +4718,76 @@ async function renderSettingsPage() {
           <input type="checkbox" id="setDarkWebChk" ${s.forceDarkWeb ? 'checked' : ''} />
           <span class="nx-slider"></span>
         </label>
+      </div>
+    </div>
+
+    <div class="section-card" id="gxFeaturesCard">
+      <div class="card-header"><h2 class="nx-heading">GX Features</h2></div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Panic button</div>
+          <div class="row-sub">Instantly hides all tabs and shows a neutral Start page — Ctrl+Shift+P, press again to restore</div>
+        </div>
+        <button type="button" class="btn danger" id="btnGxPanicNow">Panic now</button>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Shaders</div>
+          <div class="row-sub">CSS filter over web pages — works without a GPU, pages just render slower in software</div>
+        </div>
+        <select id="setShaderPreset" class="priv-perm-select" style="padding:7px 10px;">
+          ${['none', 'grayscale', 'sepia', 'warm', 'cool', 'high-contrast', 'vignette', 'night'].map((p) => `<option value="${p}"${(s.shaderPreset || 'none') === p ? ' selected' : ''}>${p === 'none' ? 'Off' : p}</option>`).join('')}
+        </select>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Video enhance (filter)</div>
+          <div class="row-sub">Contrast / saturation filter on videos — not AI upscaling</div>
+        </div>
+        <select id="setVideoEnhancePreset" class="priv-perm-select" style="padding:7px 10px;">
+          ${['off', 'sharp', 'vivid', 'cinema'].map((p) => `<option value="${p}"${(s.videoEnhancePreset || 'off') === p ? ' selected' : ''}>${p === 'off' ? 'Off' : p}</option>`).join('')}
+        </select>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Battery saver</div>
+          <div class="row-sub">Hibernates background tabs sooner and slows stats polling</div>
+        </div>
+        <label class="nx-switch">
+          <input type="checkbox" id="setBatterySaverChk" ${s.batterySaverEnabled ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Keyboard sounds</div>
+          <div class="row-sub">Subtle click on key presses, from the built-in synth unless a Mod sound pack is installed</div>
+        </div>
+        <label class="nx-switch">
+          <input type="checkbox" id="setKeyboardSoundsChk" ${s.keyboardSoundsEnabled ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Background music</div>
+          <div class="row-sub">Ambient music while browsing — needs a local Mod pack with audio files</div>
+        </div>
+        <label class="nx-switch">
+          <input type="checkbox" id="setBackgroundMusicChk" ${s.backgroundMusicEnabled ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
+      <div class="card-row">
+        <div class="row-sub" id="gxSoundsNote">Checking sound pack status…</div>
+      </div>
+      <div class="card-row" style="flex-direction:column;align-items:stretch;gap:10px;">
+        <div class="row-info">
+          <div class="row-title">GX Mods — local packs only</div>
+          <div class="row-sub">A pack is a local folder with a mod.json (theme + wallpaper + optional audio). No online store.</div>
+        </div>
+        <div id="gxModsList"><div class="row-sub">Loading packs…</div></div>
+        <div><button type="button" class="btn primary" id="btnLoadGxMod">Load a Mod pack folder…</button></div>
       </div>
     </div>
 
@@ -5112,6 +5259,82 @@ async function renderSettingsPage() {
   document.getElementById('setDarkWebChk').addEventListener('change', (e) => {
     window.gxChromePagesAPI.updateSettings({ forceDarkWeb: e.target.checked });
   });
+
+  // [Fix2 integration] GX Features card: Panic, Shaders, video enhance,
+  // battery saver, keyboard sounds / background music, local Mod packs.
+  const btnGxPanicNow = document.getElementById('btnGxPanicNow');
+  if (btnGxPanicNow) {
+    btnGxPanicNow.addEventListener('click', async () => {
+      if (window.gxChromePagesAPI.triggerPanic) await window.gxChromePagesAPI.triggerPanic();
+    });
+  }
+  const setShaderPreset = document.getElementById('setShaderPreset');
+  if (setShaderPreset) {
+    setShaderPreset.addEventListener('change', (e) => {
+      window.gxChromePagesAPI.updateSettings({ shaderPreset: e.target.value });
+    });
+  }
+  const setVideoEnhancePreset = document.getElementById('setVideoEnhancePreset');
+  if (setVideoEnhancePreset) {
+    setVideoEnhancePreset.addEventListener('change', (e) => {
+      window.gxChromePagesAPI.updateSettings({ videoEnhancePreset: e.target.value });
+    });
+  }
+  bindSettingsToggle('setBatterySaverChk', 'batterySaverEnabled');
+  bindSettingsToggle('setKeyboardSoundsChk', 'keyboardSoundsEnabled');
+  bindSettingsToggle('setBackgroundMusicChk', 'backgroundMusicEnabled');
+  const gxSoundsNote = document.getElementById('gxSoundsNote');
+  if (gxSoundsNote && window.gxChromePagesAPI.getSoundsStatus) {
+    window.gxChromePagesAPI.getSoundsStatus().then((st) => {
+      if (st && st.note) gxSoundsNote.textContent = st.note;
+    }).catch(() => {
+      gxSoundsNote.textContent = 'Sound status unavailable.';
+    });
+  }
+  const renderGxModsList = async () => {
+    const listEl = document.getElementById('gxModsList');
+    if (!listEl || !window.gxChromePagesAPI.getGxModStatus) return;
+    try {
+      const st = await window.gxChromePagesAPI.getGxModStatus();
+      const packs = (st && st.packs) || [];
+      listEl.innerHTML = packs.length
+        ? packs.map((p) => `
+          <div class="card-row" style="padding:9px 0;">
+            <div class="row-info">
+              <div class="row-title">${escapeHtml(p.name || p.id)}</div>
+              <div class="row-sub">${escapeHtml(p.theme || '')}${st.activeId === p.id ? ' • Active' : ''}</div>
+            </div>
+            <div style="display:flex;gap:6px;">
+              <button type="button" class="btn" data-gxmod-apply="${escapeHtml(p.id)}"${st.activeId === p.id ? ' disabled' : ''}>Apply</button>
+              <button type="button" class="btn danger" data-gxmod-remove="${escapeHtml(p.id)}">Remove</button>
+            </div>
+          </div>`).join('')
+        : '<div class="row-sub">No Mod packs loaded yet.</div>';
+      listEl.querySelectorAll('[data-gxmod-apply]').forEach((b) => {
+        b.addEventListener('click', async () => {
+          await window.gxChromePagesAPI.applyGxMod(b.dataset.gxmodApply);
+          renderSettingsPage();
+        });
+      });
+      listEl.querySelectorAll('[data-gxmod-remove]').forEach((b) => {
+        b.addEventListener('click', async () => {
+          await window.gxChromePagesAPI.removeGxMod(b.dataset.gxmodRemove);
+          renderSettingsPage();
+        });
+      });
+    } catch {
+      listEl.innerHTML = '<div class="row-sub">Could not load Mod packs.</div>';
+    }
+  };
+  renderGxModsList();
+  const btnLoadGxMod = document.getElementById('btnLoadGxMod');
+  if (btnLoadGxMod) {
+    btnLoadGxMod.addEventListener('click', async () => {
+      if (!window.gxChromePagesAPI.loadGxMod) return;
+      const res = await window.gxChromePagesAPI.loadGxMod();
+      if (res && res.ok) renderSettingsPage();
+    });
+  }
 
   // [Wave2-D] On startup (gap 5.3): 3 options + specific-pages editor.
   mainContainer.querySelectorAll('input[name="startupMode"]').forEach((radio) => {
@@ -5599,9 +5822,12 @@ function initThemeSync() {
     });
   }
   if (window.gxChromePagesAPI?.onDownloadsUpdate) {
-    window.gxChromePagesAPI.onDownloadsUpdate(() => {
+    window.gxChromePagesAPI.onDownloadsUpdate((data) => {
       if (currentPage === 'downloads') {
-        renderDownloadsPage({ force: false });
+        // Market audit bug #21: pass the broadcast payload through so
+        // progress/completion ticks update the rows live instead of
+        // relying only on a re-fetch after each tick.
+        renderDownloadsPage({ force: false, list: Array.isArray(data) ? data : null });
       }
     });
   }

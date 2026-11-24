@@ -1,5 +1,15 @@
 /* nextGx Browser — Opera GX Dark-Violet & Neon Design System with Smooth Toggle Switches */
 
+/* Fix2-shell (item 4): one red brand accent (#FA1E4E) for shell surfaces
+   (profile modal, Speed Dial modal, toasts, popover frames) regardless of
+   the selected theme. The gx-violet theme stays available as a theme
+   option; --nx-accent keeps following it. */
+:root {
+  --nx-brand: #fa1e4e;
+  --nx-brand-bright: #ff4d73;
+  --nx-brand-soft: rgba(250, 30, 78, 0.22);
+}
+
 html[data-incognito="true"] .nx-top-chrome {
   border-bottom: 1px solid var(--nx-accent);
   background: linear-gradient(90deg, var(--bg-deep) 0%, var(--bg-surface) 50%, var(--bg-deep) 100%);
@@ -398,6 +408,69 @@ body {
   transition: transform var(--nx-motion-fast) var(--nx-motion-ease);
 }
 
+/* Collapsed pill: show the active tab inside the group (audit bug #14). */
+.group-active-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 84px;
+  padding: 1px 6px 1px 3px;
+  border-radius: var(--nx-radius-pill);
+  background: color-mix(in srgb, var(--group-color, var(--nx-accent)) 30%, var(--bg-deep));
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+.group-active-favicon {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.group-active-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.group-active-title {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Rail hover-expand must not fight an open panel/drawer: WebContentsViews
+   always paint above the shell DOM, so an expanded rail's labels would be
+   clipped by the panel (audit bugs #15/#16). The renderer adds
+   .nx-panel-open while a panel is open. */
+.nx-sidebar.nx-panel-open.rail-hover-expand:hover {
+  /* Market audit #15/#16 follow-up: the hover rule also sets
+     position: absolute, which takes the rail out of flex flow and lets
+     the left drawer slide to x=0 underneath it. Keep it in flow. */
+  position: static;
+  width: 50px;
+  min-width: 50px;
+  box-shadow: none;
+  align-items: center;
+  padding: 10px 0;
+}
+
+.nx-sidebar.nx-panel-open.rail-hover-expand:hover .sidebar-label {
+  display: none;
+}
+
+.nx-sidebar.nx-panel-open.rail-hover-expand:hover .sidebar-btn {
+  width: 40px;
+  justify-content: center;
+  padding: 0;
+  gap: 0;
+}
+
 .nx-group-pill.collapsed .group-chevron {
   transform: rotate(-90deg);
 }
@@ -773,7 +846,7 @@ body {
 
 .nx-toast {
   background: var(--bg-surface);
-  border: 1px solid var(--nx-accent);
+  border: 1px solid var(--nx-brand);
   box-shadow: var(--nx-glow-sm);
   color: var(--text-main);
   font-size: 11.5px;
@@ -781,9 +854,20 @@ body {
   padding: 4px 12px;
   border-radius: var(--nx-radius-sm);
   clip-path: var(--nx-chamfer-sm);
-  flex-shrink: 0;
   white-space: nowrap;
   -webkit-app-region: no-drag;
+  /* Market audit bug #12: the toast was an in-flow flex item in the
+     titlebar, so a visible toast squeezed the tab strip. Float it as an
+     overlay centred below the tab strip instead — it never takes layout
+     space from the tabs. */
+  position: fixed;
+  top: 44px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  max-width: 80vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .nx-window-controls {
@@ -1348,6 +1432,42 @@ body {
   pointer-events: none;
 }
 
+/* Fix2-shell (item 6): tab hover preview thumbnail. There is no live
+   per-tab screenshot pipeline in the shell (captureScreenshot is the manual
+   full-page tool for the active tab only), so the thumbnail is a large
+   favicon on a gradient tile; a dead favicon is removed by its onerror and
+   the title's initial letter shows instead. Title + URL + memory readout
+   below are unchanged. */
+.tab-hover-thumb {
+  position: relative;
+  height: 84px;
+  border-radius: var(--nx-radius-xs);
+  margin-bottom: 5px;
+  background: linear-gradient(135deg, var(--nx-accent-soft), var(--bg-deep));
+  border: 1px solid var(--border-glass);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.tab-hover-thumb-letter {
+  font-size: 34px;
+  font-weight: 800;
+  color: var(--nx-accent-bright);
+  line-height: 1;
+}
+
+.tab-hover-thumb-img {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+
 .tab-hover-head {
   display: flex;
   align-items: center;
@@ -1385,6 +1505,94 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Fix2-shell (item 10): one-screen first-run card. Fixed overlay in the
+   bottom-left, above the page but below the profile modal (z 200). Shown
+   once — dismissing persists firstRunSeen via gxAPI.updateSettings. */
+.nx-first-run-card {
+  position: fixed;
+  left: 62px;
+  bottom: 16px;
+  width: 340px;
+  max-width: calc(100vw - 80px);
+  background: var(--bg-chrome);
+  border: 1px solid var(--nx-brand);
+  border-radius: var(--nx-radius-lg);
+  box-shadow: var(--nx-shadow-lg), var(--nx-glow-md);
+  padding: 16px 18px 14px;
+  z-index: 150;
+  color: var(--text-main);
+  animation: nxModalIn var(--nx-motion-base) var(--nx-motion-ease);
+}
+
+.nx-first-run-card h2 {
+  font-size: 15px;
+  padding-right: 28px;
+}
+
+.nx-first-run-card p {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.55;
+  margin: 6px 0 10px;
+}
+
+.nx-first-run-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 14px;
+}
+
+.nx-first-run-list li {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.nx-first-run-list li strong {
+  display: block;
+  font-size: 12.5px;
+}
+
+.nx-first-run-list li span {
+  color: var(--text-muted);
+  display: block;
+  font-size: 11.5px;
+}
+
+.nx-first-run-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--nx-brand);
+  box-shadow: 0 0 8px var(--nx-brand-soft);
+}
+
+.nx-first-run-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+.nx-first-run-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* Fix2-shell (item 12): a collapsed group's active tab stays visible in
+   the strip (instead of only its favicon/title inside the group pill). The
+   dashed outline marks it as the kept-visible tab of a collapsed group. */
+.nx-tab.active-in-collapsed-group {
+  outline: 1px dashed color-mix(in srgb, var(--group-color, var(--nx-accent)) 70%, transparent);
+  outline-offset: -1px;
 }
 
 .zoom-indicator span {
@@ -2513,11 +2721,31 @@ input:focus-visible,
   max-height: calc(100vh - 80px);
   overflow-y: auto;
   background: var(--bg-chrome);
-  border: 1px solid var(--nx-accent);
+  /* Fix2-shell (item 4): the shell/modal accent is the red brand, not the
+     theme accent — the profile modal must read red even on gx-violet. */
+  border: 1px solid var(--nx-brand);
   border-radius: var(--nx-radius-lg);
   box-shadow: var(--nx-shadow-lg), var(--nx-glow-md);
   padding: 20px 22px 18px;
   animation: nxModalIn var(--nx-motion-base) var(--nx-motion-ease);
+}
+
+/* Fix2-shell (item 4): modal primary action + focus ring in brand red. */
+.nx-modal .nx-btn-primary {
+  background: var(--nx-brand);
+}
+
+.nx-modal .nx-btn-primary:hover:not(:disabled) {
+  background: var(--nx-brand-bright);
+}
+
+.nx-modal .nx-input:focus {
+  border-color: var(--nx-brand-bright);
+  box-shadow: 0 0 0 3px var(--nx-brand-soft);
+}
+
+.nx-modal .nx-check-row input {
+  accent-color: var(--nx-brand);
 }
 
 @keyframes nxFadeIn {
@@ -2824,6 +3052,45 @@ input:focus-visible,
   transform: rotate(180deg);
 }
 
+/* Fix2-shell A2: when the rail is expanded (184 px, absolute overlay), the
+   GX Control drawer and the sidebar panel must start at the expanded rail's
+   edge instead of sliding underneath it (audit: "ystem CPU" cut off). The
+   floating panel is absolute, so shift its left edge; the pinned panel and
+   the drawer are in-flow flex items, so push them with a left margin. The
+   matching +134 px is added to the native layout offset in
+   syncLayoutOffsets() (renderer.js) so the webview stays aligned. Opening
+   a drawer/panel still collapses the rail first (existing MA-15/16
+   mitigation); these rules cover expanding the rail while one is open. */
+.nx-sidebar.expanded ~ .nx-sidebar-panel:not(.pinned) {
+  left: 184px;
+}
+
+.nx-sidebar.expanded ~ .nx-sidebar-panel.pinned {
+  margin-left: 184px;
+}
+
+.nx-sidebar.expanded ~ .nx-left-tool-drawer {
+  margin-left: 184px;
+}
+
+/* Fix2-shell A7: the split toggle and the PiP button each live in a fixed
+   29 px slot, so neither moves when the other appears, disappears or is
+   disabled. (Audit A7: clicking where PiP was expected opened split view.) */
+.nx-toolbar-slot {
+  flex: 0 0 29px;
+  width: 29px;
+  height: 29px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nx-toolbar-slot > .toolbar-icon-btn {
+  flex: 0 0 29px;
+  width: 29px;
+  height: 29px;
+}
+
 /* --- Live width badge while dragging the sidebar resizer --- */
 .nx-resize-badge {
   position: fixed;
@@ -2882,7 +3149,7 @@ input:focus-visible,
 .nx-toast-action {
   background: none;
   border: none;
-  color: var(--nx-accent-bright);
+  color: var(--nx-brand-bright);
   font-size: 11.5px;
   font-weight: 800;
   letter-spacing: 0.04em;
@@ -2930,4 +3197,14 @@ input:focus-visible,
   font-size: 12.5px;
   line-height: 1.55;
   max-width: 340px;
+}
+
+/* [Fix2 integration] Battery saver: cut shell motion while enabled.
+   Loading spinners keep spinning (they signal work in progress). */
+body.battery-saver .nx-modal,
+body.battery-saver .sidebar-panel,
+body.battery-saver .nx-toast,
+body.battery-saver .nx-right-drawer {
+  animation-duration: 0.01ms !important;
+  transition-duration: 0.05s !important;
 }

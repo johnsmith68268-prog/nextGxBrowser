@@ -193,8 +193,9 @@
     }
 
     .btn {
-      height: 36px;
-      padding: 0 16px;
+      height: auto;
+      min-height: 36px;
+      padding: 8px 16px;
       border-radius: var(--nx-radius-sm);
       clip-path: var(--nx-chamfer-sm);
       border: 1px solid var(--border);
@@ -204,6 +205,11 @@
       font-family: var(--nx-font-sans);
       font-size: 12.5px;
       font-weight: 600;
+      /* Market audit bug #38: long labels (notably the armed Proceed
+         label) were cut off in narrow panels — let buttons wrap. */
+      white-space: normal;
+      line-height: 1.35;
+      text-align: center;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -269,6 +275,24 @@
       display: none !important;
     }
 
+    /* Market audit bug #37: after Proceed the page must never sit blank
+       or frozen — this status line reports what is happening while the
+       site reloads (see the proceed timeout below). */
+    .proceed-status {
+      font-size: 12.5px;
+      line-height: 1.55;
+      color: var(--text-muted);
+      background: var(--bg-chrome);
+      border: 1px solid var(--border);
+      border-radius: var(--nx-radius-sm);
+      padding: 10px 14px;
+    }
+
+    .proceed-status.error {
+      color: var(--danger);
+      border-color: var(--danger);
+    }
+
     @media (max-width: 540px) {
       .error-card {
         padding: 22px 20px;
@@ -277,6 +301,32 @@
       .error-header {
         flex-direction: column;
         align-items: flex-start;
+      }
+    }
+
+    /* Market audit bug #38: at 380px wide (narrow sidebar panel) the
+       Advanced/Proceed button was cut off. Shrink the page padding and
+       stack the actions full-width so every button is fully visible. */
+    @media (max-width: 420px) {
+      body {
+        padding: 16px 12px;
+      }
+
+      .error-card {
+        padding: 18px 14px;
+      }
+
+      .error-title {
+        font-size: 19px;
+      }
+
+      .error-actions {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .error-actions .btn {
+        width: 100%;
       }
     }
   </style>
@@ -336,6 +386,8 @@
         <button type="button" class="btn" id="btnHome">Start Page</button>
         <button type="button" class="btn danger hidden" id="btnProceed">Advanced: Proceed anyway</button>
       </div>
+
+      <p class="proceed-status hidden" id="proceedStatus" role="status"></p>
     </section>
   </main>
 
@@ -760,6 +812,20 @@
       btnProceed.classList.remove('hidden');
     }
     let proceedArmed = false;
+    let proceedStallTimer = null;
+    const proceedStatus = document.getElementById('proceedStatus');
+    function showProceedStatus(text, isError) {
+      if (!proceedStatus) return;
+      proceedStatus.textContent = text;
+      proceedStatus.classList.toggle('error', Boolean(isError));
+      proceedStatus.classList.remove('hidden');
+    }
+    function resetProceedButton() {
+      clearTimeout(proceedStallTimer);
+      proceedStallTimer = null;
+      btnProceed.disabled = false;
+      btnProceed.textContent = 'Proceed anyway — I understand the risk';
+    }
     btnProceed.addEventListener('click', () => {
       if (!failedUrl || btnProceed.disabled) return;
       if (!proceedArmed) {
@@ -770,8 +836,31 @@
       }
       btnProceed.disabled = true;
       btnProceed.textContent = 'Proceeding...';
+      // Market audit bug #37: after Proceed the page used to sit with a
+      // disabled button and no feedback (read as blank / dead) if the
+      // reload stalled. Show progress, and if this page is still here
+      // after 6 s, re-arm the button with an explanation instead of
+      // leaving it frozen. The cert-exception logic itself is untouched
+      // (src/main/cert-exceptions.js); this is only the page's feedback.
+      showProceedStatus(
+        host
+          ? `Loading ${host} — trusting this certificate for this session only…`
+          : 'Loading the site — trusting this certificate for this session only…'
+      );
+      clearTimeout(proceedStallTimer);
+      proceedStallTimer = setTimeout(() => {
+        proceedStallTimer = null;
+        resetProceedButton();
+        showProceedStatus(
+          'Still loading — the site has not appeared yet. Click Proceed again, or Retry.',
+          true
+        );
+      }, 6000);
       if (window.gxErrorPageAPI?.proceedAnyway) {
-        window.gxErrorPageAPI.proceedAnyway(failedUrl);
+        Promise.resolve(window.gxErrorPageAPI.proceedAnyway(failedUrl)).catch(() => {
+          resetProceedButton();
+          showProceedStatus('Proceed failed — the site could not be reloaded. Check the address and try Retry.', true);
+        });
       } else {
         window.location.href = failedUrl;
       }
@@ -802,7 +891,10 @@
       }
     });
 
-    window.addEventListener('pagehide', () => clearTimeout(retryResetTimer));
+    window.addEventListener('pagehide', () => {
+      clearTimeout(retryResetTimer);
+      clearTimeout(proceedStallTimer);
+    });
 
     btnBack.addEventListener('click', () => {
       if (window.gxErrorPageAPI?.goBack) {

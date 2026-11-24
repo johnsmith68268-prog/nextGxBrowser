@@ -57,6 +57,21 @@ function collectSystemStats({ sample = null } = {}) {
 
   const { tabStats, gxControl: gxControlState } = gxControl.buildGxControlSnapshot(metrics, settings);
 
+  // [Fix2 A6] Memory Saver, visible: real counts from the live tab set and
+  // the RAM limiter — never fabricated. The status bar / GX Control UI
+  // reads memorySaver.sleepingTabsCount + hibernatedByLimiterCount for its
+  // badge; collectSystemStats is the broadcast payload, so the numbers are
+  // the same ones the limiter acted on.
+  const ramStats = gxControl.getRamHibernationStats();
+  const memorySaver = {
+    sleepingTabsCount,
+    hibernatedByLimiterCount: ramStats.hibernatedCount,
+    lastHibernateAt: ramStats.lastHibernateAt,
+    autoSleepEnabled: Boolean(settings.autoSleepEnabled),
+    autoSleepMinutes: Number(settings.autoSleepMinutes) || 10,
+    batterySaverEnabled: Boolean(settings.batterySaverEnabled)
+  };
+
   return {
     totalSysMB,
     usedSysMB,
@@ -68,6 +83,7 @@ function collectSystemStats({ sample = null } = {}) {
     cpuPercent,
     activeTabsCount,
     sleepingTabsCount,
+    memorySaver,
     tabStats,
     gxControl: gxControlState,
     settings
@@ -117,6 +133,78 @@ const FAST_STATS_INTERVAL_MS = 2500;
 const IDLE_STATS_INTERVAL_MS = 15000;
 let lastStatsPollAt = 0;
 
+// [Fix2 Battery saver] Polling intervals. Battery saver halves the polling
+// rate (fast 2.5s -> 5s, idle 15s -> 30s) so the stats loop itself stops
+// waking the machine up. Pure function for tests.
+function getStatsIntervals(settings) {
+  const battery = Boolean(settings && settings.batterySaverEnabled);
+  return {
+    fast: battery ? 5000 : FAST_STATS_INTERVAL_MS,
+    idle: battery ? 30000 : IDLE_STATS_INTERVAL_MS
+  };
+}
+
+// [Fix2 Battery saver] Effective auto-sleep timeout. Battery saver caps
+// the idle timeout at 2 minutes (never below 1) so background tabs
+// hibernate sooner; otherwise the configured timeout applies.
+function getEffectiveAutoSleepMs(settings) {
+  const rawMinutes = Number(settings && settings.autoSleepMinutes);
+  const safeMinutes = Number.isFinite(rawMinutes) && rawMinutes > 0 ? Math.max(1, rawMinutes) : 10;
+  const effectiveMinutes = settings && settings.batterySaverEnabled ? Math.min(safeMinutes, 2) : safeMinutes;
+  return effectiveMinutes * 60 * 1000;
+}
+
+// [Fix2 A6 Hibernate Now] Hibernate every eligible background tab in every
+// window plus every idle sidebar service view, and measure real RAM
+// before/after with a forced sample. Returns measured numbers only —
+// `savedMB` may be small or 0 if the OS has not reclaimed the pages yet;
+// it is reported as measured, never inflated.
+function hibernateNow() {
+  const beforeMB = gxControl.sampleProcessMetrics({ force: true }).browserRamMB;
+  let sleptCount = 0;
+  for (const ctx of windowContexts.values()) {
+    if (!ctx || !ctx.win || ctx.win.isDestroyed()) continue;
+    for (const [id, tab] of ctx.tabs.entries()) {
+      const pipActive = Boolean(tab?.pipActive || playerMod().getTabVideoState(tab)?.pipActive);
+      if (
+        id !== ctx.activeTabId &&
+        !tab.sleeping &&
+        !tab.pinned &&
+        !tab.audible &&
+        !pipActive
+      ) {
+        const before = tab.sleeping;
+        sleepTab(ctx, id);
+        if (!before && tab.sleeping) sleptCount += 1;
+      }
+    }
+  }
+  let sidebarSuspended = 0;
+  try {
+    sidebarSuspended = sidebarMod().suspendIdleSidebarViews(0) || 0;
+  } catch (_) {
+    sidebarSuspended = 0;
+  }
+  const afterMB = gxControl.sampleProcessMetrics({ force: true }).browserRamMB;
+  const ramStats = gxControl.getRamHibernationStats();
+  let sleepingTabsCount = 0;
+  for (const ctx of windowContexts.values()) {
+    for (const t of ctx.tabs.values()) {
+      if (t && t.sleeping) sleepingTabsCount += 1;
+    }
+  }
+  return {
+    beforeMB,
+    afterMB,
+    savedMB: beforeMB - afterMB,
+    sleptCount,
+    sidebarSuspended,
+    sleepingTabsCount,
+    hibernatedByLimiterCount: ramStats.hibernatedCount,
+    lastHibernateAt: ramStats.lastHibernateAt
+  };
+}
+
 function startBackgroundTimers() {
   stopBackgroundTimers();
   gxControl.primeMetrics();
@@ -126,7 +214,8 @@ function startBackgroundTimers() {
     if (statsTickInFlight || state.isAppQuitting) return;
     const now = Date.now();
     const fast = shouldPollMetricsFast();
-    const minInterval = fast ? FAST_STATS_INTERVAL_MS : IDLE_STATS_INTERVAL_MS;
+    const intervals = getStatsIntervals(state.storage.getSettings());
+    const minInterval = fast ? intervals.fast : intervals.idle;
     if (lastStatsPollAt > 0 && now - lastStatsPollAt < minInterval - 100) {
       playerMod().pruneStaleSources();
       return;
@@ -148,19 +237,27 @@ function startBackgroundTimers() {
 
   autoSleepIntervalId = setInterval(() => {
     if (state.isAppQuitting) return;
-    // Sidebar views are suspended on their own 5-minute idle clock even
-    // when Auto-Memory Saver is off: a sidebar service left open in the
-    // background is a renderer process doing nothing, and the run report
-    // found each one costs roughly 200 MB. Audible / visible services
-    // are never suspended (suspendIdleSidebarViews enforces that).
-    try {
-      sidebarMod().suspendIdleSidebarViews(5 * 60 * 1000);
-    } catch (_) {}
     const s = state.storage.getSettings();
+    // [Fix2 A6] Sidebar views suspend sooner when RAM is high: the audit
+    // saw ~200 MB per live sidebar service, so above 1 GB (or 80% of the
+    // RAM cap when the limiter is on) idle services suspend after 60 s
+    // instead of 5 minutes. Audible / visible services are never suspended
+    // (suspendIdleSidebarViews enforces that).
+    let sidebarTimeoutMs = 5 * 60 * 1000;
+    try {
+      const ramMB = gxControl.sampleProcessMetrics({ force: false }).browserRamMB;
+      const highRam =
+        ramMB > 1024 || (s.gxRamLimiterEnabled && ramMB > 0.8 * (Number(s.gxRamLimitMB) || 4096));
+      if (highRam) sidebarTimeoutMs = 60 * 1000;
+    } catch (_) {}
+    try {
+      sidebarMod().suspendIdleSidebarViews(sidebarTimeoutMs);
+    } catch (_) {}
     if (!s.autoSleepEnabled) return;
-    const rawMinutes = Number(s.autoSleepMinutes);
-    const safeMinutes = Number.isFinite(rawMinutes) && rawMinutes > 0 ? Math.max(1, rawMinutes) : 10;
-    const timeoutMs = safeMinutes * 60 * 1000;
+    // [Fix2 Battery saver] getEffectiveAutoSleepMs caps the timeout at 2
+    // minutes while battery saver is on, so background tabs hibernate
+    // sooner; otherwise the configured timeout applies.
+    const timeoutMs = getEffectiveAutoSleepMs(s);
     const now = Date.now();
     for (const ctx of windowContexts.values()) {
       for (const [id, tab] of ctx.tabs.entries()) {
@@ -198,5 +295,10 @@ module.exports = {
   collectSystemStats,
   broadcastSystemStatsNow,
   startBackgroundTimers,
-  stopBackgroundTimers
+  stopBackgroundTimers,
+  getStatsIntervals,
+  getEffectiveAutoSleepMs,
+  hibernateNow,
+  FAST_STATS_INTERVAL_MS,
+  IDLE_STATS_INTERVAL_MS
 };

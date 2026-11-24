@@ -21,6 +21,54 @@ const PER_PROFILE_SETTING_KEYS = [
   'sidebarPanelPinned'
 ];
 
+// [Fix2] Bare-host scheme rule for SAVED urls (bookmarks / Speed Dial).
+// Navigation (src/main/navigation.js) already uses http:// for local hosts;
+// the save path used to force https:// for everything. A host is local
+// when it is localhost, a loopback / RFC1918 private IPv4 address, IPv6
+// loopback, or a .local / .localhost name — those keep http://. Everything
+// else defaults to https://. An explicit http:// or https:// scheme in the
+// input is always preserved.
+function isLocalOrPrivateHost(host) {
+  if (typeof host !== 'string') return false;
+  const h = host.trim().toLowerCase().replace(/\.$/, '');
+  if (!h) return false;
+  if (h === 'localhost' || h === '::1' || h === '[::1]') return true;
+  if (h.endsWith('.local') || h.endsWith('.localhost')) return true;
+  const v4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4) {
+    const parts = v4.slice(1).map(Number);
+    if (parts.some((n) => n > 255)) return false;
+    const [a, b] = parts;
+    if (a === 127) return true;
+    if (a === 10) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    return false;
+  }
+  return false;
+}
+
+function normalizeSavedUrl(rawUrl) {
+  if (typeof rawUrl !== 'string') return '';
+  const trimmed = rawUrl.trim();
+  if (!trimmed || /\s/.test(trimmed)) return '';
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) return trimmed;
+  // host:port is NOT a scheme ('localhost:3000' is a bare host, not the
+  // 'localhost:' scheme) — fall through to the bare-host rule below.
+  if (!/^[^:/\s]+:\d+(\/.*)?$/.test(trimmed) && /^[a-z][a-z0-9+.-]*:/i.test(trimmed)) {
+    return trimmed;
+  }
+  // Bare host (optionally :port/path?query): split off path, decide the
+  // scheme from the host alone, then reattach the rest untouched.
+  const slashIdx = trimmed.indexOf('/');
+  const hostPort = slashIdx === -1 ? trimmed : trimmed.slice(0, slashIdx);
+  const rest = slashIdx === -1 ? '' : trimmed.slice(slashIdx);
+  const host = hostPort.split(':')[0];
+  const scheme = isLocalOrPrivateHost(host) ? 'http' : 'https';
+  return `${scheme}://${trimmed}`;
+}
+
 function deriveProfileAvatar(name, explicitAvatar = '', fallback = 'P') {
   const tryExtract = (raw) => {
     if (typeof raw !== 'string') return '';
@@ -95,7 +143,10 @@ class StorageManager {
         // available, reusing the password-encryption helpers below.
         addresses: path.join(this.dataDir, 'addresses.json'),
         paymentMethods: path.join(this.dataDir, 'payment_methods.json'),
-        session: path.join(this.dataDir, 'session.json')
+        session: path.join(this.dataDir, 'session.json'),
+        // [Fix2] Panic-button snapshot (panic.js). Root store only; profile
+        // children never panic-persist (incognito is memory-only anyway).
+        panicSnapshot: path.join(this.dataDir, 'panic_snapshot.json')
       };
     } else {
       this.files = {
@@ -121,7 +172,8 @@ class StorageManager {
         workspaces: path.join(this.dataDir, 'workspaces.json'),
         tabGroups: path.join(this.dataDir, 'tabgroups.json'),
         gxCornerCache: path.join(this.dataDir, 'gxcorner_cache.json'),
-        profiles: path.join(this.dataDir, 'profiles.json')
+        profiles: path.join(this.dataDir, 'profiles.json'),
+        panicSnapshot: path.join(this.dataDir, 'panic_snapshot.json')
       };
     }
 
@@ -163,6 +215,7 @@ class StorageManager {
       adblockSites: {},
       extensions: [],
       session: { version: 1, windows: [] },
+      panicSnapshot: null,
       workspaces: [
         {
           id: 'default',
@@ -285,6 +338,25 @@ class StorageManager {
             closeWindowOnLastTab: false,
             uiSoundsEnabled: true,
             uiSoundsVolume: 0.35,
+            // [Fix2] Battery saver: hibernate background tabs sooner, slow
+            // the stats polling, and (via the UI) reduce animations.
+            batterySaverEnabled: false,
+            // [Fix2] Page effects (pure CSS filters, graceful without GPU):
+            // shaderPreset 'none' | grayscale | sepia | warm | cool |
+            // high-contrast | vignette | night; videoEnhancePreset is the
+            // honestly-labelled "Enhance (filter)" — NOT AI upscaling.
+            shaderPreset: 'none',
+            videoEnhancePreset: 'off',
+            // [Fix2] Local-audio-only toggles. This repo ships NO audio
+            // files (UI sounds are Web Audio synth); the toggles are real
+            // settings, and sounds:get-status honestly reports
+            // "no sound pack installed" until a local GX Mod pack ships
+            // audio files.
+            keyboardSoundsEnabled: false,
+            backgroundMusicEnabled: false,
+            // [Fix2] GX Mods — LOCAL packs only (no online store).
+            gxModPacks: [],
+            activeGxModId: '',
             ramLimitMB: 2048,
             gxRamLimiterEnabled: false,
             gxRamLimitMB: 4096,
@@ -1034,6 +1106,44 @@ class StorageManager {
     merged.accessibilityFocusHighlight = Boolean(merged.accessibilityFocusHighlight);
     merged.runBackgroundApps = Boolean(merged.runBackgroundApps);
     merged.gpuAcceleration = merged.gpuAcceleration !== false;
+    // [Fix2] Battery saver, page effects, local audio toggles, local Mods.
+    merged.batterySaverEnabled = Boolean(merged.batterySaverEnabled);
+    merged.shaderPreset = [
+      'none',
+      'grayscale',
+      'sepia',
+      'warm',
+      'cool',
+      'high-contrast',
+      'vignette',
+      'night'
+    ].includes(merged.shaderPreset)
+      ? merged.shaderPreset
+      : 'none';
+    merged.videoEnhancePreset = ['off', 'sharp', 'vivid', 'cinema'].includes(merged.videoEnhancePreset)
+      ? merged.videoEnhancePreset
+      : 'off';
+    merged.keyboardSoundsEnabled = Boolean(merged.keyboardSoundsEnabled);
+    merged.backgroundMusicEnabled = Boolean(merged.backgroundMusicEnabled);
+    merged.gxModPacks = Array.isArray(merged.gxModPacks)
+      ? merged.gxModPacks
+          .filter((p) => p && typeof p === 'object' && typeof p.path === 'string' && typeof p.name === 'string')
+          .slice(0, 50)
+          .map((p) => ({
+            id: String(p.id || '').slice(0, 80),
+            name: String(p.name).slice(0, 80),
+            version: typeof p.version === 'string' ? p.version.slice(0, 20) : '',
+            path: String(p.path).slice(0, 500),
+            theme: typeof p.theme === 'string' ? p.theme.slice(0, 40) : '',
+            wallpaper: typeof p.wallpaper === 'string' ? p.wallpaper.slice(0, 200) : '',
+            sounds: typeof p.sounds === 'string' ? p.sounds.slice(0, 40) : '',
+            audioFiles: Array.isArray(p.audioFiles)
+              ? p.audioFiles.filter((f) => typeof f === 'string').slice(0, 20)
+              : [],
+            soundPackInstalled: Boolean(p.soundPackInstalled)
+          }))
+      : [];
+    merged.activeGxModId = typeof merged.activeGxModId === 'string' ? merged.activeGxModId.slice(0, 80) : '';
     return merged;
   }
 
@@ -1196,6 +1306,44 @@ class StorageManager {
     }
     if (Object.prototype.hasOwnProperty.call(safePartial, 'uiSoundsEnabled')) {
       safePartial.uiSoundsEnabled = Boolean(safePartial.uiSoundsEnabled);
+    }
+    // [Fix2] New settings keys: whitelist on write like the others.
+    if (Object.prototype.hasOwnProperty.call(safePartial, 'batterySaverEnabled')) {
+      safePartial.batterySaverEnabled = Boolean(safePartial.batterySaverEnabled);
+    }
+    if (Object.prototype.hasOwnProperty.call(safePartial, 'shaderPreset')) {
+      if (
+        ![
+          'none',
+          'grayscale',
+          'sepia',
+          'warm',
+          'cool',
+          'high-contrast',
+          'vignette',
+          'night'
+        ].includes(safePartial.shaderPreset)
+      ) {
+        delete safePartial.shaderPreset;
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(safePartial, 'videoEnhancePreset')) {
+      if (!['off', 'sharp', 'vivid', 'cinema'].includes(safePartial.videoEnhancePreset)) {
+        delete safePartial.videoEnhancePreset;
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(safePartial, 'keyboardSoundsEnabled')) {
+      safePartial.keyboardSoundsEnabled = Boolean(safePartial.keyboardSoundsEnabled);
+    }
+    if (Object.prototype.hasOwnProperty.call(safePartial, 'backgroundMusicEnabled')) {
+      safePartial.backgroundMusicEnabled = Boolean(safePartial.backgroundMusicEnabled);
+    }
+    if (Object.prototype.hasOwnProperty.call(safePartial, 'gxModPacks')) {
+      if (!Array.isArray(safePartial.gxModPacks)) delete safePartial.gxModPacks;
+    }
+    if (Object.prototype.hasOwnProperty.call(safePartial, 'activeGxModId')) {
+      safePartial.activeGxModId =
+        typeof safePartial.activeGxModId === 'string' ? safePartial.activeGxModId.slice(0, 80) : '';
     }
     if (Object.prototype.hasOwnProperty.call(safePartial, 'uiSoundsVolume')) {
       const vol = Number(safePartial.uiSoundsVolume);
@@ -1703,6 +1851,11 @@ class StorageManager {
   }
 
   // Bookmarks
+  // Bare-host scheme rule (market audit #19): a bare host typed for a
+  // Speed Dial tile / bookmark used to be forced to https:// on SAVE even
+  // though navigation already used http:// for local hosts. Save now
+  // preserves http for local/private hosts and keeps https as the default
+  // for public domains.
   _normalizeBookmarkUrl(rawUrl) {
     if (typeof rawUrl !== 'string') return '';
     const trimmed = rawUrl.trim();
@@ -1710,7 +1863,7 @@ class StorageManager {
     if (/^(javascript|data|vbscript|file|chrome|nextgx|gx|about):/i.test(trimmed)) {
       return '';
     }
-    const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    const withScheme = normalizeSavedUrl(trimmed);
     try {
       const u = new URL(withScheme);
       if (u.protocol !== 'http:' && u.protocol !== 'https:') return '';
@@ -2833,7 +2986,7 @@ class StorageManager {
     const target = this._targetFor(profileId);
     if (target !== this) return target.addSpeedDial({ title, url });
     const list = [...this._readOwnSpeedDial()];
-    const formattedUrl = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+    const formattedUrl = normalizeSavedUrl(url || '');
     let domain = '';
     try {
       domain = new URL(formattedUrl).hostname.replace(/^www\./, '');
@@ -2863,7 +3016,7 @@ class StorageManager {
     const list = [...this._readOwnSpeedDial()];
     const idx = list.findIndex((s) => s && s.id === id);
     if (idx === -1) return list;
-    const formattedUrl = /^https?:\/\//i.test(url || '') ? url : `https://${url || ''}`;
+    const formattedUrl = normalizeSavedUrl(url || '');
     let domain = '';
     try {
       domain = new URL(formattedUrl).hostname.replace(/^www\./, '');
@@ -3148,6 +3301,39 @@ class StorageManager {
     const clean = this._sanitizeGxCornerCache(cacheData);
     return this._write('gxCornerCache', clean);
   }
+
+  // Panic-button snapshot (src/main/panic.js): the pre-panic tab list, so
+  // a restore stays possible after a restart. Incognito windows never
+  // write here (memory-only snapshot in panic.js).
+  savePanicSnapshot(snapshot) {
+    if (!snapshot || typeof snapshot !== 'object' || !Array.isArray(snapshot.tabs)) return null;
+    const clean = {
+      version: 1,
+      savedAt: typeof snapshot.savedAt === 'number' ? snapshot.savedAt : Date.now(),
+      activeIndex: typeof snapshot.activeIndex === 'number' ? snapshot.activeIndex : 0,
+      tabs: snapshot.tabs
+        .filter((t) => t && typeof t.url === 'string')
+        .slice(0, 200)
+        .map((t) => ({
+          url: t.url.slice(0, 2000),
+          title: typeof t.title === 'string' ? t.title.slice(0, 300) : '',
+          pinned: Boolean(t.pinned),
+          groupId: typeof t.groupId === 'string' ? t.groupId.slice(0, 80) : null,
+          workspaceId: typeof t.workspaceId === 'string' ? t.workspaceId.slice(0, 80) : 'default'
+        }))
+    };
+    return this._write('panicSnapshot', clean);
+  }
+
+  getPanicSnapshot() {
+    const raw = this.get('panicSnapshot');
+    if (!raw || typeof raw !== 'object' || !Array.isArray(raw.tabs)) return null;
+    return raw;
+  }
+
+  clearPanicSnapshot() {
+    return this._write('panicSnapshot', null);
+  }
 }
 
 module.exports = {
@@ -3156,5 +3342,7 @@ module.exports = {
   PROFILE_ID_RE,
   VALID_PROFILE_COLORS,
   PER_PROFILE_SETTING_KEYS,
-  deriveProfileAvatar
+  deriveProfileAvatar,
+  isLocalOrPrivateHost,
+  normalizeSavedUrl
 };

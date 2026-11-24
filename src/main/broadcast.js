@@ -1,11 +1,8 @@
 const { BrowserWindow } = require('electron');
 const { windowContexts, webContentsToWinId, state } = require('./core');
 const {
-  isNewTabUrl,
   isCornerUrl,
   isWebUiUrl,
-  isErrorPageUrl,
-  isPlayerPanelUrl,
   getOriginForUrl
 } = require('./utils');
 const { formatDisplayUrl } = require('./navigation');
@@ -87,6 +84,8 @@ function serializeTabs(ctx) {
     tabs: ordered,
     activeTabId: ctx.activeTabId,
     activeTab: ordered.find((t) => t.id === ctx.activeTabId) || null,
+    // [Fix2 Panic] The shell shows a "panicked" state while this is true.
+    panicActive: Boolean(ctx.panicActive),
     split: splitViewMod().serializeSplitState(ctx),
     sidebarPanel: ctx.sidebarPanel
       ? {
@@ -214,6 +213,16 @@ function cancelScheduledAdblockBroadcast() {
 }
 
 function broadcastHistoryUpdate({ profileId = null } = {}) {
+  // [Fix2 #20] The omnibox suggestion cache lives in the SHELL window
+  // (renderer.js), not in a WebUI tab — send there too, so the shell can
+  // invalidate its cache the moment history/bookmarks change instead of
+  // waiting out the 30 s TTL. Previously this only reached WebUI tabs.
+  for (const ctx of windowContexts.values()) {
+    if (profileId && (ctx.profileId || 'default') !== profileId) continue;
+    if (ctx.win && !ctx.win.isDestroyed()) {
+      ctx.win.webContents.send('history:update', undefined);
+    }
+  }
   sendToWebUiTabs('history:update', undefined, { profileId });
 }
 
@@ -317,29 +326,20 @@ function broadcastSettingsUpdate(settings, { profileId = null } = {}) {
     if (ctx.screenshotView && ctx.screenshotView.webContents && !ctx.screenshotView.webContents.isDestroyed()) {
       ctx.screenshotView.webContents.send('settings:update', payload);
     }
+    // [Fix2 Page effects] settings:update now goes to EVERY awake tab
+    // view, not just internal pages: tab-preload's page-effects code
+    // (Shaders / video Enhance) lives in ordinary web pages and must
+    // re-apply live when a preset changes. The message lands in the
+    // preload's isolated world, never in page JS, and web-page preloads
+    // had no settings:update listener before, so this is additive only.
     for (const tab of ctx.tabs.values()) {
       if (!tab || !tab.view || !tab.view.webContents || tab.view.webContents.isDestroyed()) continue;
-      const wcUrl = tab.view.webContents.getURL();
-      if (
-        isNewTabUrl(tab.url) ||
-        isCornerUrl(tab.url) ||
-        isWebUiUrl(tab.url) ||
-        isErrorPageUrl(tab.url) ||
-        isNewTabUrl(wcUrl) ||
-        isCornerUrl(wcUrl) ||
-        isWebUiUrl(wcUrl) ||
-        isErrorPageUrl(wcUrl)
-      ) {
-        tab.view.webContents.send('settings:update', payload);
-      }
+      tab.view.webContents.send('settings:update', payload);
     }
     if (ctx.sidebarPanel && ctx.sidebarPanel.views instanceof Map) {
       for (const view of ctx.sidebarPanel.views.values()) {
         if (!view || !view.webContents || view.webContents.isDestroyed()) continue;
-        const wcUrl = view.webContents.getURL();
-        if (isErrorPageUrl(wcUrl) || isPlayerPanelUrl(wcUrl)) {
-          view.webContents.send('settings:update', payload);
-        }
+        view.webContents.send('settings:update', payload);
       }
     }
   }

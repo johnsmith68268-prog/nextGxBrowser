@@ -72,6 +72,13 @@ function attachKeyboardShortcuts(ctx, webContents) {
     } else if (ctrl && shift && key === 't') {
       event.preventDefault();
       shortcutDeps.reopenLastClosedTab(ctx);
+    } else if (ctrl && shift && key === 'p') {
+      // [Fix2 Panic] One action hides everything (snapshot + neutral Start
+      // page); pressing it again restores the previous session. Local only.
+      event.preventDefault();
+      try {
+        require('./panic').togglePanic(ctx);
+      } catch (_) {}
     } else if (ctrl && !shift && key === 'n') {
       event.preventDefault();
       shortcutDeps.createBrowserWindow({ incognito: false });

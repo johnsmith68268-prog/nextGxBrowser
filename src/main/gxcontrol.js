@@ -706,6 +706,13 @@ function buildGxControlSnapshot(sample, settings) {
   };
 }
 
+function getRamHibernationStats() {
+  return {
+    hibernatedCount: ramHibernatedByLimiterCount,
+    lastHibernateAt: lastRamHibernateAt
+  };
+}
+
 function shutdown() {
   cpuThrottlingActive = false;
   currentCpuThrottleRate = 1;
@@ -740,5 +747,6 @@ module.exports = {
   onTabDetached,
   onSettingsChanged,
   buildGxControlSnapshot,
+  getRamHibernationStats,
   shutdown
 };
