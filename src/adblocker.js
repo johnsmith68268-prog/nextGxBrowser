@@ -102,12 +102,9 @@ const AD_URL_PATTERNS = [
   /\/gpt\.js/i,
   /[?&](?:ad_id|ad_type|ad_slot|adunit|banner_id)=/i,
   // YouTube ad telemetry beacons (no video data — safe to drop).
-  // Video ads themselves are NOT blocked here: they are served from the
-  // same googlevideo.com hosts as the video, so blocking that host would
-  // break playback. They are handled by the player-response scriptlet in
-  // src/youtube-adstrip.js (hooked from src/tab-preload.js).
-  /\/api\/stats\/ads/i,
-  /\/api\/stats\/qoe\?/i
+  // Note: /api/stats/qoe is intentionally NOT blocked because it is YouTube's
+  // video playback Quality-of-Experience channel and blocking it breaks ABR / triggers anti-adblock.
+  /\/api\/stats\/ads/i
 ];
 
 const TRACKER_URL_PATTERNS = [
@@ -169,8 +166,13 @@ const COSMETIC_AD_CSS = `
   iframe[id^="google_ads_"],
   div[id^="google_ads_"],
   div[id^="div-gpt-ad"],
-  [class*="ad-container"]:not(body):not(html),
-  [class*="ad-banner"]:not(body):not(html),
+  .ad-container:not(body):not(html),
+  .ad_container:not(body):not(html),
+  [class^="ad-container"]:not(body):not(html),
+  [class*=" ad-container"]:not(body):not(html),
+  .ad-banner:not(body):not(html),
+  [class^="ad-banner"]:not(body):not(html),
+  [class*=" ad-banner"]:not(body):not(html),
   [id*="taboola-"],
   [class*="taboola-"],
   [id*="outbrain_"],
@@ -178,15 +180,25 @@ const COSMETIC_AD_CSS = `
   .ad-slot,
   .ad-leaderboard,
   .advertisement-banner,
+  #masthead-ad,
   ytd-companion-slot-renderer,
   ytd-action-companion-ad-renderer,
-  ytd-Watch-next-secondary-results-renderer > ytd-compact-promoted-video-renderer,
+  ytd-watch-next-secondary-results-renderer > ytd-compact-promoted-video-renderer,
   ytd-promoted-sparkles-web-renderer,
+  ytm-promoted-sparkles-web-renderer,
   ytd-ad-slot-renderer,
+  ytd-rich-item-renderer:has(ytd-ad-slot-renderer),
+  ytd-reel-video-renderer:has(ytd-ad-slot-renderer),
   ytd-in-feed-ad-layout-renderer,
   ytd-banner-promo-renderer,
+  ytd-statement-banner-renderer,
+  ytd-search-pyv-renderer,
+  ytd-display-ad-renderer,
+  ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-ads"],
   .ytp-ad-overlay-container,
-  .ytp-ad-message-container {
+  .ytp-ad-message-container,
+  .ytp-ad-player-overlay-layout,
+  .ytp-ad-action-interstitial {
     display: none !important;
     height: 0 !important;
     min-height: 0 !important;
@@ -240,47 +252,48 @@ class AdBlocker {
     this.recentBlocked = [];
     this.perSiteBlocked = new Map(); // origin -> count (LRU: oldest first, newest last)
     this.attachedSessions = new WeakSet();
+    this.sessionProfiles = new WeakMap();
     this.cosmeticState = new Map(); // WebContents -> { keys: Set<string>, injecting: boolean, generation: number }
   }
 
-  isEnabled() {
-    const settings = this.storage.getSettings();
+  isEnabled(profileId) {
+    const settings = this.storage.getSettings(profileId);
     return Boolean(settings.adblockEnabled);
   }
 
-  isTrackersEnabled() {
-    const settings = this.storage.getSettings();
+  isTrackersEnabled(profileId) {
+    const settings = this.storage.getSettings(profileId);
     if (!settings.adblockEnabled) return false;
     return typeof settings.trackerBlockEnabled === 'boolean'
       ? settings.trackerBlockEnabled
       : true;
   }
 
-  isSiteAllowlisted(origin) {
+  isSiteAllowlisted(origin, profileId) {
     const norm = extractOrigin(origin);
     if (!norm) return false;
     if (typeof this.storage.getAdblockSite === 'function') {
-      const site = this.storage.getAdblockSite(norm);
+      const site = this.storage.getAdblockSite(norm, profileId);
       return Boolean(site && site.hasOverride && site.enabled === false);
     }
     return false;
   }
 
-  isSiteBlockingActive(origin) {
-    if (!this.isEnabled()) return false;
+  isSiteBlockingActive(origin, profileId) {
+    if (!this.isEnabled(profileId)) return false;
     const norm = extractOrigin(origin);
     if (!norm) return true;
-    return !this.isSiteAllowlisted(norm);
+    return !this.isSiteAllowlisted(norm, profileId);
   }
 
-  shouldInjectCosmetic(origin) {
-    if (!this.isEnabled()) return false;
+  shouldInjectCosmetic(origin, profileId) {
+    if (!this.isEnabled(profileId)) return false;
     const norm = extractOrigin(origin);
     if (!norm) return false;
-    return !this.isSiteAllowlisted(norm);
+    return !this.isSiteAllowlisted(norm, profileId);
   }
 
-  shouldBlock(urlStr, resourceType, initiator = '', { initiatorNormalized = false } = {}) {
+  shouldBlock(urlStr, resourceType, initiator = '', { initiatorNormalized = false, profileId } = {}) {
     if (!urlStr) return false;
     // Fast-path skip non-HTTP(S) schemes before any parsing
     const c0 = urlStr.charCodeAt(0);
@@ -297,7 +310,7 @@ class AdBlocker {
       return false;
     }
 
-    const settings = this.storage.getSettings();
+    const settings = this.storage.getSettings(profileId);
     const adsEnabled = Boolean(settings.adblockEnabled);
     if (!adsEnabled) {
       return false;
@@ -317,7 +330,7 @@ class AdBlocker {
           : initiator;
       initiatorOrigin = extractOrigin(rawInitiator);
     }
-    if (initiatorOrigin && this.isSiteAllowlisted(initiatorOrigin)) {
+    if (initiatorOrigin && this.isSiteAllowlisted(initiatorOrigin, profileId)) {
       return false;
     }
 
@@ -397,14 +410,18 @@ class AdBlocker {
     return perSite;
   }
 
-  attachToSession(ses) {
-    if (!ses || this.attachedSessions.has(ses)) return;
+  attachToSession(ses, profileId) {
+    if (!ses) return;
+    if (profileId) this.sessionProfiles.set(ses, profileId);
+    if (this.attachedSessions.has(ses)) return;
     this.attachedSessions.add(ses);
 
     ses.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, (details, callback) => {
+      const pid = this.sessionProfiles.get(ses);
       const initiatorOrigin = extractOrigin(details.initiatorOrigin || details.initiator);
       const match = this.shouldBlock(details.url, details.resourceType, initiatorOrigin, {
-        initiatorNormalized: true
+        initiatorNormalized: true,
+        profileId: pid
       });
       if (match && match.blocked) {
         this.sessionBlocked += 1;
@@ -478,7 +495,8 @@ class AdBlocker {
       return Promise.resolve(false);
     }
     const origin = extractOrigin(url);
-    if (!this.shouldInjectCosmetic(origin)) return Promise.resolve(false);
+    const pid = webContents.session ? this.sessionProfiles.get(webContents.session) : undefined;
+    if (!this.shouldInjectCosmetic(origin, pid)) return Promise.resolve(false);
 
     const state = this._ensureCosmeticState(webContents);
     if (state.keys.size > 0 || state.injecting) {

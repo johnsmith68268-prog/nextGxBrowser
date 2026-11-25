@@ -133,6 +133,19 @@ function resolveDevicePrefsPath(profileId) {
   }
 }
 
+function clearDevicePrefsCache(profileId = null) {
+  if (profileId) {
+    const pid = String(profileId).trim() || 'default';
+    devicePrefsCache.delete(pid);
+    try {
+      const file = resolveDevicePrefsPath(pid);
+      if (file && fs.existsSync(file)) fs.unlinkSync(file);
+    } catch (_) {}
+    return;
+  }
+  devicePrefsCache.clear();
+}
+
 function loadDevicePrefs(profileId) {
   const pid = typeof profileId === 'string' && profileId ? profileId : 'default';
   const cached = devicePrefsCache.get(pid);
@@ -203,9 +216,15 @@ function pushDeviceChoiceToTab(ctx, origin, devices) {
 // view runs in the default session with no web origin, so it is allow-listed
 // here by its file URL; regular web pages are unaffected.
 function isPopoverWebContents(wc) {
+  if (!wc) return false;
   try {
-    const url = wc && typeof wc.getURL === 'function' ? wc.getURL() : '';
-    return typeof url === 'string' && url.startsWith('file://') && url.includes('popover.html');
+    for (const ctx of windowContexts.values()) {
+      if (ctx && ctx.popoverView && ctx.popoverView.webContents === wc) {
+        const url = typeof wc.getURL === 'function' ? wc.getURL() : '';
+        return typeof url === 'string' && url.startsWith('file://') && url.includes('popover.html');
+      }
+    }
+    return false;
   } catch (_) {
     return false;
   }
@@ -270,7 +289,10 @@ function ensureMediaIpcRegistered() {
       } catch (_) {
         return {};
       }
-      const pid = typeof payload?.profileId === 'string' && payload.profileId ? payload.profileId : 'default';
+      const winId = e?.sender ? webContentsToWinId.get(e.sender.id) : null;
+      const ctx = winId ? windowContexts.get(winId) : null;
+      if (ctx && ctx.incognito) return {};
+      const pid = (ctx && ctx.profileId) || 'default';
       return getPreferredDevices(origin, pid);
     });
     ipcMain.handle('permissions:query-state', (e, payload = {}) => {
@@ -417,12 +439,22 @@ function resolvePermissionPrompt(ctx, { requestId, decision, devices, displayMed
 
   // Chrome parity (gap 1.3): remember the device the user picked in the
   // prompt alongside the grant, and hand it to the requesting tab so the tab
-  // preload can apply it to the page's stream.
+  // preload can apply it to the page's stream. Never write to disk for
+  // incognito windows or one-time ("allow-once") grants.
   if (devices && (decision === 'allow-always' || decision === 'allow-once')) {
     try {
-      const stored = setPreferredDevices(active.origin, active.profileId, devices);
-      if (stored && Object.keys(stored).length > 0) {
-        pushDeviceChoiceToTab(ctx, active.origin, stored);
+      if (!ctx.incognito && decision === 'allow-always') {
+        const stored = setPreferredDevices(active.origin, active.profileId, devices);
+        if (stored && Object.keys(stored).length > 0) {
+          pushDeviceChoiceToTab(ctx, active.origin, stored);
+        }
+      } else {
+        const ephemeral = {};
+        if (typeof devices.cameraId === 'string' && devices.cameraId) ephemeral.cameraId = devices.cameraId;
+        if (typeof devices.micId === 'string' && devices.micId) ephemeral.micId = devices.micId;
+        if (Object.keys(ephemeral).length > 0) {
+          pushDeviceChoiceToTab(ctx, active.origin, ephemeral);
+        }
       }
     } catch (_) {}
   }
@@ -866,6 +898,7 @@ module.exports = {
   cancelPendingPermissionsForWindow,
   getPreferredDevices,
   setPreferredDevices,
+  clearDevicePrefsCache,
   resolveDisplayMediaRequest,
   cancelPendingDisplayMediaForWindow
 };

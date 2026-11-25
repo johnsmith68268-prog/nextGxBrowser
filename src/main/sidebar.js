@@ -959,16 +959,24 @@ function openSidebarPanelInNewTab(ctx) {
 function cleanupSidebarPanelViews(ctx) {
   if (!ctx) return;
   if (ctx.sidebarPanelFrameView) {
-    if (ctx.sidebarPanelFrameView.webContents) {
-      webContentsToWinId.delete(ctx.sidebarPanelFrameView.webContents.id);
-    }
+    try {
+      const wc = ctx.sidebarPanelFrameView.webContents;
+      if (wc) {
+        webContentsToWinId.delete(wc.id);
+        if (typeof wc.isDestroyed === 'function' && !wc.isDestroyed()) wc.close();
+      }
+    } catch (_) {}
     ctx.sidebarPanelFrameView = null;
   }
   if (!ctx.sidebarPanel || !(ctx.sidebarPanel.views instanceof Map)) return;
   for (const view of ctx.sidebarPanel.views.values()) {
-    if (view && view.webContents) {
-      webContentsToWinId.delete(view.webContents.id);
-    }
+    try {
+      const wc = view && view.webContents;
+      if (wc) {
+        webContentsToWinId.delete(wc.id);
+        if (typeof wc.isDestroyed === 'function' && !wc.isDestroyed()) wc.close();
+      }
+    } catch (_) {}
   }
   ctx.sidebarPanel.views.clear();
   if (ctx.sidebarPanel.meta instanceof Map) {

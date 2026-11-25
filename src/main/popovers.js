@@ -153,6 +153,94 @@ const POPOVER_KIND_SPECS = {
     maxW: 360,
     minH: 84,
     maxH: 160
+  },
+  'omnibox-suggest': {
+    isMenu: false,
+    align: 'left',
+    noFocus: true,
+    keepSidebarOpen: true,
+    defaultW: 520,
+    defaultH: 160,
+    minW: 320,
+    maxW: 640,
+    minH: 48,
+    maxH: 360
+  },
+  'omnibox-suggest-alt': {
+    isMenu: false,
+    align: 'left',
+    noFocus: true,
+    keepSidebarOpen: true,
+    defaultW: 520,
+    defaultH: 160,
+    minW: 320,
+    maxW: 640,
+    minH: 48,
+    maxH: 360
+  },
+  'tab-search': {
+    isMenu: true,
+    align: 'right',
+    minY: 36,
+    defaultW: 400,
+    defaultH: 360,
+    minW: 340,
+    maxW: 440,
+    minH: 120,
+    maxH: 440
+  },
+  'bookmark-bubble': {
+    isMenu: false,
+    align: 'right',
+    defaultW: 320,
+    defaultH: 220,
+    minW: 280,
+    maxW: 360,
+    minH: 160,
+    maxH: 340
+  },
+  profiles: {
+    isMenu: true,
+    align: 'right',
+    defaultW: 300,
+    defaultH: 280,
+    minW: 260,
+    maxW: 360,
+    minH: 160,
+    maxH: 520
+  },
+  'reading-list': {
+    isMenu: false,
+    align: 'right',
+    defaultW: 330,
+    defaultH: 340,
+    minW: 290,
+    maxW: 380,
+    minH: 140,
+    maxH: 520
+  },
+  'qr-code': {
+    isMenu: false,
+    align: 'right',
+    defaultW: 290,
+    defaultH: 320,
+    minW: 260,
+    maxW: 340,
+    minH: 240,
+    maxH: 400
+  },
+  'tab-hover': {
+    isMenu: false,
+    align: 'left',
+    minY: 36,
+    noFocus: true,
+    keepSidebarOpen: true,
+    defaultW: 260,
+    defaultH: 196,
+    minW: 220,
+    maxW: 300,
+    minH: 72,
+    maxH: 260
   }
 };
 
@@ -190,7 +278,16 @@ function getPopoverCacheKey(kind, payload) {
       : [];
     return `extensions-dropdown:${rows.length}`;
   }
-  if (kind === 'downloads' || kind === 'tab-context' || kind === 'permission-prompt') {
+  if (
+    kind === 'downloads' ||
+    kind === 'tab-context' ||
+    kind === 'permission-prompt' ||
+    kind === 'omnibox-suggest' ||
+    kind === 'omnibox-suggest-alt' ||
+    kind === 'rail-context' ||
+    kind === 'tab-search' ||
+    kind === 'tab-hover'
+  ) {
     return null;
   }
   return kind || null;
@@ -211,7 +308,12 @@ function computePopoverBounds(ctx, kind, requestedW, requestedH) {
   const maxWinW = Math.max(120, cw - WINDOW_MARGIN * 2);
   const safeW = Math.max(Math.min(120, maxWinW), Math.min(clampedW, maxWinW));
 
-  const minY = isTabContext ? 4 : TOP_CHROME_HEIGHT - 2;
+  const minY =
+    typeof spec.minY === 'number'
+      ? spec.minY
+      : isTabContext
+      ? 4
+      : TOP_CHROME_HEIGHT - 2;
   const baseY =
     typeof anchor.baseY === 'number' && Number.isFinite(anchor.baseY)
       ? Math.max(minY, anchor.baseY)
@@ -325,11 +427,31 @@ function restoreFocusAfterPopover(ctx) {
   restoreFocusToActiveTab(ctx);
 }
 
-function closePopover(ctx, { restoreFocus = true } = {}) {
+function closePopover(ctx, { restoreFocus = true, kind = null } = {}) {
   if (!ctx) return;
+  if (kind) {
+    const open = ctx.popoverOpenKind || '';
+    const matches =
+      kind === 'omnibox-suggest'
+        ? open === 'omnibox-suggest' || open === 'omnibox-suggest-alt'
+        : open === kind;
+    if (!matches) return;
+  }
   closeExtensionPopup(ctx);
-  const wasOpen = Boolean(ctx.popoverOpenKind);
-  const wasPermissionPrompt = ctx.popoverOpenKind === 'permission-prompt';
+  const wasKind = ctx.popoverOpenKind || '';
+  const wasOpen = Boolean(wasKind);
+  const wasNoFocusKind =
+    wasKind === 'omnibox-suggest' ||
+    wasKind === 'omnibox-suggest-alt' ||
+    wasKind === 'tab-hover';
+  const wasPermissionPrompt = wasKind === 'permission-prompt';
+  const shellFocused = Boolean(
+    ctx.win &&
+      !ctx.win.isDestroyed() &&
+      ctx.win.webContents &&
+      !ctx.win.webContents.isDestroyed() &&
+      ctx.win.webContents.isFocused()
+  );
   const popoverFocused = Boolean(
     ctx.popoverView &&
     ctx.popoverView.webContents &&
@@ -348,18 +470,20 @@ function closePopover(ctx, { restoreFocus = true } = {}) {
     }
     ctx.popoverView.setBounds({ x: -5000, y: -5000, width: 1, height: 1 });
     if (ctx.popoverView.webContents && !ctx.popoverView.webContents.isDestroyed()) {
-      ctx.popoverView.webContents.send('popover:data', { closed: true });
+      ctx.popoverView.webContents.send('popover:data', { closed: true, prevKind: wasKind });
     }
   }
   if (ctx.win && !ctx.win.isDestroyed() && ctx.win.webContents && !ctx.win.webContents.isDestroyed()) {
-    ctx.win.webContents.send('popover:data', { closed: true });
+    ctx.win.webContents.send('popover:data', { closed: true, prevKind: wasKind });
   }
   if (wasPermissionPrompt) {
     try {
       permissionsMod().onPermissionPopoverClosed(ctx);
     } catch (_) {}
   }
-  if (restoreFocus && (wasOpen || popoverFocused)) {
+  // Never steal focus away from the browser shell (e.g. #addressInput) when
+  // dismissing non-focus-stealing popovers such as omnibox-suggest or tab-hover.
+  if (restoreFocus && !wasNoFocusKind && !shellFocused && (wasOpen || popoverFocused)) {
     restoreFocusAfterPopover(ctx);
   }
 }
@@ -412,10 +536,12 @@ function openPopover(ctx, { kind, x, y, width, height, payload }) {
       permissionsMod().onPermissionPopoverClosed(ctx);
     } catch (_) {}
   }
-  closeExtensionPopup(ctx);
-  sidebarMod().closeSidebarIfUnpinned(ctx, { restoreFocus: false, ignoreGrace: true });
-
   const spec = getPopoverSpec(kind);
+  closeExtensionPopup(ctx);
+  if (!spec.keepSidebarOpen) {
+    sidebarMod().closeSidebarIfUnpinned(ctx, { restoreFocus: false, ignoreGrace: true });
+  }
+
   let effectivePayload = payload || {};
   let callerWidth = typeof width === 'number' && Number.isFinite(width) && width > 0 ? width : spec.defaultW;
   let estimatedWidth = callerWidth;
@@ -450,10 +576,16 @@ function openPopover(ctx, { kind, x, y, width, height, payload }) {
   const [cw] = ctx.win.getContentSize();
   const isTabContext = kind === 'tab-context';
   const isBookmarkFolder = kind === 'bookmark-folder';
-  const minY = isTabContext ? 4 : TOP_CHROME_HEIGHT - 2;
-  const baseY = isTabContext
-    ? Math.max(4, y || 38)
-    : Math.max(minY, y || TOP_CHROME_HEIGHT + 2);
+  const minY =
+    typeof spec.minY === 'number'
+      ? spec.minY
+      : isTabContext
+      ? 4
+      : TOP_CHROME_HEIGHT - 2;
+  const baseY =
+    isTabContext || typeof spec.minY === 'number'
+      ? Math.max(minY, y || 38)
+      : Math.max(minY, y || TOP_CHROME_HEIGHT + 2);
 
   const rawLeft = typeof x === 'number' && Number.isFinite(x) ? x : 100;
   const anchorRight =
@@ -479,7 +611,7 @@ function openPopover(ctx, { kind, x, y, width, height, payload }) {
     } catch (_) {}
   }
   view.setBounds(initialBounds);
-  if ((isTabContext || isBookmarkFolder) && view.webContents && !view.webContents.isDestroyed()) {
+  if (!spec.noFocus && view.webContents && !view.webContents.isDestroyed()) {
     view.webContents.focus();
   }
   const sendData = () => {

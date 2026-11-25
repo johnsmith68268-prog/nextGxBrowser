@@ -1,5 +1,8 @@
-const { session, dialog } = require('electron');
+const { app, session, dialog } = require('electron');
+const crypto = require('crypto');
+const { execFileSync } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { state } = require('./core');
 const { normalizePathForCompare } = require('./utils');
@@ -103,6 +106,323 @@ async function captureExtensionLoadWarnings(extPath, asyncFn) {
   }
 }
 
+const CHROME_ONLY_MANIFEST_KEYS = [
+  'differential_fingerprint',
+  'update_url',
+  'minimum_chrome_version',
+  'offline_enabled',
+  'side_panel',
+  'trial_tokens',
+  'chrome_settings_overrides',
+  'chrome_url_overrides',
+  'oauth2',
+  'cross_origin_embedder_policy',
+  'cross_origin_opener_policy',
+  'sandbox',
+  'key'
+];
+
+const ELECTRON_UNSUPPORTED_PERMISSIONS = new Set([
+  'sidePanel',
+  'offscreen',
+  'tabGroups',
+  'identity',
+  'identity.email',
+  'gcm',
+  'notifications',
+  'privacy',
+  'browsingData',
+  'search',
+  'readingList',
+  'declarativeContent',
+  'sessions',
+  'topSites',
+  'bookmarks',
+  'history',
+  'fontSettings',
+  'wallpaper',
+  'tts',
+  'ttsEngine',
+  'system.cpu',
+  'system.memory',
+  'system.storage',
+  'system.display',
+  'loginState',
+  'printing',
+  'printingMetrics',
+  'documentScan',
+  'platformKeys',
+  'certificateProvider',
+  'vpnProvider',
+  'fileBrowserHandler',
+  'fileSystemProvider',
+  'processes',
+  'signedInDevices',
+  'tabCapture',
+  'desktopCapture',
+  'pageCapture',
+  'management',
+  'power',
+  'idle',
+  'proxy',
+  'downloads.open',
+  'downloads.shelf',
+  'downloads.ui'
+]);
+
+function getManagedExtensionsBaseDir(subdir) {
+  let base;
+  try {
+    base = path.join(app.getPath('userData'), 'nextgx-data', subdir);
+  } catch (_) {
+    base = path.join(os.tmpdir(), 'nextgx-extensions', subdir);
+  }
+  fs.mkdirSync(base, { recursive: true });
+  return base;
+}
+
+function parseManifestJsonText(raw) {
+  const cleaned = String(raw || '')
+    .replace(/^\uFEFF/, '')
+    // Tolerate harmless trailing commas in unpacked manifests
+    .replace(/,\s*([}\]])/g, '$1');
+  return JSON.parse(cleaned);
+}
+
+function findManifestDirectory(rootDir, maxDepth = 3) {
+  if (fs.existsSync(path.join(rootDir, 'manifest.json'))) {
+    return rootDir;
+  }
+  if (maxDepth <= 0) return null;
+  let entries;
+  try {
+    entries = fs.readdirSync(rootDir, { withFileTypes: true });
+  } catch (_) {
+    return null;
+  }
+  const subdirs = entries
+    .filter((d) => d.isDirectory() && !d.name.startsWith('.') && d.name !== '__MACOSX' && d.name !== 'node_modules')
+    .map((d) => d.name);
+
+  if (subdirs.length === 0) return null;
+  // Prefer direct single child or Chrome versioned folder (e.g. 1.60.0_0)
+  const prioritized = subdirs.slice().sort((a, b) => {
+    const aVer = /^\d+(\.\d+)+/.test(a) ? 0 : 1;
+    const bVer = /^\d+(\.\d+)+/.test(b) ? 0 : 1;
+    if (aVer !== bVer) return aVer - bVer;
+    return b.localeCompare(a, undefined, { numeric: true });
+  });
+  if (prioritized.length === 1 || /^\d+(\.\d+)+/.test(prioritized[0])) {
+    for (const sub of prioritized) {
+      const found = findManifestDirectory(path.join(rootDir, sub), maxDepth - 1);
+      if (found) return found;
+    }
+  } else {
+    const directHits = prioritized.filter((sub) => fs.existsSync(path.join(rootDir, sub, 'manifest.json')));
+    if (directHits.length === 1) {
+      return path.join(rootDir, directHits[0]);
+    }
+  }
+  return null;
+}
+
+function hasForbiddenUnderscoreEntries(dirPath) {
+  try {
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    return entries.some((e) => e.name.startsWith('_') && e.name !== '_locales');
+  } catch (_) {
+    return false;
+  }
+}
+
+function copyExtensionDirSanitized(srcDir, destDir, isRoot = true) {
+  fs.mkdirSync(destDir, { recursive: true });
+  const entries = fs.readdirSync(srcDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.name === '.git' || entry.name === '.DS_Store' || entry.name === 'Thumbs.db') continue;
+    // Chromium rejects any root entry starting with '_' except '_locales' (e.g. '_metadata')
+    if (isRoot && entry.name.startsWith('_') && entry.name !== '_locales') continue;
+    const srcPath = path.join(srcDir, entry.name);
+    const dstPath = path.join(destDir, entry.name);
+    if (entry.isDirectory()) {
+      copyExtensionDirSanitized(srcPath, dstPath, false);
+    } else if (entry.isFile()) {
+      fs.copyFileSync(srcPath, dstPath);
+    }
+  }
+}
+
+function pruneMissingIconRefs(iconMap, baseDir) {
+  if (!iconMap || typeof iconMap !== 'object') return iconMap;
+  const out = {};
+  let kept = 0;
+  for (const [size, rel] of Object.entries(iconMap)) {
+    if (typeof rel !== 'string' || !rel.trim()) continue;
+    const cleanRel = rel.replace(/^\/+/, '');
+    if (fs.existsSync(path.join(baseDir, cleanRel))) {
+      out[size] = rel;
+      kept += 1;
+    }
+  }
+  return kept > 0 ? out : undefined;
+}
+
+function sanitizeManifestForElectron(rawManifest, baseDir, { aggressive = false } = {}) {
+  const manifest = JSON.parse(JSON.stringify(rawManifest || {}));
+  const notes = [];
+
+  if (typeof manifest.manifest_version === 'string') {
+    const n = Number(manifest.manifest_version);
+    if (n === 2 || n === 3) manifest.manifest_version = n;
+  }
+
+  for (const key of CHROME_ONLY_MANIFEST_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(manifest, key)) {
+      delete manifest[key];
+      notes.push(`stripped ${key}`);
+    }
+  }
+
+  // MV3 extensions cannot have background.scripts alongside service_worker in Chromium
+  if (manifest.manifest_version === 3 && manifest.background && typeof manifest.background === 'object') {
+    if (manifest.background.service_worker && manifest.background.scripts) {
+      delete manifest.background.scripts;
+      notes.push('stripped MV3 background.scripts');
+    }
+  }
+
+  if (aggressive) {
+    const filterPerms = (list) => {
+      if (!Array.isArray(list)) return list;
+      return list.filter((p) => {
+        if (typeof p !== 'string') return false;
+        if (p.startsWith('enterprise.') || ELECTRON_UNSUPPORTED_PERMISSIONS.has(p)) {
+          notes.push(`pruned permission "${p}"`);
+          return false;
+        }
+        return true;
+      });
+    };
+    if (Array.isArray(manifest.permissions)) {
+      manifest.permissions = filterPerms(manifest.permissions);
+    }
+    if (Array.isArray(manifest.optional_permissions)) {
+      manifest.optional_permissions = filterPerms(manifest.optional_permissions);
+    }
+    if (manifest.icons && typeof manifest.icons === 'object') {
+      const pruned = pruneMissingIconRefs(manifest.icons, baseDir);
+      if (pruned) manifest.icons = pruned;
+      else delete manifest.icons;
+    }
+    for (const actionKey of ['action', 'browser_action', 'page_action']) {
+      const act = manifest[actionKey];
+      if (act && typeof act === 'object' && act.default_icon && typeof act.default_icon === 'object') {
+        const pruned = pruneMissingIconRefs(act.default_icon, baseDir);
+        if (pruned) act.default_icon = pruned;
+        else delete act.default_icon;
+      }
+    }
+    if (manifest.declarative_net_request && Array.isArray(manifest.declarative_net_request.rule_resources)) {
+      const validRules = manifest.declarative_net_request.rule_resources.filter((r) => {
+        if (!r || typeof r.path !== 'string') return false;
+        return fs.existsSync(path.join(baseDir, r.path.replace(/^\/+/, '')));
+      });
+      if (validRules.length) manifest.declarative_net_request.rule_resources = validRules;
+      else delete manifest.declarative_net_request;
+    }
+    if (manifest.commands) {
+      delete manifest.commands;
+      notes.push('stripped commands');
+    }
+  }
+
+  return { manifest, notes };
+}
+
+function prepareCompatibleExtensionDir(sourceDir, rawManifest, { aggressive = false } = {}) {
+  const hash = crypto.createHash('sha1').update(`${sourceDir}|${aggressive ? 'agg' : 'std'}`).digest('hex').slice(0, 12);
+  const slug = path.basename(sourceDir).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 32) || 'ext';
+  const stageRoot = getManagedExtensionsBaseDir('extensions-staged');
+  const stageDir = path.join(stageRoot, `${slug}-${hash}`);
+  try {
+    fs.rmSync(stageDir, { recursive: true, force: true });
+  } catch (_) {}
+  copyExtensionDirSanitized(sourceDir, stageDir, true);
+  const { manifest, notes } = sanitizeManifestForElectron(rawManifest, stageDir, { aggressive });
+  fs.writeFileSync(path.join(stageDir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf-8');
+  return { stageDir, notes };
+}
+
+function extractCrxToZipBuffer(buf) {
+  if (!Buffer.isBuffer(buf) || buf.length < 16) {
+    throw new Error('Archive file is empty or corrupted.');
+  }
+  // Standard ZIP file already starts with PK\x03\x04
+  if (buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04) {
+    return buf;
+  }
+  // CRX2 / CRX3 magic: "Cr24"
+  if (buf.slice(0, 4).toString('ascii') === 'Cr24') {
+    const version = buf.readUInt32LE(4);
+    if (version === 2) {
+      const pubKeyLen = buf.readUInt32LE(8);
+      const sigLen = buf.readUInt32LE(12);
+      const offset = 16 + pubKeyLen + sigLen;
+      if (offset < buf.length) return buf.slice(offset);
+    } else if (version === 3) {
+      const headerSize = buf.readUInt32LE(8);
+      const offset = 12 + headerSize;
+      if (offset < buf.length) return buf.slice(offset);
+    }
+  }
+  // Fallback: locate ZIP local file header PK\x03\x04
+  const pkIdx = buf.indexOf(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+  if (pkIdx >= 0) return buf.slice(pkIdx);
+  throw new Error('File is not a valid .crx or .zip extension archive.');
+}
+
+function extractPackedExtensionFile(archivePath) {
+  const resolved = path.resolve(String(archivePath || '').trim());
+  if (!fs.existsSync(resolved)) {
+    return { ok: false, error: `Archive file not found: "${resolved}".` };
+  }
+  const baseName = path.basename(resolved, path.extname(resolved)).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 36) || 'extension';
+  const unpackRoot = getManagedExtensionsBaseDir('extensions-unpacked');
+  const targetDir = path.join(unpackRoot, `${baseName}-${Date.now()}`);
+  const tempZip = path.join(os.tmpdir(), `nextgx-ext-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.zip`);
+
+  try {
+    const rawBuf = fs.readFileSync(resolved);
+    const zipBuf = extractCrxToZipBuffer(rawBuf);
+    fs.writeFileSync(tempZip, zipBuf);
+    fs.mkdirSync(targetDir, { recursive: true });
+
+    if (process.platform === 'win32') {
+      execFileSync(
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-Command', 'Expand-Archive -LiteralPath $env:NX_ZIP -DestinationPath $env:NX_DEST -Force'],
+        {
+          env: { ...process.env, NX_ZIP: tempZip, NX_DEST: targetDir },
+          windowsHide: true,
+          timeout: 30000
+        }
+      );
+    } else {
+      try {
+        execFileSync('unzip', ['-q', '-o', tempZip, '-d', targetDir], { timeout: 30000 });
+      } catch (_) {
+        execFileSync('python3', ['-m', 'zipfile', '-e', tempZip, targetDir], { timeout: 30000 });
+      }
+    }
+    return { ok: true, extractedDir: targetDir };
+  } catch (err) {
+    try { fs.rmSync(targetDir, { recursive: true, force: true }); } catch (_) {}
+    return { ok: false, error: `Could not unpack "${path.basename(resolved)}": ${err?.message || String(err)}` };
+  } finally {
+    try { if (fs.existsSync(tempZip)) fs.unlinkSync(tempZip); } catch (_) {}
+  }
+}
+
 function validateUnpackedExtensionPath(rawPath) {
   if (typeof rawPath !== 'string' || !rawPath.trim()) {
     return { ok: false, error: 'No extension folder path was selected.' };
@@ -121,58 +441,62 @@ function validateUnpackedExtensionPath(rawPath) {
   if (!stat.isDirectory()) {
     return {
       ok: false,
-      error: `Selected path is not a folder: "${resolved}". Select an unpacked extension directory containing manifest.json (packed .crx/.zip archives must be extracted first).`
+      error: `Selected path is not a folder: "${resolved}". Use "Load Packed (.crx / .zip)" for archive files or select an unpacked extension directory containing manifest.json.`
     };
   }
 
-  const manifestPath = path.join(resolved, 'manifest.json');
-  if (!fs.existsSync(manifestPath)) {
-    let nestedCandidates = [];
-    try {
-      const entries = fs.readdirSync(resolved, { withFileTypes: true });
-      nestedCandidates = entries
-        .filter((d) => d.isDirectory() && fs.existsSync(path.join(resolved, d.name, 'manifest.json')))
-        .map((d) => d.name);
-    } catch (_) { }
-
-    if (nestedCandidates.length === 1) {
-      return {
-        ok: false,
-        error: `No manifest.json found directly in "${resolved}". Found manifest.json inside subfolder "${nestedCandidates[0]}" — select that subfolder instead.`
-      };
-    }
+  const effectiveDir = findManifestDirectory(resolved, 3);
+  if (!effectiveDir) {
     return {
       ok: false,
-      error: `Manifest file (manifest.json) is missing or unreadable in "${resolved}". Select the unpacked extension folder that directly contains manifest.json.`
+      error: `Manifest file (manifest.json) is missing or unreadable in "${resolved}". Select the unpacked extension folder containing manifest.json.`
     };
   }
 
+  const manifestPath = path.join(effectiveDir, 'manifest.json');
   let manifest;
   try {
-    const raw = fs.readFileSync(manifestPath, 'utf-8').replace(/^\uFEFF/, '');
-    manifest = JSON.parse(raw);
+    const raw = fs.readFileSync(manifestPath, 'utf-8');
+    manifest = parseManifestJsonText(raw);
   } catch (err) {
     return {
       ok: false,
-      error: `manifest.json in "${resolved}" is not valid JSON: ${err.message}`
+      error: `manifest.json in "${effectiveDir}" is not valid JSON: ${err.message}`
     };
   }
 
   if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
     return {
       ok: false,
-      error: `manifest.json in "${resolved}" must be a JSON object.`
+      error: `manifest.json in "${effectiveDir}" must be a JSON object.`
     };
   }
 
-  if (manifest.manifest_version !== 2 && manifest.manifest_version !== 3) {
+  const mv = Number(manifest.manifest_version);
+  if (mv !== 2 && mv !== 3) {
     return {
       ok: false,
       error: `Unsupported manifest_version (${JSON.stringify(manifest.manifest_version)}). Chromium in Electron ${process.versions.electron} supports Manifest V2 and Manifest V3 extensions.`
     };
   }
 
-  return { ok: true, resolvedPath: resolved, manifest };
+  return { ok: true, resolvedPath: effectiveDir, manifest };
+}
+
+function isInternalBundledGxExtension(ext) {
+  if (!ext) return false;
+  try {
+    const gxExt = require('./gx-extension');
+    const loadState = typeof gxExt.getLoadState === 'function' ? gxExt.getLoadState() : null;
+    if (loadState && loadState.id && ext.id === loadState.id) return true;
+    const bundledDir = typeof gxExt.resolveGxExtensionDir === 'function' ? gxExt.resolveGxExtensionDir() : '';
+    if (bundledDir && ext.path) {
+      const normA = path.resolve(bundledDir).toLowerCase();
+      const normB = path.resolve(ext.path).toLowerCase();
+      if (normA === normB) return true;
+    }
+  } catch (_) {}
+  return false;
 }
 
 function listManagedExtensions() {
@@ -181,7 +505,9 @@ function listManagedExtensions() {
     const extApi = getSessionExtensionsApi(session.defaultSession);
     const loaded = extApi.getAllExtensions ? extApi.getAllExtensions() : [];
     for (const ext of loaded) {
-      if (ext && ext.id) loadedMap.set(ext.id, ext);
+      if (ext && ext.id && !isInternalBundledGxExtension(ext)) {
+        loadedMap.set(ext.id, ext);
+      }
     }
   } catch (err) {
     console.error('[Extensions] Failed listing loaded extensions:', err);
@@ -230,19 +556,35 @@ function listManagedExtensions() {
 }
 
 async function loadUnpackedExtensionFromPath(folderPath, { persist = true } = {}) {
-  const validation = validateUnpackedExtensionPath(folderPath);
+  let effectiveInputPath = folderPath;
+  // Also allow passing a .crx or .zip archive directly
+  if (typeof folderPath === 'string' && /\.(crx|zip)$/i.test(folderPath.trim()) && fs.existsSync(folderPath.trim())) {
+    const unpacked = extractPackedExtensionFile(folderPath.trim());
+    if (!unpacked.ok) {
+      return {
+        ok: false,
+        canceled: false,
+        error: unpacked.error,
+        path: folderPath,
+        extensions: listManagedExtensions()
+      };
+    }
+    effectiveInputPath = unpacked.extractedDir;
+  }
+
+  const validation = validateUnpackedExtensionPath(effectiveInputPath);
   if (!validation.ok) {
-    console.error('[Extensions] Validation failed for', folderPath, '->', validation.error);
+    console.error('[Extensions] Validation failed for', effectiveInputPath, '->', validation.error);
     return {
       ok: false,
       canceled: false,
       error: validation.error,
-      path: folderPath || '',
+      path: effectiveInputPath || '',
       extensions: listManagedExtensions()
     };
   }
 
-  const { resolvedPath } = validation;
+  const { resolvedPath, manifest } = validation;
   const extApi = getSessionExtensionsApi(session.defaultSession);
   if (!extApi || typeof extApi.loadExtension !== 'function') {
     const errMsg = 'Electron session.extensions.loadExtension API is unavailable in this runtime.';
@@ -256,45 +598,78 @@ async function loadUnpackedExtensionFromPath(folderPath, { persist = true } = {}
     };
   }
 
+  const compatNotes = [];
+  let loadTargetPath = resolvedPath;
+
+  // Proactively stage a clean copy when _metadata (or other forbidden '_' dirs) exist
+  // because Chromium ALWAYS rejects unpacked folders containing _metadata.
+  if (hasForbiddenUnderscoreEntries(resolvedPath) || typeof manifest.manifest_version === 'string') {
+    try {
+      const staged = prepareCompatibleExtensionDir(resolvedPath, manifest, { aggressive: false });
+      loadTargetPath = staged.stageDir;
+      compatNotes.push('Cleaned Chrome Web Store metadata (_metadata) for Electron compatibility.');
+    } catch (_) {}
+  }
+
+  // Unload any already-loaded extension from the same path before reloading
   try {
-    const { value: ext, warnings } = await captureExtensionLoadWarnings(resolvedPath, () =>
-      extApi.loadExtension(resolvedPath, { allowFileAccess: false })
+    const existing = extApi.getAllExtensions ? extApi.getAllExtensions() : [];
+    const normA = normalizePathForCompare(loadTargetPath);
+    const normB = normalizePathForCompare(resolvedPath);
+    for (const prev of existing) {
+      if (!prev || !prev.path) continue;
+      const pNorm = normalizePathForCompare(prev.path);
+      if (pNorm === normA || pNorm === normB) {
+        mirrorExtensionRemoveFromAllSessions(prev.id);
+      }
+    }
+  } catch (_) {}
+
+  const attemptLoad = async (targetPath) => {
+    const res = await captureExtensionLoadWarnings(targetPath, () =>
+      extApi.loadExtension(targetPath, { allowFileAccess: true })
     );
-    await mirrorExtensionLoadToOtherSessions(resolvedPath);
+    await mirrorExtensionLoadToOtherSessions(targetPath);
+    return res;
+  };
 
-    const allWarnings = [...warnings];
-    if (ext?.manifest?.theme) {
-      allWarnings.push(
-        "Chrome theme extensions load in Chromium but do not restyle nextGx Browser's custom UI; use nextGx Settings to change themes."
-      );
+  let loadedRes = null;
+  let lastErr = null;
+  try {
+    loadedRes = await attemptLoad(loadTargetPath);
+  } catch (err1) {
+    lastErr = err1;
+    // Pass 2: Standard compatibility staging (strips _metadata + Chrome-only keys)
+    if (loadTargetPath === resolvedPath) {
+      try {
+        const staged = prepareCompatibleExtensionDir(resolvedPath, manifest, { aggressive: false });
+        loadTargetPath = staged.stageDir;
+        loadedRes = await attemptLoad(loadTargetPath);
+        compatNotes.push('Applied standard Electron compatibility staging (removed Chrome-only manifest keys/_metadata).');
+      } catch (err2) {
+        lastErr = err2;
+      }
     }
-
-    const record = {
-      id: ext.id,
-      path: ext.path || resolvedPath,
-      name: ext.name || path.basename(resolvedPath),
-      version: ext.version || ext.manifest?.version || '',
-      description: ext.manifest?.description || '',
-      manifestVersion: Number(ext.manifest?.manifest_version) || null,
-      enabled: true,
-      warnings: allWarnings,
-      lastError: ''
-    };
-
-    if (persist && state.storage) {
-      state.storage.upsertExtension(record);
+    // Pass 3: Aggressive ManifestError cleanup (strips unsupported permissions / missing icon/ruleset refs)
+    if (!loadedRes) {
+      try {
+        const stagedAgg = prepareCompatibleExtensionDir(resolvedPath, manifest, { aggressive: true });
+        loadTargetPath = stagedAgg.stageDir;
+        loadedRes = await attemptLoad(loadTargetPath);
+        compatNotes.push(
+          stagedAgg.notes.length
+            ? `Compatibility mode: ${stagedAgg.notes.slice(0, 6).join(', ')}.`
+            : 'Loaded in Electron compatibility mode (unsupported Chrome-only manifest fields stripped).'
+        );
+      } catch (err3) {
+        lastErr = err3;
+      }
     }
+  }
 
-    return {
-      ok: true,
-      canceled: false,
-      extension: record,
-      warnings: allWarnings,
-      extensions: listManagedExtensions()
-    };
-  } catch (err) {
-    const rawMsg = err?.message || String(err);
-    console.error('[Extensions] Failed to load unpacked extension at', resolvedPath, err);
+  if (!loadedRes) {
+    const rawMsg = lastErr?.message || String(lastErr || 'Unknown error loading extension.');
+    console.error('[Extensions] Failed to load unpacked extension at', resolvedPath, lastErr);
     return {
       ok: false,
       canceled: false,
@@ -303,6 +678,38 @@ async function loadUnpackedExtensionFromPath(folderPath, { persist = true } = {}
       extensions: listManagedExtensions()
     };
   }
+
+  const { value: ext, warnings } = loadedRes;
+  const allWarnings = [...compatNotes, ...warnings];
+  if (ext?.manifest?.theme) {
+    allWarnings.push(
+      "Chrome theme extensions load in Chromium but do not restyle nextGx Browser's custom UI; use nextGx Settings to change themes."
+    );
+  }
+
+  const record = {
+    id: ext.id,
+    path: loadTargetPath || ext.path || resolvedPath,
+    name: ext.name || manifest.name || path.basename(resolvedPath),
+    version: ext.version || ext.manifest?.version || manifest.version || '',
+    description: ext.manifest?.description || manifest.description || '',
+    manifestVersion: Number(ext.manifest?.manifest_version ?? manifest.manifest_version) || null,
+    enabled: true,
+    warnings: allWarnings,
+    lastError: ''
+  };
+
+  if (persist && state.storage) {
+    state.storage.upsertExtension(record);
+  }
+
+  return {
+    ok: true,
+    canceled: false,
+    extension: record,
+    warnings: allWarnings,
+    extensions: listManagedExtensions()
+  };
 }
 
 async function setExtensionEnabled(id, enabled) {
@@ -677,6 +1084,41 @@ function registerExtensionIpcHandlers(handleInternal) {
     };
   });
 
+  handleInternal('extensions:load-packed', async (e) => {
+    const ctx = getCtxFromSender(e.sender);
+    const parentWin = ctx?.win && !ctx.win.isDestroyed() ? ctx.win : undefined;
+    const dialogOptions = {
+      title: 'Select Packed Extension Archive (.crx or .zip)',
+      properties: ['openFile'],
+      filters: [{ name: 'Chrome Extension Package', extensions: ['crx', 'zip'] }]
+    };
+    let res;
+    try {
+      res = parentWin
+        ? await dialog.showOpenDialog(parentWin, dialogOptions)
+        : await dialog.showOpenDialog(dialogOptions);
+    } catch (err) {
+      return {
+        ok: false,
+        canceled: false,
+        error: `Could not open file picker: ${err?.message || String(err)}`,
+        extensions: listManagedExtensions()
+      };
+    }
+    if (!res || res.canceled || !Array.isArray(res.filePaths) || !res.filePaths.length) {
+      return {
+        ok: false,
+        canceled: true,
+        extensions: listManagedExtensions()
+      };
+    }
+    const result = await loadUnpackedExtensionFromPath(res.filePaths[0], { persist: true });
+    return {
+      ...result,
+      incognitoNotice: Boolean(ctx?.incognito)
+    };
+  });
+
   handleInternal('extensions:toggle', async (_e, arg1, arg2) => {
     const id = typeof arg1 === 'object' && arg1 !== null ? arg1.id : arg1;
     const enabled = typeof arg1 === 'object' && arg1 !== null ? arg1.enabled : arg2;
@@ -693,6 +1135,9 @@ module.exports = {
   parseExtensionWarningLines,
   captureExtensionLoadWarnings,
   validateUnpackedExtensionPath,
+  findManifestDirectory,
+  sanitizeManifestForElectron,
+  extractCrxToZipBuffer,
   listManagedExtensions,
   loadUnpackedExtensionFromPath,
   setExtensionEnabled,

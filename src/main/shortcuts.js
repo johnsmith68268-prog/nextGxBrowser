@@ -127,8 +127,11 @@ function attachKeyboardShortcuts(ctx, webContents) {
       shortcutDeps.toggleActiveTabDevTools(ctx);
     } else if (input.key === 'Escape') {
       if (ctx.popoverOpenKind || ctx.extensionPopupView) {
-        event.preventDefault();
-        shortcutDeps.closePopover(ctx);
+        const isOmnibox =
+          ctx.popoverOpenKind === 'omnibox-suggest' ||
+          ctx.popoverOpenKind === 'omnibox-suggest-alt';
+        if (!isOmnibox) event.preventDefault();
+        shortcutDeps.closePopover(ctx, { restoreFocus: !isOmnibox });
       } else if (ctx.sidebarPanel && ctx.sidebarPanel.open && !ctx.sidebarPanel.pinned) {
         event.preventDefault();
         if (typeof shortcutDeps.closeSidebarPanel === 'function') {

@@ -181,12 +181,16 @@ const tpCookieSessions = new Map(); // session -> isIncognito
 
 function isThirdPartyRequest(details) {
   try {
+    if (details.resourceType === 'mainFrame') return false;
     const reqHost = new URL(details.url).hostname.toLowerCase();
-    const ref = typeof details.referrer === 'string' ? details.referrer : '';
-    if (!ref) return false; // top-level navigation: first-party
-    const refHost = new URL(ref).hostname.toLowerCase();
-    if (!reqHost || !refHost) return false;
-    return getRegistrableDomain(reqHost) !== getRegistrableDomain(refHost);
+    const initiatorRaw =
+      (typeof details.initiator === 'string' && details.initiator) ||
+      (typeof details.referrer === 'string' && details.referrer) ||
+      '';
+    if (!initiatorRaw || initiatorRaw === 'null') return false;
+    const initHost = new URL(initiatorRaw).hostname.toLowerCase();
+    if (!reqHost || !initHost) return false;
+    return getRegistrableDomain(reqHost) !== getRegistrableDomain(initHost);
   } catch (_) {
     return false;
   }
@@ -216,7 +220,7 @@ function ensureThirdPartyCookieListeners(ses, isIncognito) {
           callback({ requestHeaders: headers });
           return;
         }
-      } catch (_) {}
+      } catch (_) { }
       callback({});
     });
     ses.webRequest.onHeadersReceived({ urls: ['<all_urls>'] }, (details, callback) => {
@@ -229,10 +233,36 @@ function ensureThirdPartyCookieListeners(ses, isIncognito) {
           callback({ responseHeaders: headers });
           return;
         }
-      } catch (_) {}
+      } catch (_) { }
       callback({});
     });
-  } catch (_) {}
+  } catch (_) { }
+}
+
+function applySessionPrivacyAndPrefs(ses, { incognito = false, profileId = 'default' } = {}) {
+  if (!ses) return;
+  try {
+    const s = state.storage ? state.storage.getSettings(profileId) : {};
+    tpCookieMode = ['allow', 'block-incognito', 'block'].includes(s.thirdPartyCookies)
+      ? s.thirdPartyCookies
+      : 'block-incognito';
+    ensureThirdPartyCookieListeners(ses, Boolean(incognito));
+    const enabled = s.spellcheckEnabled !== false;
+    const langs =
+      Array.isArray(s.preferredLanguages) && s.preferredLanguages.length
+        ? s.preferredLanguages
+        : ['en-US'];
+    if (typeof ses.setSpellCheckerLanguages === 'function') {
+      ses.setSpellCheckerLanguages(enabled ? langs : []);
+    }
+    const target =
+      typeof s.downloadPath === 'string' && s.downloadPath.trim()
+        ? s.downloadPath.trim()
+        : app.getPath('downloads');
+    if (typeof ses.setDownloadPath === 'function') {
+      ses.setDownloadPath(target);
+    }
+  } catch (_) { }
 }
 
 function applyThirdPartyCookieMode(mode) {
@@ -241,7 +271,7 @@ function applyThirdPartyCookieMode(mode) {
   try {
     const ses = getSessionForProfile(state.storage.getActiveProfileId());
     if (ses) ensureThirdPartyCookieListeners(ses, false);
-  } catch (_) {}
+  } catch (_) { }
   for (const ctx of windowContexts.values()) {
     if (ctx && ctx.session) ensureThirdPartyCookieListeners(ctx.session, Boolean(ctx.incognito));
   }
@@ -260,12 +290,12 @@ function applySpellcheckSettings(settings) {
       if (ses && typeof ses.setSpellCheckerLanguages === 'function') {
         ses.setSpellCheckerLanguages(enabled ? langs : []);
       }
-    } catch (_) {}
+    } catch (_) { }
   };
   applyTo(session.defaultSession);
   try {
     applyTo(getSessionForProfile(state.storage.getActiveProfileId()));
-  } catch (_) {}
+  } catch (_) { }
   for (const ctx of windowContexts.values()) {
     if (ctx && ctx.session) applyTo(ctx.session);
   }
@@ -288,12 +318,12 @@ function applyDownloadPathSetting(settings) {
   const applyTo = (ses) => {
     try {
       if (ses && typeof ses.setDownloadPath === 'function') ses.setDownloadPath(target);
-    } catch (_) {}
+    } catch (_) { }
   };
   applyTo(session.defaultSession);
   try {
     applyTo(getSessionForProfile(state.storage.getActiveProfileId()));
-  } catch (_) {}
+  } catch (_) { }
   for (const ctx of windowContexts.values()) {
     if (ctx && ctx.session) applyTo(ctx.session);
   }
@@ -313,36 +343,9 @@ function buildSearchUrl(template, query) {
 function resolveAddressBarSearch(input, settings) {
   const trimmed = String(input || '').trim();
   if (!trimmed) return null;
-  if (/^(https?:\/\/|nextgx:\/\/|gx:\/\/|chrome:\/\/|file:\/\/|view-source:|data:|about:|blob:)/i.test(trimmed)) return null;
-  if (
-    /^(localhost|127\.\d{1,3}\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}|\[::1\])(:\d+)?(\/.*)?$/i.test(trimmed) &&
-    !trimmed.includes(' ')
-  ) {
-    return null;
-  }
-  if (
-    /^((\d{1,3}\.){3}\d{1,3}(:\d+)?|([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(:\d+)?)(\/.*)?$/i.test(trimmed) &&
-    !trimmed.includes(' ')
-  ) {
-    return null;
-  }
-  // Search query.
-  const engines = settings && Array.isArray(settings.searchEngines) ? settings.searchEngines : [];
-  const defaultEngine =
-    engines.find((e) => e && e.id === settings?.searchEngine && !e.siteSearch) || null;
-  const defaultUrl = defaultEngine ? defaultEngine.url : 'https://www.google.com/search?q=%s';
-  const spaceIdx = trimmed.indexOf(' ');
-  if (spaceIdx > 0) {
-    const keyword = trimmed.slice(0, spaceIdx).toLowerCase();
-    const kwEngine = engines.find(
-      (e) => e && typeof e.keyword === 'string' && e.keyword && e.keyword.toLowerCase() === keyword
-    );
-    if (kwEngine) {
-      const query = trimmed.slice(spaceIdx + 1).trim();
-      if (query) return buildSearchUrl(kwEngine.url, query);
-    }
-  }
-  return buildSearchUrl(defaultUrl, trimmed);
+  const { isUrlLikeInput, resolveNavigateInput } = require('./navigation');
+  if (isUrlLikeInput(trimmed)) return null;
+  return resolveNavigateInput(trimmed, settings);
 }
 
 function registerIpcHandlers() {
@@ -386,9 +389,39 @@ function registerIpcHandlers() {
     return ctx?.profileId || state.storage.getActiveProfileId();
   };
 
+  ipcMain.on('adblock:get-page-config', (event) => {
+    try {
+      const url = event?.senderFrame?.url || event?.sender?.getURL?.() || '';
+      const ctx = getCtxFromSender(event?.sender);
+      const pid = ctx?.profileId || state.storage?.getActiveProfileId?.() || 'default';
+      const enabled = state.adBlocker ? state.adBlocker.isSiteBlockingActive(url, pid) : true;
+      event.returnValue = { enabled: Boolean(enabled) };
+    } catch (_) {
+      event.returnValue = { enabled: true };
+    }
+  });
+
+  ipcMain.handle('pagefx:get-settings', (e) => {
+    try {
+      if (!e?.sender || !e?.senderFrame || e.senderFrame !== e.sender.mainFrame) {
+        return { shaderPreset: 'none', videoEnhancePreset: 'off' };
+      }
+      const pid = getSenderProfileId(e);
+      const s = state.storage ? state.storage.getSettings(pid) : {};
+      return {
+        shaderPreset: typeof s.shaderPreset === 'string' ? s.shaderPreset : 'none',
+        videoEnhancePreset: typeof s.videoEnhancePreset === 'string' ? s.videoEnhancePreset : 'off'
+      };
+    } catch (_) {
+      return { shaderPreset: 'none', videoEnhancePreset: 'off' };
+    }
+  });
+
   ipcMain.handle('autofill:get', (e) => {
     // Only allow top-level mainFrame over HTTPS (or localhost/127.0.0.1 for local dev)
     if (!e?.sender || !e?.senderFrame || e.senderFrame !== e.sender.mainFrame) return [];
+    const ctx = getCtxFromSender(e.sender);
+    if (ctx && ctx.incognito) return [];
     const frameUrl = e.senderFrame.url;
     if (!frameUrl) return [];
     try {
@@ -625,7 +658,7 @@ function registerIpcHandlers() {
     try {
       const searchUrl = resolveAddressBarSearch(input, state.storage.getSettings(getSenderProfileId(e)));
       if (searchUrl) resolved = searchUrl;
-    } catch (_) {}
+    } catch (_) { }
     navigateActiveTab(ctx, resolved);
     return serializeTabs(ctx);
   });
@@ -695,7 +728,7 @@ function registerIpcHandlers() {
     tab.isLoading = true;
     broadcastState(ctx);
     scheduleSessionSave(ctx);
-    tab.view.webContents.loadURL(candidate).catch(() => {});
+    tab.view.webContents.loadURL(candidate).catch(() => { });
     return serializeTabs(ctx);
   });
   // "Proceed anyway" from the Connection Not Private error page. The
@@ -736,7 +769,7 @@ function registerIpcHandlers() {
     tab.isLoading = true;
     broadcastState(ctx);
     scheduleSessionSave(ctx);
-    tab.view.webContents.loadURL(candidate).catch(() => {});
+    tab.view.webContents.loadURL(candidate).catch(() => { });
     return serializeTabs(ctx);
   });
   handleInternal('tabs:stop', (e) => {
@@ -761,7 +794,7 @@ function registerIpcHandlers() {
         sidebarEntry.meta.isLoading = true;
       }
       broadcastSidebarState(ctx);
-      sidebarEntry.view.webContents.loadURL(sidebarEntry.service.url).catch(() => {});
+      sidebarEntry.view.webContents.loadURL(sidebarEntry.service.url).catch(() => { });
       return serializeTabs(ctx);
     }
     navigateActiveTab(ctx, getConfiguredHomepageUrl());
@@ -778,7 +811,7 @@ function registerIpcHandlers() {
       const origin = getOriginForUrl(tab?.url || '');
       if (!origin || !tab) return;
       state.storage.setSiteZoom(origin, tab.zoomFactor || 1, profileId);
-    } catch (_) {}
+    } catch (_) { }
   };
 
   handleInternal('tabs:zoom', (e, action) => {
@@ -870,17 +903,17 @@ function registerIpcHandlers() {
         if (view.webContents) {
           webContentsToWinId.delete(view.webContents.id);
         }
-      } catch (_) {}
+      } catch (_) { }
       try {
         if (ctx.win && !ctx.win.isDestroyed() && ctx.win.contentView) {
           ctx.win.contentView.removeChildView(view);
         }
-      } catch (_) {}
+      } catch (_) { }
       try {
         if (view.webContents && !view.webContents.isDestroyed()) {
           view.webContents.close();
         }
-      } catch (_) {}
+      } catch (_) { }
     }
     updateActiveViewBounds(ctx);
   };
@@ -904,6 +937,7 @@ function registerIpcHandlers() {
         }
       });
       registerWebContents(ctx.screenshotView.webContents, ctx.win.id);
+      attachInternalNavigationGuard(ctx.screenshotView.webContents);
       ctx.screenshotView.webContents.loadFile(SCREENSHOT_FILE, {
         query: getInternalUiQuery(ctx.incognito)
       });
@@ -916,7 +950,7 @@ function registerIpcHandlers() {
       if (!ctx.pendingScreenshotDataUrl || !ctx.screenshotView || ctx.screenshotView.webContents.isDestroyed()) return;
       try {
         ctx.screenshotView.webContents.focus();
-      } catch (_) {}
+      } catch (_) { }
       ctx.screenshotView.webContents.send('screenshot:captured', { dataUrl: ctx.pendingScreenshotDataUrl });
     };
 
@@ -993,7 +1027,7 @@ function registerIpcHandlers() {
           line-height: 1.75 !important;
         }
         header, nav, footer, aside, [class*="sidebar"], [class*="banner"] { display: none !important; }
-      `).catch(() => {});
+      `).catch(() => { });
     } else {
       tab.view.webContents.reload();
     }
@@ -1092,7 +1126,11 @@ function registerIpcHandlers() {
     }
     if (cookies) {
       await targetSession.clearStorageData({ storages: ['cookies', 'localstorage'] });
-      await targetSession.cookies.flushStore().catch(() => {});
+      await targetSession.cookies.flushStore().catch(() => { });
+      try {
+        const { clearDevicePrefsCache } = require('./permissions');
+        if (typeof clearDevicePrefsCache === 'function') clearDevicePrefsCache(pid);
+      } catch (_) { }
       broadcastCookiesUpdate({ immediate: true, profileId: pid });
       cleared.cookies = true;
     }
@@ -1186,7 +1224,7 @@ function registerIpcHandlers() {
           if (b && b.x >= 0 && b.width > 0) {
             anchor = { x: b.x, y: b.y, width: b.width, right: b.x + b.width };
           }
-        } catch (_) {}
+        } catch (_) { }
       }
       closePopover(ctx);
       if (wasSamePopupOpen) {
@@ -1234,7 +1272,7 @@ function registerIpcHandlers() {
       if (ctx.win && !ctx.win.isDestroyed() && ctx.win.webContents && !ctx.win.webContents.isDestroyed()) {
         try {
           ctx.win.webContents.focus();
-        } catch (_) {}
+        } catch (_) { }
         ctx.win.webContents.send('shortcut:action', 'open-find');
       }
     } else if (action === 'devtools') toggleActiveTabDevTools(ctx);
@@ -1627,12 +1665,21 @@ function registerIpcHandlers() {
 
   // [Wave2-D] Reset settings (gap 5.14) + About (gap 5.14) + Default browser.
   handleInternal('settings:reset', (e) => {
+    const ctx = getCtxFromSender(e.sender);
     const pid = getSenderProfileId(e);
     const s = state.storage.resetSettings(pid);
     applySpellcheckSettings(s);
     applyThirdPartyCookieMode(s.thirdPartyCookies);
     applyDownloadPathSetting(s);
+    try {
+      gxControl.onSettingsChanged(s, { sleepTab });
+    } catch (_) { }
+    try {
+      syncAdblockCosmeticFilters();
+      if (state.adBlocker) broadcastAdblockUpdate(state.adBlocker.getStats());
+    } catch (_) { }
     broadcastSettingsUpdate(s, { profileId: pid });
+    if (ctx) broadcastState(ctx);
     return s;
   });
   handleInternal('app:version', () => ({
@@ -1643,12 +1690,14 @@ function registerIpcHandlers() {
     platform: process.platform
   }));
   handleInternal('app:set-default-browser', () => {
-    // Electron has no "default browser" API; registering the http(s) protocol
-    // handlers is the closest equivalent (on Linux this writes the MIME
-    // association so links open in nextGx).
     try {
-      const http = app.setAsDefaultProtocolClient('http');
-      const https = app.setAsDefaultProtocolClient('https');
+      const args = !app.isPackaged && process.argv[1] ? [path.resolve(process.argv[1])] : undefined;
+      const http = args
+        ? app.setAsDefaultProtocolClient('http', process.execPath, args)
+        : app.setAsDefaultProtocolClient('http');
+      const https = args
+        ? app.setAsDefaultProtocolClient('https', process.execPath, args)
+        : app.setAsDefaultProtocolClient('https');
       return { ok: Boolean(http && https), http: Boolean(http), https: Boolean(https) };
     } catch (err) {
       return { ok: false, error: err?.message || String(err) };
@@ -1663,11 +1712,12 @@ function registerIpcHandlers() {
     applySpellcheckSettings(bootSettings);
     applyThirdPartyCookieMode(bootSettings.thirdPartyCookies);
     applyDownloadPathSetting(bootSettings);
-  } catch (_) {}
+  } catch (_) { }
 }
 
 module.exports = {
   registerIpcHandlers,
+  applySessionPrivacyAndPrefs,
   getCtxFromSender,
   sendToWebUiTabs,
   notifyActiveWebUiTabShown,

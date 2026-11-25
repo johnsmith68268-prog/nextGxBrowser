@@ -122,34 +122,25 @@ function setupDownloadListener(ses, profileId = 'default', { incognito = false }
     const { fileName, savePath, normKey } = getUniqueDownloadPath(downloadsDir, item.getFilename());
     let finalSavePath = savePath;
     let finalFileName = fileName;
+    let trackedNormKey = null;
     if (askWhere) {
-      let parentWin = null;
-      try {
-        for (const ctx of windowContexts.values()) {
-          if (ctx && ctx.session === ses && ctx.win && !ctx.win.isDestroyed()) {
-            parentWin = ctx.win;
-            break;
-          }
-        }
-      } catch (_) {}
-      try {
-        const picked = dialog.showSaveDialogSync(parentWin || undefined, {
-          title: 'Save file as',
-          defaultPath: savePath,
-          buttonLabel: 'Save'
-        });
-        if (!picked) {
-          item.cancel();
-          return;
-        }
-        finalSavePath = picked;
-        finalFileName = path.basename(picked) || fileName;
-      } catch (_) {
-        // Dialog unavailable — fall through to the default location.
+      // Let Chromium show its native non-blocking Save dialog instead of freezing
+      // the main process with dialog.showSaveDialogSync().
+      if (typeof item.setSaveDialogOptions === 'function') {
+        try {
+          item.setSaveDialogOptions({
+            title: 'Save file as',
+            defaultPath: savePath,
+            buttonLabel: 'Save'
+          });
+        } catch (_) {}
       }
+      finalSavePath = '';
+    } else {
+      trackedNormKey = normKey;
+      inFlightSavePaths.add(trackedNormKey);
+      item.setSavePath(finalSavePath);
     }
-    inFlightSavePaths.add(normKey);
-    item.setSavePath(finalSavePath);
 
     activeDownloadItems.set(id, item);
 
@@ -157,6 +148,24 @@ function setupDownloadListener(ses, profileId = 'default', { incognito = false }
     let lastTime = Date.now();
     let lastBroadcastAt = 0;
     let prevState = 'progressing';
+
+    const syncItemSavePath = () => {
+      try {
+        const currentPath = typeof item.getSavePath === 'function' ? item.getSavePath() : '';
+        if (currentPath && currentPath !== record.savePath) {
+          record.savePath = currentPath;
+          const base = path.basename(currentPath);
+          if (base) {
+            record.filename = base;
+            record.category = detectFileCategory(base);
+          }
+          if (!trackedNormKey) {
+            trackedNormKey = process.platform === 'win32' ? currentPath.toLowerCase() : currentPath;
+            inFlightSavePaths.add(trackedNormKey);
+          }
+        }
+      } catch (_) {}
+    };
 
     const record = {
       id,
@@ -183,6 +192,7 @@ function setupDownloadListener(ses, profileId = 'default', { incognito = false }
     }
 
     item.on('updated', (_e, downloadState) => {
+      syncItemSavePath();
       const now = Date.now();
       const dt = Math.max(0.1, (now - lastTime) / 1000);
       const currBytes = item.getReceivedBytes();
@@ -224,8 +234,9 @@ function setupDownloadListener(ses, profileId = 'default', { incognito = false }
     });
 
     item.once('done', (_e, downloadState) => {
+      syncItemSavePath();
       activeDownloadItems.delete(id);
-      inFlightSavePaths.delete(normKey);
+      if (trackedNormKey) inFlightSavePaths.delete(trackedNormKey);
       record.receivedBytes = item.getReceivedBytes();
       record.totalBytes = item.getTotalBytes();
       record.speedBytesPerSec = 0;
@@ -239,6 +250,19 @@ function setupDownloadListener(ses, profileId = 'default', { incognito = false }
       } else {
         state.storage.upsertDownload(record, profileId, { deferWrite: false });
         broadcastDownloadsUpdate(state.storage.getDownloads(profileId), { profileId });
+      }
+      if (downloadState === 'completed') {
+        try {
+          const settings = state.storage ? state.storage.getSettings(profileId) : null;
+          if (settings && settings.downloadShowWhenDone) {
+            for (const ctx of windowContexts.values()) {
+              if (!ctx || !ctx.win || ctx.win.isDestroyed()) continue;
+              if (ctx.session === ses) {
+                ctx.win.webContents.send('downloads:completed-notify', { id, filename: record.filename });
+              }
+            }
+          }
+        } catch (_) {}
       }
     });
   });
@@ -301,13 +325,37 @@ function registerDownloadIpcHandlers(handleInternal) {
     broadcastDownloadsUpdate(list, { profileId: pid });
     return list;
   });
-  handleInternal('downloads:open', (_e, savePath) => {
-    const safePath = resolveSafeDownloadPath(savePath);
+  const resolveAllowedDownloadTarget = (e, savePath) => {
+    if (typeof savePath !== 'string' || !savePath || savePath.includes('\0') || !path.isAbsolute(savePath)) {
+      return null;
+    }
+    const safeDefault = resolveSafeDownloadPath(savePath);
+    if (safeDefault) return safeDefault;
+    // Allow files explicitly recorded in this profile's or incognito session's download log
+    // (covers custom downloadPath, downloadAskWhere, and Save As screenshots/PDFs).
+    const resolved = path.resolve(savePath);
+    const normReq = process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+    const records = isIncog(e) ? getIncogList(e) : (state.storage?.getDownloads?.(getPid(e)) || []);
+    const matched = records.some((d) => {
+      if (!d || typeof d.savePath !== 'string' || !d.savePath) return false;
+      const r = path.resolve(d.savePath);
+      return (process.platform === 'win32' ? r.toLowerCase() : r) === normReq;
+    });
+    if (!matched) return null;
+    try {
+      return fs.existsSync(resolved) ? fs.realpathSync(resolved) : null;
+    } catch (_) {
+      return null;
+    }
+  };
+
+  handleInternal('downloads:open', (e, savePath) => {
+    const safePath = resolveAllowedDownloadTarget(e, savePath);
     if (!safePath) return;
     return shell.openPath(safePath);
   });
-  handleInternal('downloads:show-folder', (_e, savePath) => {
-    const safePath = resolveSafeDownloadPath(savePath);
+  handleInternal('downloads:show-folder', (e, savePath) => {
+    const safePath = resolveAllowedDownloadTarget(e, savePath);
     if (!safePath) return;
     shell.showItemInFolder(safePath);
   });

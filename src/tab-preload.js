@@ -14,9 +14,16 @@ const YT_AD_FIELD_NAMES = [
   'playerAds',
   'adBreaks',
   'adBreak',
+  'adBreakParams',
+  'adBreakHeartbeatParams',
   'adInfo',
   'adSlotLoggingData',
-  'adPlacementsRenderer'
+  'adPlacementsRenderer',
+  'playerLegacyDesktopWatchAdsRenderer',
+  'instreamVideoAdRenderer',
+  'linearAdSequenceRenderer',
+  'mastheadAdRenderer',
+  'adSlotRenderer'
 ];
 
 function isYouTubeHost(hostname) {
@@ -42,10 +49,27 @@ function stripYouTubePlayerResponse(input) {
   function stripValue(value, depth) {
     if (!value || typeof value !== 'object' || depth > 24) return value;
     if (Array.isArray(value)) {
+      const out = [];
       for (let i = 0; i < value.length; i++) {
-        value[i] = stripValue(value[i], depth + 1);
+        const item = value[i];
+        if (
+          item &&
+          typeof item === 'object' &&
+          ((item.richItemRenderer &&
+            item.richItemRenderer.content &&
+            item.richItemRenderer.content.adSlotRenderer) ||
+            item.adSlotRenderer ||
+            item.inFeedAdLayoutRenderer ||
+            item.mastheadAdRenderer ||
+            item.promotedSparklesWebRenderer ||
+            item.compactPromotedVideoRenderer)
+        ) {
+          stripped += 1;
+          continue;
+        }
+        out.push(stripValue(item, depth + 1));
       }
-      return value;
+      return out;
     }
     for (const key of Object.keys(value)) {
       if (YT_AD_FIELD_NAMES.indexOf(key) !== -1) {
@@ -75,7 +99,17 @@ function stripYouTubePlayerResponse(input) {
 
 function stripYouTubePlayerResponseText(text) {
   if (!text || typeof text !== 'string') return { text, stripped: 0 };
-  if (text.indexOf('adPlacement') === -1 && text.indexOf('playerAds') === -1) {
+  if (
+    text.indexOf('adPlacement') === -1 &&
+    text.indexOf('playerAds') === -1 &&
+    text.indexOf('adSlots') === -1 &&
+    text.indexOf('adSlotRenderer') === -1 &&
+    text.indexOf('adBreak') === -1 &&
+    text.indexOf('mastheadAdRenderer') === -1 &&
+    text.indexOf('instreamVideoAdRenderer') === -1 &&
+    text.indexOf('linearAdSequenceRenderer') === -1 &&
+    text.indexOf('adInfoRenderer') === -1
+  ) {
     return { text, stripped: 0 };
   }
   let parsed;
@@ -108,20 +142,6 @@ function normalizeHost(raw) {
   } catch (_) {
     return '';
   }
-}
-
-function isIpAddress(host) {
-  return /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(':');
-}
-
-function isAutofillHostMatch(pageHost, savedSite) {
-  const current = normalizeHost(pageHost);
-  const saved = normalizeHost(savedSite);
-  if (!current || !saved) return false;
-  if (current === saved) return true;
-  if (isIpAddress(current) || isIpAddress(saved)) return false;
-  if (!saved.includes('.')) return false;
-  return current.endsWith(`.${saved}`);
 }
 
 const isFileTopFrame = window.location.protocol === 'file:' && window === window.top;
@@ -230,6 +250,7 @@ if (internalPageKind === 'webui') {
     // Extensions
     getExtensions: () => ipcRenderer.invoke('extensions:list'),
     loadUnpackedExtension: () => ipcRenderer.invoke('extensions:load-unpacked'),
+    loadPackedExtension: () => ipcRenderer.invoke('extensions:load-packed'),
     toggleExtension: (id, enabled) =>
       ipcRenderer.invoke(
         'extensions:toggle',
@@ -335,7 +356,7 @@ if (internalPageKind === 'player') {
 // ads baked into the initial page HTML are not reachable from here).
 // ---------------------------------------------------------------------------
 (function initYouTubeAdStrip() {
-  if (window !== window.top || internalPageKind) return;
+  if (internalPageKind) return;
   const proto = window.location.protocol;
   if (proto !== 'http:' && proto !== 'https:') return;
   let host = '';
@@ -347,6 +368,13 @@ if (internalPageKind === 'player') {
   if (!isYouTubeHost(host)) return;
   if (!webFrame || typeof webFrame.executeJavaScript !== 'function') return;
 
+  // Respect global AdBlock toggle AND per-site YouTube allowlist synchronously
+  // before <head> scripts run.
+  try {
+    const cfg = ipcRenderer.sendSync('adblock:get-page-config');
+    if (cfg && cfg.enabled === false) return;
+  } catch (_) {}
+
   function buildMainWorldYouTubeHook() {
     return `(() => {
       try {
@@ -356,8 +384,15 @@ if (internalPageKind === 'player') {
         const YT_AD_FIELD_NAMES = ${JSON.stringify(YT_AD_FIELD_NAMES)};
         const stripYouTubePlayerResponse = ${stripYouTubePlayerResponse.toString()};
         const stripYouTubePlayerResponseText = ${stripYouTubePlayerResponseText.toString()};
-        const isPlayerEndpoint = (url) => typeof url === 'string' && (url.indexOf('/youtubei/v1/player') !== -1 || url.indexOf('/youtubei/v1/next') !== -1);
-        const isAdStats = (url) => typeof url === 'string' && (url.indexOf('/api/stats/ads') !== -1 || url.indexOf('/pagead/') !== -1);
+        const isPlayerEndpoint = (url) =>
+          typeof url === 'string' &&
+          (url.indexOf('/youtubei/v1/player') !== -1 ||
+            url.indexOf('/youtubei/v1/next') !== -1 ||
+            url.indexOf('/youtubei/v1/browse') !== -1 ||
+            url.indexOf('/youtubei/v1/search') !== -1 ||
+            url.indexOf('/youtubei/v1/reel/') !== -1);
+        const isAdStats = (url) =>
+          typeof url === 'string' && url.indexOf('/api/stats/ads') !== -1;
         const getUrl = (input) => {
           try {
             if (typeof input === 'string') return input;
@@ -366,12 +401,107 @@ if (internalPageKind === 'player') {
           return '';
         };
 
+        // Layer A: Trap SSR initial payloads (ytInitialPlayerResponse / ytInitialData / ytplayer)
+        // embedded in inline <script> on direct /watch loads, reloads, and embeds.
+        const trapGlobalPayload = (propName) => {
+          try {
+            let current = window[propName];
+            if (current && typeof current === 'object') {
+              const r = stripYouTubePlayerResponse(current);
+              current = r.data;
+              window[sym].stripped += r.stripped;
+            }
+            Object.defineProperty(window, propName, {
+              configurable: true,
+              enumerable: true,
+              get() {
+                return current;
+              },
+              set(val) {
+                if (val && typeof val === 'object') {
+                  const r = stripYouTubePlayerResponse(val);
+                  current = r.data;
+                  window[sym].stripped += r.stripped;
+                } else {
+                  current = val;
+                }
+              }
+            });
+          } catch (_) {}
+        };
+        trapGlobalPayload('ytInitialPlayerResponse');
+        trapGlobalPayload('ytInitialData');
+
+        try {
+          let ytplayerVal = window.ytplayer;
+          const cleanYtPlayer = (obj) => {
+            if (!obj || typeof obj !== 'object') return obj;
+            try {
+              const args = obj.config && obj.config.args;
+              if (args) {
+                if (args.raw_player_response && typeof args.raw_player_response === 'object') {
+                  const r = stripYouTubePlayerResponse(args.raw_player_response);
+                  args.raw_player_response = r.data;
+                  window[sym].stripped += r.stripped;
+                }
+                if (typeof args.player_response === 'string') {
+                  const r = stripYouTubePlayerResponseText(args.player_response);
+                  if (r.stripped) {
+                    args.player_response = r.text;
+                    window[sym].stripped += r.stripped;
+                  }
+                }
+              }
+            } catch (_) {}
+            return obj;
+          };
+          if (ytplayerVal) ytplayerVal = cleanYtPlayer(ytplayerVal);
+          Object.defineProperty(window, 'ytplayer', {
+            configurable: true,
+            enumerable: true,
+            get() {
+              return ytplayerVal;
+            },
+            set(val) {
+              ytplayerVal = cleanYtPlayer(val);
+            }
+          });
+        } catch (_) {}
+
+        // Layer A2: Fast-path JSON.parse hook so embedded HTML / SPA JSON strings
+        // carrying adPlacements / adSlots / playerAds are stripped before YouTube's
+        // player constructs any ad slot or post-ad interstitial screen.
+        try {
+          const origJsonParse = JSON.parse;
+          JSON.parse = function (...args) {
+            const parsed = origJsonParse.apply(this, args);
+            try {
+              if (
+                parsed &&
+                typeof parsed === 'object' &&
+                !Array.isArray(parsed) &&
+                (Object.prototype.hasOwnProperty.call(parsed, 'adPlacements') ||
+                  Object.prototype.hasOwnProperty.call(parsed, 'adSlots') ||
+                  Object.prototype.hasOwnProperty.call(parsed, 'playerAds') ||
+                  Object.prototype.hasOwnProperty.call(parsed, 'adBreakHeartbeatParams') ||
+                  Object.prototype.hasOwnProperty.call(parsed, 'adBreaks'))
+              ) {
+                const res = stripYouTubePlayerResponse(parsed);
+                if (res && res.stripped) window[sym].stripped += res.stripped;
+                return res ? res.data : parsed;
+              }
+            } catch (_) {}
+            return parsed;
+          };
+        } catch (_) {}
+
+        // Layer B: fetch + XMLHttpRequest prototype getter interception
         if (typeof window.fetch === 'function') {
           const origFetch = window.fetch.bind(window);
           window.fetch = function (...args) {
             const url = getUrl(args[0]);
             if (isAdStats(url)) {
-              return Promise.resolve(new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+              return Promise.resolve(new Response(null, { status: 204 }));
             }
             if (!isPlayerEndpoint(url)) return origFetch(...args);
             return origFetch(...args).then(async (res) => {
@@ -382,7 +512,16 @@ if (internalPageKind === 'player') {
                 const stripped = stripYouTubePlayerResponseText(text);
                 if (!stripped.stripped) return res;
                 window[sym].stripped += stripped.stripped;
-                return new Response(stripped.text, { status: res.status, statusText: res.statusText, headers: res.headers });
+                const out = new Response(stripped.text, {
+                  status: res.status,
+                  statusText: res.statusText,
+                  headers: res.headers
+                });
+                try {
+                  Object.defineProperty(out, 'url', { value: res.url, configurable: true });
+                  Object.defineProperty(out, 'redirected', { value: res.redirected, configurable: true });
+                } catch (_) {}
+                return out;
               } catch (_) {
                 return res;
               }
@@ -393,36 +532,272 @@ if (internalPageKind === 'player') {
         if (typeof XMLHttpRequest !== 'undefined' && XMLHttpRequest.prototype) {
           const origOpen = XMLHttpRequest.prototype.open;
           const origSend = XMLHttpRequest.prototype.send;
+          const textDesc = Object.getOwnPropertyDescriptor(XMLHttpRequest.prototype, 'responseText');
+          const respDesc = Object.getOwnPropertyDescriptor(XMLHttpRequest.prototype, 'response');
           XMLHttpRequest.prototype.open = function (method, url) {
-            try { this.__nx_yt_url = getUrl(url); } catch (_) {}
+            const u = getUrl(url);
+            try {
+              this.__nx_yt_url = u;
+              this.__nx_yt_cached = null;
+            } catch (_) {}
+            if (isPlayerEndpoint(u) && textDesc && textDesc.get && respDesc && respDesc.get) {
+              const xhr = this;
+              const computeStripped = () => {
+                if (xhr.readyState !== 4) return null;
+                if (xhr.__nx_yt_cached !== null) return xhr.__nx_yt_cached;
+                try {
+                  const rt = xhr.responseType || '';
+                  if (rt === '' || rt === 'text') {
+                    const raw = textDesc.get.call(xhr);
+                    const s = stripYouTubePlayerResponseText(raw);
+                    if (s.stripped) window[sym].stripped += s.stripped;
+                    xhr.__nx_yt_cached = { kind: 'text', value: s.text };
+                  } else if (rt === 'json') {
+                    const rawObj = respDesc.get.call(xhr);
+                    if (rawObj && typeof rawObj === 'object') {
+                      const s = stripYouTubePlayerResponse(rawObj);
+                      if (s.stripped) window[sym].stripped += s.stripped;
+                      xhr.__nx_yt_cached = { kind: 'json', value: s.data };
+                    } else {
+                      xhr.__nx_yt_cached = { kind: 'raw', value: rawObj };
+                    }
+                  } else {
+                    xhr.__nx_yt_cached = { kind: 'passthrough' };
+                  }
+                } catch (_) {
+                  xhr.__nx_yt_cached = { kind: 'passthrough' };
+                }
+                return xhr.__nx_yt_cached;
+              };
+              try {
+                Object.defineProperty(xhr, 'responseText', {
+                  configurable: true,
+                  get() {
+                    const c = computeStripped();
+                    if (c && c.kind === 'text') return c.value;
+                    return textDesc.get.call(xhr);
+                  }
+                });
+                Object.defineProperty(xhr, 'response', {
+                  configurable: true,
+                  get() {
+                    const c = computeStripped();
+                    if (c && (c.kind === 'text' || c.kind === 'json')) return c.value;
+                    return respDesc.get.call(xhr);
+                  }
+                });
+              } catch (_) {}
+            }
             return origOpen.apply(this, arguments);
           };
           XMLHttpRequest.prototype.send = function () {
             const xhr = this;
             const url = xhr.__nx_yt_url || '';
             if (isAdStats(url)) {
-              // Drop the beacon without ever hitting the network.
-              try { xhr.abort(); } catch (_) {}
-              return undefined;
-            }
-            if (isPlayerEndpoint(url)) {
-              xhr.addEventListener('load', function () {
+              setTimeout(() => {
                 try {
-                  const raw = xhr.responseText;
-                  if (!raw) return;
-                  const stripped = stripYouTubePlayerResponseText(raw);
-                  if (!stripped.stripped) return;
-                  window[sym].stripped += stripped.stripped;
-                  Object.defineProperty(xhr, 'responseText', { value: stripped.text, configurable: true });
-                  try {
-                    Object.defineProperty(xhr, 'response', { value: stripped.text, configurable: true });
-                  } catch (_) {}
+                  Object.defineProperty(xhr, 'readyState', { value: 4, configurable: true });
+                  Object.defineProperty(xhr, 'status', { value: 204, configurable: true });
+                  Object.defineProperty(xhr, 'responseText', { value: '', configurable: true });
+                  Object.defineProperty(xhr, 'response', { value: '', configurable: true });
+                  xhr.dispatchEvent(new Event('readystatechange'));
+                  xhr.dispatchEvent(new Event('load'));
+                  xhr.dispatchEvent(new Event('loadend'));
                 } catch (_) {}
-              });
+              }, 0);
+              return undefined;
             }
             return origSend.apply(this, arguments);
           };
         }
+
+        // Layer C & D: Early cosmetic CSS (Trusted-Types safe via textContent) +
+        // .ad-showing / SABR player auto-skipper + anti-adblock popup dismissal.
+        const YT_EARLY_CSS = [
+          '#masthead-ad, ytd-ad-slot-renderer, ytd-in-feed-ad-layout-renderer,',
+          'ytd-rich-item-renderer:has(ytd-ad-slot-renderer),',
+          'ytd-reel-video-renderer:has(ytd-ad-slot-renderer),',
+          'ytd-banner-promo-renderer, ytd-statement-banner-renderer,',
+          'ytd-search-pyv-renderer, ytd-display-ad-renderer,',
+          'ytd-promoted-sparkles-web-renderer, ytd-companion-slot-renderer,',
+          'ytd-action-companion-ad-renderer, ytm-promoted-sparkles-web-renderer,',
+          'ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-ads"],',
+          '.ytp-ad-overlay-container, .ytp-ad-message-container,',
+          '.ytp-ad-player-overlay-layout, .ytp-ad-action-interstitial,',
+          'ytd-enforcement-message-view-model,',
+          'ytd-popup-container:has(ytd-enforcement-message-view-model),',
+          'tp-yt-paper-dialog:has(ytd-enforcement-message-view-model),',
+          'tp-yt-iron-overlay-backdrop:has(~ tp-yt-paper-dialog ytd-enforcement-message-view-model)',
+          '{ display: none !important; height: 0 !important; min-height: 0 !important; visibility: hidden !important; pointer-events: none !important; }'
+        ].join(' ');
+
+        const injectEarlyStyle = () => {
+          try {
+            const target = document.head || document.documentElement;
+            if (!target || document.getElementById('__nx_yt_early_css')) return;
+            const style = document.createElement('style');
+            style.id = '__nx_yt_early_css';
+            style.textContent = YT_EARLY_CSS;
+            target.appendChild(style);
+          } catch (_) {}
+        };
+        injectEarlyStyle();
+
+        let savedMuted = null;
+        let wasInAd = false;
+        let fastAdPollTimer = null;
+        const SKIP_SELECTORS = [
+          'button.ytp-skip-ad-button',
+          '.ytp-skip-ad-button',
+          '.ytp-ad-skip-button',
+          '.ytp-ad-skip-button-modern',
+          '.ytp-skip-ad-button-slot button',
+          '.ytp-ad-skip-button-slot button',
+          '.ytp-ad-skip-button-container button',
+          'button[id^="skip-button"]',
+          '.ytp-ad-action-interstitial button[class*="skip"]',
+          '.ytp-ad-overlay-close-button'
+        ].join(', ');
+
+        const clickSkipButton = (btn) => {
+          if (!btn || btn.disabled) return false;
+          try {
+            const st = window.getComputedStyle ? window.getComputedStyle(btn) : null;
+            if (st && (st.display === 'none' || st.visibility === 'hidden' || st.opacity === '0')) {
+              return false;
+            }
+          } catch (_) {}
+          try {
+            if (typeof PointerEvent === 'function') {
+              btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
+              btn.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true }));
+            }
+            btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+            btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+            if (typeof btn.click === 'function') btn.click();
+            return true;
+          } catch (_) {
+            try { btn.click(); return true; } catch (__) { return false; }
+          }
+        };
+
+        const clickAllVisibleSkipButtons = (scope) => {
+          let clicked = false;
+          try {
+            const root = scope || document;
+            const btns = root.querySelectorAll(SKIP_SELECTORS);
+            for (let i = 0; i < btns.length; i++) {
+              if (clickSkipButton(btns[i])) clicked = true;
+            }
+          } catch (_) {}
+          return clicked;
+        };
+
+        const handlePlayerAdState = () => {
+          try {
+            const player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+            const video = (player && player.querySelector('video.html5-main-video')) || document.querySelector('video');
+            const interstitial = document.querySelector(
+              '.ytp-ad-action-interstitial, .ytp-ad-action-interstitial-slot, .ytp-ad-player-overlay-layout'
+            );
+            const hasVisibleSkip = Boolean(document.querySelector(SKIP_SELECTORS));
+            const inAd = Boolean(
+              (player &&
+                (player.classList.contains('ad-showing') ||
+                  player.classList.contains('ad-interrupting'))) ||
+                (interstitial && interstitial.offsetParent !== null)
+            );
+
+            if (inAd || hasVisibleSkip) {
+              clickAllVisibleSkipButtons(player || document);
+              clickAllVisibleSkipButtons(document);
+            }
+
+            if (player && video) {
+              if (inAd) {
+                if (!wasInAd) {
+                  wasInAd = true;
+                  savedMuted = Boolean(video.muted);
+                }
+                if (!fastAdPollTimer) {
+                  fastAdPollTimer = setInterval(handlePlayerAdState, 100);
+                }
+                if (!video.muted) video.muted = true;
+                if (typeof player.skipAd === 'function') {
+                  try { player.skipAd(); } catch (_) {}
+                }
+                if (Number.isFinite(video.duration) && video.duration > 0 && video.duration < 300) {
+                  if (video.currentTime < video.duration - 0.05) {
+                    try { video.currentTime = video.duration; } catch (_) {}
+                  }
+                } else if (video.playbackRate < 16) {
+                  try { video.playbackRate = 16; } catch (_) {}
+                }
+              } else if (wasInAd) {
+                wasInAd = false;
+                if (fastAdPollTimer) {
+                  clearInterval(fastAdPollTimer);
+                  fastAdPollTimer = null;
+                }
+                if (savedMuted !== null) {
+                  try { video.muted = savedMuted; } catch (_) {}
+                  savedMuted = null;
+                }
+                if (video.playbackRate > 2) {
+                  try { video.playbackRate = 1; } catch (_) {}
+                }
+                if (video.paused && !document.hidden) {
+                  try { video.play().catch(() => {}); } catch (_) {}
+                }
+              }
+            }
+            // Dismiss YouTube anti-adblock enforcement popup & resume playback if paused
+            const enforcement = document.querySelector('ytd-enforcement-message-view-model');
+            if (enforcement) {
+              const dialog = enforcement.closest('tp-yt-paper-dialog');
+              if (dialog) dialog.remove();
+              else enforcement.remove();
+              document.querySelectorAll('tp-yt-iron-overlay-backdrop').forEach((b) => {
+                try { b.remove(); } catch (_) {}
+              });
+              if (video && video.paused) {
+                try { video.play().catch(() => {}); } catch (_) {}
+              }
+            }
+          } catch (_) {}
+        };
+
+        const startObservers = () => {
+          injectEarlyStyle();
+          handlePlayerAdState();
+          let scheduled = false;
+          const schedule = () => {
+            if (scheduled) return;
+            scheduled = true;
+            queueMicrotask(() => {
+              scheduled = false;
+              handlePlayerAdState();
+            });
+          };
+          const mo = new MutationObserver(schedule);
+          const root = document.documentElement;
+          if (root) {
+            mo.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+          }
+          document.addEventListener('yt-navigate-finish', schedule, true);
+          // Lightweight watcher catches Skip buttons revealed via style="display:none" -> ""
+          setInterval(() => {
+            if (document.hidden) return;
+            if (
+              document.querySelector('.ad-showing, .ad-interrupting, .ytp-ad-action-interstitial, ' + SKIP_SELECTORS)
+            ) {
+              handlePlayerAdState();
+            }
+          }, 300);
+        };
+        if (document.documentElement) startObservers();
+        else document.addEventListener('DOMContentLoaded', startObservers, { once: true });
+
         return true;
       } catch (_) {
         return false;
@@ -1384,31 +1759,62 @@ if (internalPageKind === 'player') {
           try { return new DOMException(message, name); }
           catch (_) { const e = new Error(message); e.name = name; return e; }
         }
-        function withTimeout(promise, ms) {
+        const origCredentials = navigator.credentials || null;
+        const origCreate = origCredentials && typeof origCredentials.create === 'function' ? origCredentials.create.bind(origCredentials) : null;
+        const origGet = origCredentials && typeof origCredentials.get === 'function' ? origCredentials.get.bind(origCredentials) : null;
+        const origPreventSilent = origCredentials && typeof origCredentials.preventSilentAccess === 'function' ? origCredentials.preventSilentAccess.bind(origCredentials) : null;
+        const origStore = origCredentials && typeof origCredentials.store === 'function' ? origCredentials.store.bind(origCredentials) : null;
+
+        function withTimeoutAndSignal(promise, ms, signal) {
+          if (signal && signal.aborted) {
+            return Promise.reject(domErr('AbortError', 'The passkey request was aborted.'));
+          }
           let timer = null;
-          const timeout = new Promise((_, reject) => {
-            timer = setTimeout(() => reject(domErr('NotAllowedError', 'The passkey request timed out.')), ms);
+          let onAbort = null;
+          const race = [
+            promise,
+            new Promise((_, reject) => {
+              timer = setTimeout(() => reject(domErr('NotAllowedError', 'The passkey request timed out.')), ms);
+            })
+          ];
+          if (signal && typeof signal.addEventListener === 'function') {
+            race.push(
+              new Promise((_, reject) => {
+                onAbort = () => reject(domErr('AbortError', 'The passkey request was aborted.'));
+                signal.addEventListener('abort', onAbort, { once: true });
+              })
+            );
+          }
+          return Promise.race(race).finally(() => {
+            if (timer) clearTimeout(timer);
+            if (signal && onAbort && typeof signal.removeEventListener === 'function') {
+              try { signal.removeEventListener('abort', onAbort); } catch (_) {}
+            }
           });
-          return Promise.race([promise, timeout]).finally(() => { if (timer) clearTimeout(timer); });
         }
-        function baseCred(res) {
-          // Plain object on purpose: do NOT set PublicKeyCredential.prototype.
-          // Its response/rawId are native getters that throw "Illegal
-          // invocation" on a non-native object, and assigning .response after
-          // setPrototypeOf silently drops the value (getter-only accessor).
-          return {
-            id: res.id,
-            rawId: toAB(b64urlDecode(res.rawId)),
-            type: 'public-key',
-            authenticatorAttachment: 'platform',
-            getClientExtensionResults: function () { return {}; }
-          };
+        function baseCred(res, responseObj, toJsonFn) {
+          const base = typeof PublicKeyCredential !== 'undefined' && PublicKeyCredential.prototype
+            ? Object.create(PublicKeyCredential.prototype)
+            : {};
+          Object.defineProperties(base, {
+            id: { value: res.id, enumerable: true, configurable: true },
+            rawId: { value: toAB(b64urlDecode(res.rawId)), enumerable: true, configurable: true },
+            type: { value: 'public-key', enumerable: true, configurable: true },
+            authenticatorAttachment: { value: 'platform', enumerable: true, configurable: true },
+            response: { value: responseObj, enumerable: true, configurable: true },
+            getClientExtensionResults: { value: function () { return {}; }, enumerable: true, configurable: true },
+            toJSON: { value: toJsonFn, enumerable: true, configurable: true }
+          });
+          return base;
         }
 
         async function create(options) {
-          if (!window.isSecureContext) throw domErr('SecurityError', 'WebAuthn requires a secure context.');
           const pk = (options && options.publicKey) || null;
-          if (!pk) throw domErr('TypeError', 'Missing publicKey options.');
+          if (!pk) {
+            if (origCreate) return origCreate(options);
+            throw domErr('TypeError', 'Missing publicKey options.');
+          }
+          if (!window.isSecureContext) throw domErr('SecurityError', 'WebAuthn requires a secure context.');
           const challenge = toU8(pk.challenge);
           const user = pk.user || {};
           const userId = toU8(user.id);
@@ -1426,12 +1832,12 @@ if (internalPageKind === 'player') {
               : []
           };
           const timeoutMs = (typeof pk.timeout === 'number' && pk.timeout > 0 ? pk.timeout : 120000) + 10000;
-          const res = await withTimeout(
+          const res = await withTimeoutAndSignal(
             bridge.ceremony({ kind: 'create', origin: window.location.origin, options: serialized }),
-            timeoutMs
+            timeoutMs,
+            options && options.signal
           );
           if (!res || !res.ok) throw domErr(res && res.name ? res.name : 'NotAllowedError', (res && res.message) || 'The passkey operation could not be completed.');
-          const cred = baseCred(res);
           const response = {
             clientDataJSON: toAB(b64urlDecode(res.response.clientDataJSON)),
             attestationObject: toAB(b64urlDecode(res.response.attestationObject)),
@@ -1443,8 +1849,7 @@ if (internalPageKind === 'player') {
             getPublicKey: function () { return res.response.publicKey ? toAB(b64urlDecode(res.response.publicKey)) : null; },
             getPublicKeyAlgorithm: function () { return typeof res.response.publicKeyAlgorithm === 'number' ? res.response.publicKeyAlgorithm : -7; }
           };
-          cred.response = response;
-          cred.toJSON = function () {
+          return baseCred(res, response, function () {
             return {
               id: res.id,
               rawId: res.rawId,
@@ -1460,15 +1865,17 @@ if (internalPageKind === 'player') {
                 transports: Array.isArray(res.response.transports) ? res.response.transports.slice() : ['internal']
               }
             };
-          };
-          return cred;
+          });
         }
 
         async function get(options) {
-          if (!window.isSecureContext) throw domErr('SecurityError', 'WebAuthn requires a secure context.');
           const pk = (options && options.publicKey) || null;
-          if (!pk) throw domErr('TypeError', 'Missing publicKey options.');
-          if (pk.mediation === 'conditional') {
+          if (!pk) {
+            if (origGet) return origGet(options);
+            throw domErr('TypeError', 'Missing publicKey options.');
+          }
+          if (!window.isSecureContext) throw domErr('SecurityError', 'WebAuthn requires a secure context.');
+          if ((options && options.mediation === 'conditional') || pk.mediation === 'conditional') {
             throw domErr('NotSupportedError', 'Conditional mediation is not supported by this authenticator.');
           }
           const challenge = toU8(pk.challenge);
@@ -1482,20 +1889,19 @@ if (internalPageKind === 'player') {
             timeout: pk.timeout
           };
           const timeoutMs = (typeof pk.timeout === 'number' && pk.timeout > 0 ? pk.timeout : 120000) + 10000;
-          const res = await withTimeout(
+          const res = await withTimeoutAndSignal(
             bridge.ceremony({ kind: 'get', origin: window.location.origin, options: serialized }),
-            timeoutMs
+            timeoutMs,
+            options && options.signal
           );
           if (!res || !res.ok) throw domErr(res && res.name ? res.name : 'NotAllowedError', (res && res.message) || 'The passkey operation could not be completed.');
-          const cred = baseCred(res);
           const response = {
             clientDataJSON: toAB(b64urlDecode(res.response.clientDataJSON)),
             authenticatorData: toAB(b64urlDecode(res.response.authenticatorData)),
             signature: toAB(b64urlDecode(res.response.signature)),
             userHandle: res.response.userHandle ? toAB(b64urlDecode(res.response.userHandle)) : null
           };
-          cred.response = response;
-          cred.toJSON = function () {
+          return baseCred(res, response, function () {
             return {
               id: res.id,
               rawId: res.rawId,
@@ -1509,8 +1915,7 @@ if (internalPageKind === 'player') {
                 userHandle: res.response.userHandle || null
               }
             };
-          };
-          return cred;
+          });
         }
 
         function parseCreationOptions(json) {
@@ -1533,7 +1938,12 @@ if (internalPageKind === 'player') {
           return out;
         }
 
-        const fakeCredentials = { create: create, get: get };
+        const fakeCredentials = {
+          create: create,
+          get: get,
+          preventSilentAccess: origPreventSilent || function () { return Promise.resolve(); },
+          store: origStore || function (c) { return Promise.resolve(c); }
+        };
         let installed = false;
         try {
           Object.defineProperty(navigator, 'credentials', { value: fakeCredentials, configurable: true, enumerable: true });
@@ -1598,6 +2008,23 @@ window.addEventListener('DOMContentLoaded', async () => {
     return fetchingCredentials;
   };
 
+  const setNativeInputValue = (el, val) => {
+    try {
+      const proto =
+        el.tagName === 'TEXTAREA'
+          ? HTMLTextAreaElement.prototype
+          : el.tagName === 'SELECT'
+          ? HTMLSelectElement.prototype
+          : HTMLInputElement.prototype;
+      const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+      if (desc && typeof desc.set === 'function') {
+        desc.set.call(el, val);
+        return;
+      }
+    } catch (_) {}
+    el.value = val;
+  };
+
   try {
     const bindForms = () => {
       const passInputs = document.querySelectorAll('input[type="password"]');
@@ -1605,10 +2032,12 @@ window.addEventListener('DOMContentLoaded', async () => {
         if (pwInput.dataset.gxAutofillBound) return;
         pwInput.dataset.gxAutofillBound = '1';
 
-        const form = pwInput.closest('form') || document.body;
-        const userInput = form.querySelector(
-          'input[type="email"], input[type="text"][name*="user" i], input[type="text"][name*="login" i], input[type="text"][name*="email" i], input[type="text"]'
-        );
+        const form = pwInput.closest('form');
+        const userInput = form
+          ? form.querySelector(
+              'input[type="email"], input[type="text"][autocomplete="username" i], input[type="text"][name*="user" i], input[type="text"][name*="login" i], input[type="text"][name*="email" i], input[type="text"]'
+            )
+          : null;
 
         let filledOnce = false;
         const triggerAutofillOnGesture = async (ev) => {
@@ -1618,12 +2047,14 @@ window.addEventListener('DOMContentLoaded', async () => {
           filledOnce = true;
           const cred = matched[0];
           if (userInput && !userInput.value) {
-            userInput.value = cred.username;
+            setNativeInputValue(userInput, cred.username);
             userInput.dispatchEvent(new Event('input', { bubbles: true }));
+            userInput.dispatchEvent(new Event('change', { bubbles: true }));
           }
           if (!pwInput.value) {
-            pwInput.value = cred.password;
+            setNativeInputValue(pwInput, cred.password);
             pwInput.dispatchEvent(new Event('input', { bubbles: true }));
+            pwInput.dispatchEvent(new Event('change', { bubbles: true }));
           }
         };
 
@@ -1779,6 +2210,24 @@ window.addEventListener('DOMContentLoaded', async () => {
   const hayOf = (el) =>
     [el.getAttribute('autocomplete'), el.name, el.id, el.placeholder].map(norm).join(' ');
 
+  const isElementVisible = (el) => {
+    if (!el || !el.isConnected) return false;
+    try {
+      const style = window.getComputedStyle(el);
+      if (!style || style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) {
+        return false;
+      }
+      const rect = el.getBoundingClientRect();
+      if (rect.width < 2 || rect.height < 2) return false;
+      if (rect.right < 0 || rect.bottom < 0) return false;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
+
+  const CARD_FIELD_KINDS = new Set(['cardNumber', 'cardExpMonth', 'cardExpYear', 'cardExp', 'cardName']);
+
   // Classify a field into an autofill kind, or null (not fillable).
   // autocomplete tokens are authoritative; name/id tokens are the fallback.
   const classifyField = (el) => {
@@ -1793,7 +2242,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       return null;
     }
     const toks = tokensOf(el);
-    const hay = hayOf(el);
+    const hay = [el.getAttribute('autocomplete'), el.name, el.id].map(norm).join(' ');
     const has = (...ns) => ns.some((n) => toks.has(n) || hay.includes(n));
     // Security code is never filled.
     if (has('cc-csc', 'cvc', 'cvv', 'cvc2', 'securitycode', 'security-code')) return null;
@@ -1804,19 +2253,14 @@ window.addEventListener('DOMContentLoaded', async () => {
     if (has('cc-exp', 'expdate', 'exp-date', 'expirydate', 'expiry-date', 'expiry', 'expiration')) return 'cardExp';
     if (has('cc-name', 'cardholder', 'cardholdername', 'cardholder-name', 'name-on-card', 'card-name', 'cardname')) return 'cardName';
     if (has('email', 'e-mail')) return 'email';
-    if (has('given-name', 'firstname', 'first-name', 'first')) return 'givenName';
-    if (has('family-name', 'lastname', 'last-name', 'surname', 'last')) return 'familyName';
+    if (has('given-name', 'firstname', 'first-name') || toks.has('fname')) return 'givenName';
+    if (has('family-name', 'lastname', 'last-name', 'surname') || toks.has('lname')) return 'familyName';
     if (has('organization', 'organisation', 'company')) return 'organization';
-    // 'name' is token-exact only: a hay substring match would also catch
-    // 'username' (a login field, not a name field).
     if (toks.has('name') || has('fullname', 'full-name', 'yourname')) return 'fullName';
-    if (has('address-line2', 'address2', 'address-line-2', 'apt', 'suite', 'unit')) return 'addressLine2';
-    // Bare 'address' is token-exact only: hay.includes('address') would also
-    // catch 'address-level1'/'address-level2' and misclassify state/city as
-    // the street line (their autocomplete tokens contain 'address').
+    if (has('address-line2', 'address2', 'address-line-2', 'apt', 'suite')) return 'addressLine2';
     if (has('address-line1', 'address1', 'address-line-1', 'street', 'streetaddress') || toks.has('address')) return 'addressLine1';
     if (has('address-level2', 'city', 'town')) return 'city';
-    if (has('address-level1', 'state', 'region', 'province', 'county')) return 'region';
+    if (has('address-level1', 'province', 'county') || toks.has('state') || toks.has('region')) return 'region';
     if (has('postal-code', 'postalcode', 'zip', 'zipcode', 'postcode')) return 'postalCode';
     if (has('country', 'country-name')) return 'country';
     if (has('tel', 'tel-national', 'phone', 'mobile', 'telephone')) return 'phone';
@@ -1856,18 +2300,34 @@ window.addEventListener('DOMContentLoaded', async () => {
   };
 
   const setFieldValue = (el, kind, value) => {
-    if (!value || el.value) return false;
+    if (!value || el.value || !isElementVisible(el)) return false;
+    const setNative = (target, val) => {
+      try {
+        const proto =
+          target.tagName === 'TEXTAREA'
+            ? HTMLTextAreaElement.prototype
+            : target.tagName === 'SELECT'
+            ? HTMLSelectElement.prototype
+            : HTMLInputElement.prototype;
+        const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+        if (desc && typeof desc.set === 'function') {
+          desc.set.call(target, val);
+          return;
+        }
+      } catch (_) {}
+      target.value = val;
+    };
     if (el.tagName === 'SELECT') {
       const v = String(value).toLowerCase();
       const opt = Array.from(el.options || []).find(
         (o) => String(o.value).toLowerCase() === v || String(o.text).trim().toLowerCase() === v
       );
       if (!opt) return false;
-      el.value = opt.value;
+      setNative(el, opt.value);
     } else {
       let v = String(value);
       if (kind === 'cardExpYear' && el.maxLength === 2) v = v.slice(-2);
-      el.value = v;
+      setNative(el, v);
     }
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
@@ -1883,22 +2343,32 @@ window.addEventListener('DOMContentLoaded', async () => {
         el.dataset.gxAddrCardBound = '1';
         let filledOnce = false;
         const triggerFillOnGesture = async (ev) => {
-          if (filledOnce || !ev || !ev.isTrusted) return;
-          const form = el.closest('form') || document;
-          const [addresses, cards] = await Promise.all([loadAddresses(), loadCards()]);
-          if (!addresses.length && !cards.length) return;
-          filledOnce = true;
-          const addrVals = addresses.length ? addressValues(addresses[0]) : null;
-          const cardVals = cards.length ? cardValues(cards[0]) : null;
-          form.querySelectorAll('input, select, textarea').forEach((f) => {
-            const k = classifyField(f);
-            if (!k) return;
-            if (addrVals && k in addrVals) setFieldValue(f, k, addrVals[k]);
-            if (cardVals && k in cardVals) {
+          if (filledOnce || !ev || !ev.isTrusted || !isElementVisible(el)) return;
+          const isCardClick = CARD_FIELD_KINDS.has(kind);
+          const form = el.closest('form');
+          const targets = form ? Array.from(form.querySelectorAll('input, select, textarea')) : [el];
+          if (isCardClick) {
+            const cards = await loadCards();
+            if (!cards.length) return;
+            filledOnce = true;
+            const cardVals = cardValues(cards[0]);
+            targets.forEach((f) => {
+              const k = classifyField(f);
+              if (!k || !CARD_FIELD_KINDS.has(k) || !isElementVisible(f)) return;
               const v = k === 'cardExpYear' ? cardVals.cardExpYear : cardVals[k];
               setFieldValue(f, k, v);
-            }
-          });
+            });
+          } else {
+            const addresses = await loadAddresses();
+            if (!addresses.length) return;
+            filledOnce = true;
+            const addrVals = addressValues(addresses[0]);
+            targets.forEach((f) => {
+              const k = classifyField(f);
+              if (!k || CARD_FIELD_KINDS.has(k) || !isElementVisible(f)) return;
+              if (k in addrVals) setFieldValue(f, k, addrVals[k]);
+            });
+          }
         };
         el.addEventListener('focus', triggerFillOnGesture);
         el.addEventListener('click', triggerFillOnGesture);
@@ -2463,7 +2933,18 @@ function buildMainWorldMediaCaptureHook(symKey, bridgeName) {
       if (changed) applyAll();
     }
 
+    function stopObserver() {
+      if (observer) {
+        try { observer.disconnect(); } catch (_) {}
+        observer = null;
+      }
+    }
+
     function startObserver() {
+      if (currentVideoFx === 'off') {
+        stopObserver();
+        return;
+      }
       try {
         if (observer || !window.MutationObserver || !window.document.documentElement) return;
         observer = new window.MutationObserver((mutations) => {
@@ -2482,10 +2963,11 @@ function buildMainWorldMediaCaptureHook(symKey, bridgeName) {
       } catch (_) {}
     }
 
-    // Settings arrive async; apply on load and on every later change.
+    // Settings arrive async via dedicated read-only channel (never settings:get);
+    // apply on load and on every later change.
     try {
       ipcRenderer
-        .invoke('settings:get')
+        .invoke('pagefx:get-settings')
         .then((s) => {
           applySettings(s);
           startObserver();
@@ -2496,12 +2978,8 @@ function buildMainWorldMediaCaptureHook(symKey, bridgeName) {
     try {
       ipcRenderer.on('settings:update', (_e, s) => {
         applySettings(s);
+        startObserver();
       });
-    } catch (_) {}
-    // If the DOM is already there, start observing immediately so videos
-    // added before settings arrive still get the filter.
-    try {
-      if (window.document.documentElement) startObserver();
     } catch (_) {}
   } catch (_) {}
 })();

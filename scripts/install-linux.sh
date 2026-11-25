@@ -139,25 +139,15 @@ fi
 LAUNCHER="$BIN_DIR/$APP_ID"
 cat > "$LAUNCHER" <<EOF
 #!/usr/bin/env bash
-# nextGx Browser launcher — falls back gracefully on systems without FUSE
-# or unprivileged user namespaces. Each step runs only if the previous one
-# failed to start (non-zero exit); a normal browser session exits 0.
+# nextGx Browser launcher — detects FUSE availability upfront instead of
+# blindly relaunching or disabling the Chromium sandbox after a normal crash.
 APPIMAGE="$TARGET_APPIMAGE"
 
-# 1) Normal launch (needs FUSE to mount the AppImage + userns for the
-#    Chromium sandbox).
-if "\$APPIMAGE" "\$@"; then
-  exit 0
+if [ ! -e /dev/fuse ] || ! command -v fusermount >/dev/null 2>&1 && ! command -v fusermount3 >/dev/null 2>&1; then
+  export APPIMAGE_EXTRACT_AND_RUN=1
 fi
 
-# 2) No-FUSE fallback: extract-and-run instead of mounting.
-if APPIMAGE_EXTRACT_AND_RUN=1 "\$APPIMAGE" "\$@"; then
-  exit 0
-fi
-
-# 3) Last resort: also disable the Chromium sandbox (systems without
-#    unprivileged user namespaces), still with extract-and-run.
-exec env APPIMAGE_EXTRACT_AND_RUN=1 "\$APPIMAGE" --no-sandbox "\$@"
+exec "\$APPIMAGE" "\$@"
 EOF
 chmod +x "$LAUNCHER"
 

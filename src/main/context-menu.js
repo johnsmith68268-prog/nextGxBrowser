@@ -2,7 +2,7 @@ const { Menu, dialog } = require('electron');
 const path = require('path');
 const { state, windowContexts } = require('./core');
 const { broadcastState, broadcastBookmarksUpdate, broadcastSettingsUpdate } = require('./broadcast');
-const { formatDisplayUrl } = require('./navigation');
+const { formatDisplayUrl, resolveSearchEngineMeta, isUrlLikeInput } = require('./navigation');
 const { resolveInternalUiFile, isErrorPageUrl } = require('./utils');
 const { savePageAsPdf } = require('./screenshots');
 const { readClipboardText, writeClipboardText } = require('./clipboard-utils');
@@ -14,14 +14,7 @@ const windowsMod = () => require('./windows');
 const popoversMod = () => require('./popovers');
 
 function getSearchEngineMeta() {
-  const engine = state.storage?.getSettings?.()?.searchEngine || 'google';
-  if (engine === 'duckduckgo') {
-    return { name: 'DuckDuckGo', buildUrl: (q) => `https://duckduckgo.com/?q=${encodeURIComponent(q)}` };
-  }
-  if (engine === 'bing') {
-    return { name: 'Bing', buildUrl: (q) => `https://www.bing.com/search?q=${encodeURIComponent(q)}` };
-  }
-  return { name: 'Google', buildUrl: (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}` };
+  return resolveSearchEngineMeta();
 }
 
 function truncateLabel(text, max = 32) {
@@ -442,14 +435,7 @@ function attachWebContentsContextMenu(ctx, wc, { isSidebar = false } = {}) {
 }
 
 function isUrlLikeClipboard(text) {
-  const trimmed = String(text || '').trim();
-  if (!trimmed) return false;
-  if (/^(https?:\/\/|file:\/\/|view-source:|data:|(?:nextgx|chrome|gx):\/\/)/i.test(trimmed)) return true;
-  return (
-    /^(localhost(:\d+)?|(\d{1,3}\.){3}\d{1,3}(:\d+)?|([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(:\d+)?)(\/.*)?$/i.test(
-      trimmed
-    ) && !trimmed.includes(' ')
-  );
+  return isUrlLikeInput(text);
 }
 
 function attachChromeContextMenu(ctx) {

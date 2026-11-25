@@ -29,9 +29,16 @@ const YT_AD_FIELD_NAMES = [
   'playerAds',
   'adBreaks',
   'adBreak',
+  'adBreakParams',
+  'adBreakHeartbeatParams',
   'adInfo',
   'adSlotLoggingData',
-  'adPlacementsRenderer'
+  'adPlacementsRenderer',
+  'playerLegacyDesktopWatchAdsRenderer',
+  'instreamVideoAdRenderer',
+  'linearAdSequenceRenderer',
+  'mastheadAdRenderer',
+  'adSlotRenderer'
 ];
 
 // Keys inside a playback-tracking / ad-tracking payload. Removing the
@@ -39,8 +46,14 @@ const YT_AD_FIELD_NAMES = [
 // when they appear on their own so a partial response cannot re-arm ads.
 const YT_AD_TRACKING_KEYS = ['adPlacements', 'adSlots', 'playerAds'];
 
-// youtubei endpoints whose JSON may carry an ad schedule.
-const YT_PLAYER_ENDPOINTS = ['/youtubei/v1/player', '/youtubei/v1/next'];
+// youtubei endpoints whose JSON may carry an ad schedule or feed/shorts ads.
+const YT_PLAYER_ENDPOINTS = [
+  '/youtubei/v1/player',
+  '/youtubei/v1/next',
+  '/youtubei/v1/browse',
+  '/youtubei/v1/search',
+  '/youtubei/v1/reel/'
+];
 
 function isYouTubeHost(hostname) {
   if (!hostname || typeof hostname !== 'string') return false;
@@ -73,12 +86,11 @@ function isYouTubeAdStatsUrl(url) {
   if (!url || typeof url !== 'string') return false;
   return (
     url.indexOf('/api/stats/ads') !== -1 ||
-    url.indexOf('/pagead/') !== -1 ||
-    url.indexOf('youtube.com/api/stats/qoe') !== -1
+    url.indexOf('/pagead/') !== -1
   );
 }
 
-// Deep-strip ad fields from a parsed player/next response.
+// Deep-strip ad fields from a parsed player/next/browse response.
 // Returns { data, stripped } — `stripped` counts removed ad entries.
 // Never throws: on any unexpected shape it returns the input untouched.
 function stripYouTubePlayerResponse(input) {
@@ -90,10 +102,27 @@ function stripYouTubePlayerResponse(input) {
   function stripValue(value, depth) {
     if (!value || typeof value !== 'object' || depth > 24) return value;
     if (Array.isArray(value)) {
+      const out = [];
       for (let i = 0; i < value.length; i++) {
-        value[i] = stripValue(value[i], depth + 1);
+        const item = value[i];
+        if (
+          item &&
+          typeof item === 'object' &&
+          ((item.richItemRenderer &&
+            item.richItemRenderer.content &&
+            item.richItemRenderer.content.adSlotRenderer) ||
+            item.adSlotRenderer ||
+            item.inFeedAdLayoutRenderer ||
+            item.mastheadAdRenderer ||
+            item.promotedSparklesWebRenderer ||
+            item.compactPromotedVideoRenderer)
+        ) {
+          stripped += 1;
+          continue;
+        }
+        out.push(stripValue(item, depth + 1));
       }
-      return value;
+      return out;
     }
     for (const key of Object.keys(value)) {
       if (YT_AD_FIELD_NAMES.indexOf(key) !== -1) {
@@ -103,10 +132,6 @@ function stripYouTubePlayerResponse(input) {
         delete value[key];
         continue;
       }
-      // Inside a `playerResponse` wrapper the ad schedule lives under
-      // `adPlacements` etc. — the generic walk above already removes it.
-      // Also scrub ad-tracking params embedded in `trackingParams` blobs
-      // that name an ad slot, without touching video tracking params.
       if (key === 'adTrackingParams' || key === 'adInfoRenderer') {
         stripped += 1;
         delete value[key];
@@ -131,7 +156,17 @@ function stripYouTubePlayerResponse(input) {
 // ad fields, so the caller can pass the body through untouched.
 function stripYouTubePlayerResponseText(text) {
   if (!text || typeof text !== 'string') return { text, stripped: 0 };
-  if (text.indexOf('adPlacement') === -1 && text.indexOf('playerAds') === -1) {
+  if (
+    text.indexOf('adPlacement') === -1 &&
+    text.indexOf('playerAds') === -1 &&
+    text.indexOf('adSlots') === -1 &&
+    text.indexOf('adSlotRenderer') === -1 &&
+    text.indexOf('adBreak') === -1 &&
+    text.indexOf('mastheadAdRenderer') === -1 &&
+    text.indexOf('instreamVideoAdRenderer') === -1 &&
+    text.indexOf('linearAdSequenceRenderer') === -1 &&
+    text.indexOf('adInfoRenderer') === -1
+  ) {
     return { text, stripped: 0 };
   }
   let parsed;

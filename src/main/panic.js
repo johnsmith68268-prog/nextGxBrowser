@@ -33,14 +33,23 @@ function isRestorableUrl(url) {
 }
 
 function snapshotWindowTabs(ctx) {
+  let getPersistableTabUrl = null;
+  try {
+    getPersistableTabUrl = require('./session').getPersistableTabUrl;
+  } catch (_) {}
   const tabs = [];
   let activeIndex = 0;
   for (const id of ctx.tabOrder || []) {
     const tab = ctx.tabs ? ctx.tabs.get(id) : null;
-    if (!tab || !isRestorableUrl(tab.url)) continue;
+    if (!tab) continue;
+    const url =
+      typeof getPersistableTabUrl === 'function'
+        ? getPersistableTabUrl(tab) || tab.url
+        : tab.url;
+    if (!isRestorableUrl(url)) continue;
     if (id === ctx.activeTabId) activeIndex = tabs.length;
     tabs.push({
-      url: tab.url,
+      url,
       title: typeof tab.title === 'string' ? tab.title.slice(0, 300) : '',
       pinned: Boolean(tab.pinned),
       groupId: tab.pinned ? null : tab.groupId || null,
@@ -50,9 +59,11 @@ function snapshotWindowTabs(ctx) {
   return { tabs, activeIndex, savedAt: Date.now() };
 }
 
-function getStoredSnapshot() {
+function getStoredSnapshot(ctx = null) {
+  if (ctx && ctx.incognito) return null;
   try {
-    const snap = state.storage ? state.storage.getPanicSnapshot() : null;
+    const pid = ctx?.profileId || undefined;
+    const snap = state.storage ? state.storage.getPanicSnapshot(pid) : null;
     if (snap && Array.isArray(snap.tabs)) return snap;
   } catch (_) {}
   return null;
@@ -60,7 +71,7 @@ function getStoredSnapshot() {
 
 function getPanicState(ctx) {
   const mem = ctx && ctx._panicSnapshot ? ctx._panicSnapshot : null;
-  const snap = mem || getStoredSnapshot();
+  const snap = mem || getStoredSnapshot(ctx);
   return {
     active: Boolean(ctx && ctx.panicActive),
     hasSnapshot: Boolean(snap && Array.isArray(snap.tabs) && snap.tabs.length > 0),
@@ -74,27 +85,37 @@ function triggerPanic(ctx) {
   if (ctx.panicActive) return { ok: true, alreadyActive: true, state: getPanicState(ctx) };
   const snapshot = snapshotWindowTabs(ctx);
   if (!snapshot.tabs.length) {
-    // Nothing to hide except the Start page itself — still mark panic so a
-    // single neutral tab is shown.
     snapshot.tabs = [];
   }
   ctx._panicSnapshot = snapshot;
   if (!ctx.incognito) {
     try {
-      if (state.storage) state.storage.savePanicSnapshot(snapshot);
+      if (state.storage) state.storage.savePanicSnapshot(snapshot, ctx.profileId);
     } catch (_) {}
   }
   try {
-    if (ctx.popoverOpenKind) popoversMod().closePopover(ctx);
+    if (ctx.popoverOpenKind) popoversMod().closePopover(ctx, { restoreFocus: false });
   } catch (_) {}
   try {
-    sidebarMod().closeSidebarPanel(ctx, { restoreFocus: false });
+    const sb = sidebarMod();
+    sb.closeSidebarPanel(ctx, { restoreFocus: false });
+    if (ctx.sidebarPanel && ctx.sidebarPanel.views && typeof sb.suspendSidebarServiceView === 'function') {
+      for (const key of Array.from(ctx.sidebarPanel.views.keys())) {
+        try {
+          sb.suspendSidebarServiceView(ctx, key);
+        } catch (_) {}
+      }
+    }
   } catch (_) {}
 
   const ids = [...(ctx.tabOrder || [])];
   for (const id of ids) {
     try {
-      tabsMod().closeTab(ctx, id);
+      tabsMod().closeTab(ctx, id, {
+        skipSessionClose: true,
+        skipRecentlyClosed: true,
+        skipAutoNewTab: true
+      });
     } catch (_) {}
   }
   try {
@@ -109,19 +130,23 @@ function triggerPanic(ctx) {
 
 function restorePanic(ctx) {
   if (!ctx || !ctx.win || ctx.win.isDestroyed()) return { ok: false, error: 'No window.' };
-  const snapshot = ctx._panicSnapshot || getStoredSnapshot();
+  const snapshot = ctx._panicSnapshot || getStoredSnapshot(ctx);
   if (!snapshot || !Array.isArray(snapshot.tabs) || !snapshot.tabs.length) {
     ctx.panicActive = false;
     ctx._panicSnapshot = null;
     try {
-      if (state.storage) state.storage.clearPanicSnapshot();
+      if (state.storage && !ctx.incognito) state.storage.clearPanicSnapshot(ctx.profileId);
     } catch (_) {}
     return { ok: false, error: 'No panicked session to restore.' };
   }
   const ids = [...(ctx.tabOrder || [])];
   for (const id of ids) {
     try {
-      tabsMod().closeTab(ctx, id);
+      tabsMod().closeTab(ctx, id, {
+        skipSessionClose: true,
+        skipRecentlyClosed: true,
+        skipAutoNewTab: true
+      });
     } catch (_) {}
   }
   let firstRestoredId = null;
@@ -143,8 +168,6 @@ function restorePanic(ctx) {
       }
     } catch (_) {}
   }
-  // The snapshot stores tab URLs, not ids; the previously active tab is
-  // the entry at snapshot.activeIndex.
   const activeIdx =
     typeof snapshot.activeIndex === 'number' && snapshot.activeIndex >= 0
       ? snapshot.activeIndex
@@ -158,7 +181,7 @@ function restorePanic(ctx) {
   ctx.panicActive = false;
   ctx._panicSnapshot = null;
   try {
-    if (state.storage) state.storage.clearPanicSnapshot();
+    if (state.storage && !ctx.incognito) state.storage.clearPanicSnapshot(ctx.profileId);
   } catch (_) {}
   try {
     broadcastMod().broadcastState(ctx);

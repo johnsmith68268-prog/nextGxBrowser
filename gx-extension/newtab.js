@@ -13,15 +13,20 @@ const dialGrid = document.getElementById('dialGrid');
 const addModal = document.getElementById('addModal');
 
 function renderDials(list) {
-  dialGrid.innerHTML = '';
+  dialGrid.textContent = '';
   for (const item of list) {
     const card = document.createElement('div');
     card.className = 'dial-tile';
     card.style.background = item.bg || 'linear-gradient(135deg, #6441a5, #3b206c)';
-    card.innerHTML = `
-      <button class="tile-del" title="Remove">✕</button>
-      <span class="tile-title">${item.title}</span>
-    `;
+    const delBtn = document.createElement('button');
+    delBtn.className = 'tile-del';
+    delBtn.title = 'Remove';
+    delBtn.textContent = '✕';
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'tile-title';
+    titleSpan.textContent = String(item.title || '');
+    card.appendChild(delBtn);
+    card.appendChild(titleSpan);
     card.addEventListener('click', (e) => {
       if (e.target.closest('.tile-del')) {
         e.stopPropagation();

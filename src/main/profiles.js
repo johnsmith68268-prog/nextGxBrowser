@@ -33,7 +33,7 @@ function ensureProfileSessionInitialized(profileId, { setupPermissionsForSession
   initializedSessionList.add(ses);
 
   if (state.adBlocker) {
-    state.adBlocker.attachToSession(ses);
+    state.adBlocker.attachToSession(ses, pid);
   }
   const setupPerms = setupPermissionsForSession || require('./windows').setupPermissionsForSession;
   if (typeof setupPerms === 'function') {
@@ -41,13 +41,25 @@ function ensureProfileSessionInitialized(profileId, { setupPermissionsForSession
   }
   setupDownloadListener(ses, pid);
   registerCornerPreloadForSession(ses);
+  try {
+    const { applySessionPrivacyAndPrefs } = require('./ipc');
+    if (typeof applySessionPrivacyAndPrefs === 'function') {
+      applySessionPrivacyAndPrefs(ses, { incognito: false, profileId: pid });
+    }
+  } catch (_) { }
   if (ses !== session.defaultSession) {
     try {
       const { syncPersistedExtensionsToSession } = require('./extensions');
       if (typeof syncPersistedExtensionsToSession === 'function') {
-        syncPersistedExtensionsToSession(ses).catch(() => {});
+        syncPersistedExtensionsToSession(ses).catch(() => { });
       }
-    } catch (_) {}
+    } catch (_) { }
+    try {
+      const { loadBundledGxExtension } = require('./gx-extension');
+      if (typeof loadBundledGxExtension === 'function') {
+        loadBundledGxExtension({ sessions: [ses] }).catch(() => { });
+      }
+    } catch (_) { }
   }
   if (ses.cookies && typeof ses.cookies.on === 'function') {
     ses.cookies.on('changed', () => {
@@ -119,7 +131,7 @@ function focusProfileWindow(ctx) {
     }
     if (typeof ctx.win.focus === 'function') ctx.win.focus();
     if (typeof ctx.win.moveTop === 'function') ctx.win.moveTop();
-  } catch (_) {}
+  } catch (_) { }
   return true;
 }
 
@@ -278,8 +290,8 @@ async function deleteProfileAndCleanup(profileId) {
   try {
     const ses = getSessionForProfile(targetId);
     if (ses && ses !== session.defaultSession) {
-      await ses.clearStorageData().catch(() => {});
-      await ses.clearCache().catch(() => {});
+      await ses.clearStorageData().catch(() => { });
+      await ses.clearCache().catch(() => { });
     }
   } catch (err) {
     console.error(`[Profiles] Failed clearing session data for ${targetId}:`, err.message);
@@ -300,20 +312,30 @@ async function deleteProfileAndCleanup(profileId) {
 // UX phase: one shared "New Profile" modal lives in the shell (index.html).
 // Settings (a tab view) and the profile popover (a separate view) cannot show
 // it themselves, so they ask main to open it in the shell window instead.
-function requestOpenCreateProfileModal() {
-  let sent = false;
+function requestOpenCreateProfileModal(senderCtx = null) {
+  if (senderCtx && senderCtx.win && !senderCtx.win.isDestroyed()) {
+    if (senderCtx.incognito) {
+      return { ok: false, reason: 'incognito' };
+    }
+    try {
+      senderCtx.win.webContents.send('profiles:open-create-modal', { source: 'profile-menu' });
+      return { ok: true };
+    } catch (_) {
+      return { ok: false };
+    }
+  }
   for (const ctx of windowContexts.values()) {
     if (!ctx || !ctx.win || ctx.win.isDestroyed() || ctx.incognito) continue;
     try {
       ctx.win.webContents.send('profiles:open-create-modal', { source: 'profile-menu' });
-      sent = true;
-    } catch (_) {}
+      return { ok: true };
+    } catch (_) { }
   }
-  return { ok: sent };
+  return { ok: false };
 }
 
 function registerProfileIpcHandlers(handleInternal) {
-  handleInternal('profiles:open-create-modal', () => requestOpenCreateProfileModal());
+  handleInternal('profiles:open-create-modal', (e) => requestOpenCreateProfileModal(getCtxFromSender(e?.sender)));
 
   handleInternal('profiles:list', (e) => {
     const ctx = getCtxFromSender(e.sender);

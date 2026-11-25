@@ -187,12 +187,15 @@ function isTabPipActive(tab) {
  * Skips active, sleeping, pinned, audible, and PiP-active tabs (matching auto-hibernate rules).
  */
 function selectRamHibernationCandidate(contexts) {
+  let splitView = null;
+  try { splitView = require('./splitview'); } catch (_) {}
   const candidates = [];
   for (const ctx of contexts) {
     if (!ctx || !ctx.tabs) continue;
     for (const [id, tab] of ctx.tabs.entries()) {
       if (!tab) continue;
-      if (id === ctx.activeTabId || tab.sleeping || tab.pinned || tab.audible || isTabPipActive(tab)) {
+      const inSplit = Boolean(splitView && typeof splitView.isTabInVisibleSplit === 'function' && splitView.isTabInVisibleSplit(ctx, id));
+      if (id === ctx.activeTabId || inSplit || tab.sleeping || tab.pinned || tab.audible || isTabPipActive(tab)) {
         continue;
       }
       candidates.push({

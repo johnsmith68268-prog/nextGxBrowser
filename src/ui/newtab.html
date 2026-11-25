@@ -1455,6 +1455,10 @@
       editingDialId = null;
       document.getElementById('addDialTitle').textContent = 'Add Speed Dial';
       document.querySelector('#addDialForm button[type="submit"]').textContent = 'Add';
+      const titleInp = document.getElementById('dialTitleInput');
+      const urlInp = document.getElementById('dialUrlInput');
+      if (titleInp) titleInp.value = '';
+      if (urlInp) urlInp.value = '';
     }
 
     // Market audit bug #24: undo bar for a just-deleted Speed Dial.
@@ -1483,6 +1487,18 @@
     document.getElementById('btnCancelModal').addEventListener('click', () => {
       addModal.classList.remove('open');
       resetDialForm();
+    });
+    addModal.addEventListener('click', (e) => {
+      if (e.target === addModal) {
+        addModal.classList.remove('open');
+        resetDialForm();
+      }
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && addModal.classList.contains('open')) {
+        addModal.classList.remove('open');
+        resetDialForm();
+      }
     });
 
     document.getElementById('addDialForm').addEventListener('submit', async (e) => {
@@ -1819,7 +1835,13 @@
       const dialHosts = new Set(
         (Array.isArray(speedDialList) ? speedDialList : [])
           .map((d) => {
-            try { return new URL(d.url).hostname.replace(/^www\./, '').toLowerCase(); } catch (_) { return ''; }
+            try {
+              const raw = String(d.url || '').trim();
+              const u = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+              return u.hostname.replace(/^www\./, '').toLowerCase();
+            } catch (_) {
+              return '';
+            }
           })
           .filter(Boolean)
       );
@@ -1834,7 +1856,7 @@
           const u = new URL(item.url);
           if (u.protocol !== 'http:' && u.protocol !== 'https:') continue;
           const host = u.hostname.replace(/^www\./, '').toLowerCase();
-          if (!host || seen.has(host)) continue;
+          if (!host || seen.has(host) || dialHosts.has(host)) continue;
           seen.add(host);
           picks.push({ host, url: u.origin });
           if (picks.length >= 4) break;

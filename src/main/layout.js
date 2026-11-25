@@ -49,10 +49,10 @@ function getMaxEffectiveSidebarPanelWidth(ctx) {
     EFFECTIVE_PANEL_MIN_FLOOR,
     Math.floor(contentWidth - SIDEBAR_ICON_WIDTH - rightOffset - MIN_TAB_VIEWPORT_WIDTH)
   );
-  // UX phase: panel may grow to 800px OR 50% of the window, whichever is smaller,
-  // so a wide panel can never squeeze the tab viewport below its minimum.
-  const halfWindow = Math.floor(contentWidth / 2);
-  return Math.min(SIDEBAR_PANEL_MAX_WIDTH, halfWindow, maxAvail);
+  // Allow dragging the sidebar panel all the way up to SIDEBAR_PANEL_MAX_WIDTH (800px)
+  // or 72% of the window (leaving at least MIN_TAB_VIEWPORT_WIDTH for the active tab).
+  const proportionalCap = Math.floor(contentWidth * 0.72);
+  return Math.min(SIDEBAR_PANEL_MAX_WIDTH, proportionalCap, maxAvail);
 }
 
 // Pure, unit-testable form of the 50%-of-window cap (no BrowserWindow needed).
@@ -161,10 +161,14 @@ function updateActiveViewBounds(ctx) {
   const panel = ctx.sidebarPanel;
   const panelOpen = Boolean(panel && panel.open && panel.activeKey);
   const panelWidth = getEffectiveSidebarPanelWidth(ctx, panel ? panel.width : SIDEBAR_PANEL_DEFAULT_WIDTH);
+  const railWidth =
+    typeof ctx.layoutState.railWidth === 'number' && Number.isFinite(ctx.layoutState.railWidth) && ctx.layoutState.railWidth >= SIDEBAR_ICON_WIDTH
+      ? ctx.layoutState.railWidth
+      : SIDEBAR_ICON_WIDTH;
   const effectiveTabLeft =
     panelOpen && panel.pinned
-      ? SIDEBAR_ICON_WIDTH + panelWidth
-      : Math.max(SIDEBAR_ICON_WIDTH, ctx.layoutState.left || SIDEBAR_ICON_WIDTH);
+      ? railWidth + panelWidth
+      : Math.max(railWidth, ctx.layoutState.left || railWidth);
 
   const contentW = Math.max(120, contentWidth - effectiveTabLeft - rightOffset);
   const contentH = Math.max(120, contentHeight - top - bottomOffset);
@@ -220,7 +224,7 @@ function updateActiveViewBounds(ctx) {
   if (ctx.sidebarPanelFrameView) {
     if (panelOpen) {
       showView(ctx.sidebarPanelFrameView, {
-        x: SIDEBAR_ICON_WIDTH,
+        x: railWidth,
         y: top,
         width: panelWidth,
         height: Math.max(120, contentHeight - top - bottomOffset)
@@ -238,7 +242,7 @@ function updateActiveViewBounds(ctx) {
       if (!view) continue;
       if (panelOpen && key === panel.activeKey) {
         showView(view, {
-          x: SIDEBAR_ICON_WIDTH,
+          x: railWidth,
           y: panelY,
           width: panelContentW,
           height: panelH

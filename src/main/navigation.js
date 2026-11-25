@@ -63,8 +63,102 @@ function formatDisplayUrl(rawUrl) {
   return rawUrl || '';
 }
 
-function resolveNavigateInput(input) {
-  const trimmed = (input || '').trim();
+function buildSearchUrl(template, query) {
+  const t =
+    typeof template === 'string' && template.includes('%s')
+      ? template
+      : 'https://www.google.com/search?q=%s';
+  return t.replace('%s', encodeURIComponent(query));
+}
+
+function resolveSearchEngineMeta(settingsOverride = null) {
+  const settings = settingsOverride || (state.storage ? state.storage.getSettings() : {});
+  const engines = Array.isArray(settings?.searchEngines) ? settings.searchEngines : [];
+  const chosenId = settings?.searchEngine || 'google';
+  const match = engines.find((e) => e && e.id === chosenId && !e.siteSearch);
+  if (match && typeof match.url === 'string' && match.url.includes('%s')) {
+    return {
+      id: match.id,
+      name: match.name || match.id,
+      template: match.url,
+      buildUrl: (q) => buildSearchUrl(match.url, q)
+    };
+  }
+  if (chosenId === 'duckduckgo') {
+    return { id: 'duckduckgo', name: 'DuckDuckGo', template: 'https://duckduckgo.com/?q=%s', buildUrl: (q) => buildSearchUrl('https://duckduckgo.com/?q=%s', q) };
+  }
+  if (chosenId === 'bing') {
+    return { id: 'bing', name: 'Bing', template: 'https://www.bing.com/search?q=%s', buildUrl: (q) => buildSearchUrl('https://www.bing.com/search?q=%s', q) };
+  }
+  if (chosenId === 'brave') {
+    return { id: 'brave', name: 'Brave Search', template: 'https://search.brave.com/search?q=%s', buildUrl: (q) => buildSearchUrl('https://search.brave.com/search?q=%s', q) };
+  }
+  if (chosenId === 'ecosia') {
+    return { id: 'ecosia', name: 'Ecosia', template: 'https://www.ecosia.org/search?q=%s', buildUrl: (q) => buildSearchUrl('https://www.ecosia.org/search?q=%s', q) };
+  }
+  return { id: 'google', name: 'Google', template: 'https://www.google.com/search?q=%s', buildUrl: (q) => buildSearchUrl('https://www.google.com/search?q=%s', q) };
+}
+
+function isValidIpv4Host(host) {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (!m) return false;
+  for (let i = 1; i <= 4; i++) {
+    const n = Number(m[i]);
+    if (n < 0 || n > 255) return false;
+  }
+  return true;
+}
+
+function splitBareAuthority(trimmed) {
+  const m = /^(\[[0-9a-fA-F:]+\]|[^/?#\s:]+)(?::(\d{1,5}))?([/?#].*)?$/.exec(trimmed);
+  if (!m) return null;
+  if (m[2]) {
+    const port = Number(m[2]);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+  }
+  return { host: m[1].toLowerCase(), port: m[2] || '', rest: m[3] || '' };
+}
+
+function isLocalOrPrivateAuthority(host) {
+  if (
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    host.endsWith('.local') ||
+    host === '[::1]'
+  ) {
+    return true;
+  }
+  if (!isValidIpv4Host(host)) return false;
+  const parts = host.split('.').map(Number);
+  return (
+    parts[0] === 127 ||
+    parts[0] === 10 ||
+    (parts[0] === 192 && parts[1] === 168) ||
+    (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31)
+  );
+}
+
+function isDomainOrIpAuthority(host) {
+  if (host.startsWith('[') && host.endsWith(']')) return true;
+  if (isValidIpv4Host(host)) return true;
+  if (host.startsWith('-') || host.endsWith('-')) return false;
+  return /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,63}|xn--[a-z0-9-]{2,59})$/i.test(host);
+}
+
+function isUrlLikeInput(input) {
+  const trimmed = String(input || '').trim();
+  if (!trimmed || /\s/.test(trimmed)) return false;
+  if (/^(https?:\/\/|chrome-extension:\/\/|file:\/\/|view-source:|data:|about:|blob:|(?:nextgx|chrome|gx):\/\/)/i.test(trimmed)) {
+    return true;
+  }
+  if (/^[a-zA-Z]:[\\/]/.test(trimmed)) return true;
+  const auth = splitBareAuthority(trimmed);
+  if (!auth) return false;
+  return isLocalOrPrivateAuthority(auth.host) || isDomainOrIpAuthority(auth.host);
+}
+
+function resolveNavigateInput(input, settingsOverride = null) {
+  const trimmed = String(input || '').trim();
   if (
     !trimmed ||
     trimmed === 'nextgx://newtab' ||
@@ -74,36 +168,66 @@ function resolveNavigateInput(input) {
   ) {
     return NEW_TAB_FILE_URL;
   }
-  const internalMatch = trimmed.match(/^(?:nextgx|chrome|gx):\/\/([a-z0-9-]+)\/?$/i);
+  if (/^about:blank$/i.test(trimmed)) {
+    return 'about:blank';
+  }
+  const internalMatch = trimmed.match(/^(?:nextgx|chrome|gx):\/\/([a-z0-9-]+)(?:\/([a-z0-9-]+))?([?#].*)?$/i);
   if (internalMatch) {
     let page = internalMatch[1].toLowerCase();
+    const sub = internalMatch[2] ? internalMatch[2].toLowerCase() : '';
+    const suffix = internalMatch[3] || '';
     if (page === 'corner' || page === 'gx-corner' || page === 'gxcorner') {
       return CORNER_FILE_URL;
     }
     if (page === 'password-manager') page = 'passwords';
     if (page === 'privacy-dashboard') page = 'privacy';
     if (['history', 'downloads', 'bookmarks', 'passwords', 'privacy', 'extensions', 'settings'].includes(page)) {
+      if (page === 'settings' && sub) {
+        return `${WEBUI_FILE_URL}#settings/${sub}`;
+      }
+      if (suffix.startsWith('#') && page === 'settings') {
+        return `${WEBUI_FILE_URL}#settings/${suffix.slice(1)}`;
+      }
       return `${WEBUI_FILE_URL}#${page}`;
     }
+    return NEW_TAB_FILE_URL;
   }
-  if (/^(https?:\/\/|chrome-extension:\/\/|file:\/\/|view-source:|data:)/i.test(trimmed)) return trimmed;
-  const isLocalHostOrPrivateIp =
-    /^(localhost|127\.\d{1,3}\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}|\[::1\])(:\d+)?(\/.*)?$/i.test(
-      trimmed
-    ) && !trimmed.includes(' ');
-  if (isLocalHostOrPrivateIp) return `http://${trimmed}`;
+  if (/^(https?:\/\/|chrome-extension:\/\/|file:\/\/|view-source:|data:|blob:|about:)/i.test(trimmed)) {
+    return trimmed;
+  }
+  if (/^[a-zA-Z]:[\\/]/.test(trimmed)) {
+    try {
+      const { pathToFileURL } = require('url');
+      return pathToFileURL(trimmed).toString();
+    } catch (_) {}
+  }
 
-  const isDomainOrIp =
-    /^((\d{1,3}\.){3}\d{1,3}(:\d+)?|([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(:\d+)?)(\/.*)?$/i.test(
-      trimmed
-    ) && !trimmed.includes(' ');
-  if (isDomainOrIp) return `https://${trimmed}`;
+  if (!/\s/.test(trimmed)) {
+    const auth = splitBareAuthority(trimmed);
+    if (auth) {
+      if (isLocalOrPrivateAuthority(auth.host)) return `http://${trimmed}`;
+      if (isDomainOrIpAuthority(auth.host)) return `https://${trimmed}`;
+    }
+  }
 
-  const settings = state.storage.getSettings();
-  const q = encodeURIComponent(trimmed);
-  if (settings.searchEngine === 'duckduckgo') return `https://duckduckgo.com/?q=${q}`;
-  if (settings.searchEngine === 'bing') return `https://www.bing.com/search?q=${q}`;
-  return `https://www.google.com/search?q=${q}`;
+  const settings = settingsOverride || (state.storage ? state.storage.getSettings() : {});
+  const engines = Array.isArray(settings?.searchEngines) ? settings.searchEngines : [];
+  const shortcutMode = settings?.searchShortcutMode === 'tab' ? 'tab' : 'space-or-tab';
+  const kwMatch =
+    shortcutMode === 'tab'
+      ? /^([^\s\t]+)\t+([\s\S]+)$/.exec(trimmed)
+      : /^([^\s\t]+)[\s\t]+([\s\S]+)$/.exec(trimmed);
+  if (kwMatch) {
+    const keyword = kwMatch[1].toLowerCase();
+    const query = kwMatch[2].trim();
+    const kwEngine = engines.find(
+      (e) => e && typeof e.keyword === 'string' && e.keyword && e.keyword.toLowerCase() === keyword
+    );
+    if (kwEngine && query) {
+      return buildSearchUrl(kwEngine.url, query);
+    }
+  }
+  return resolveSearchEngineMeta(settings).buildUrl(trimmed);
 }
 
 function getConfiguredHomepageUrl() {
@@ -117,6 +241,9 @@ module.exports = {
   formatFailedTabTitle,
   buildErrorPageUrl,
   formatDisplayUrl,
+  buildSearchUrl,
+  resolveSearchEngineMeta,
+  isUrlLikeInput,
   resolveNavigateInput,
   getConfiguredHomepageUrl
 };

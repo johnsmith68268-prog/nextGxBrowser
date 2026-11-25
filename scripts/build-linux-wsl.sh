@@ -44,6 +44,9 @@ rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 cp -r "$SRC_ROOT/src" "$BUILD_DIR/"
 cp -r "$SRC_ROOT/build" "$BUILD_DIR/"
+if [ -d "$SRC_ROOT/gx-extension" ]; then
+  cp -r "$SRC_ROOT/gx-extension" "$BUILD_DIR/"
+fi
 cp "$SRC_ROOT/package.json" "$SRC_ROOT/package-lock.json" "$BUILD_DIR/"
 # n-5: tests must be present in the build dir so `npm test` below can run.
 if [ -d "$SRC_ROOT/tests" ]; then

@@ -1086,7 +1086,7 @@ body {
 .toolbar-icon-btn {
   width: 29px;
   height: 29px;
-  border-radius: var(--nx-radius-sm);
+  border-radius: 50%;
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-muted);
@@ -1096,6 +1096,22 @@ body {
   cursor: pointer;
   position: relative;
   transition: background var(--nx-motion-fast) var(--nx-motion-ease), border-color var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+}
+
+.nav-icon-btn.is-stop {
+  color: var(--text-main);
+}
+
+/* Loading spinner ring orbits right around the corner Stop (✕) button */
+.nav-icon-btn.is-stop::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--nx-accent) 24%, transparent);
+  border-top-color: var(--nx-accent-bright);
+  pointer-events: none;
+  animation: nxSpin 0.75s linear infinite;
 }
 
 .nav-icon-btn:hover:not(:disabled),
@@ -1174,30 +1190,36 @@ body {
 }
 
 .address-lead-btn {
-  height: 22px;
-  padding: 0 6px;
+  height: 26px;
+  padding: 0 8px;
   border: none;
-  border-radius: 5px;
+  border-radius: 13px;
   background: transparent;
   color: var(--success);
   display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: 11px;
+  gap: 5px;
+  font-size: 11.5px;
   font-weight: 600;
   cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease);
 }
 
 .address-lead-btn:hover {
-  background: var(--bg-surface);
+  background: color-mix(in srgb, var(--bg-surface) 85%, transparent);
+}
+
+.address-lead-btn.neutral {
+  color: var(--text-muted);
 }
 
 .address-lead-btn.insecure {
   color: var(--warning);
   background: color-mix(in srgb, var(--warning) 15%, transparent);
   border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
-  padding: 0 7px;
-  border-radius: var(--nx-radius-xs);
+  padding: 0 9px;
+  border-radius: 13px;
 }
 
 .dl-active-dot {
@@ -1211,23 +1233,29 @@ body {
   box-shadow: 0 0 6px var(--nx-accent-bright);
 }
 
+/* Chrome × Opera GX Omnibox pill — comfortable 34px height, crisp focus halo */
 .nx-address-capsule {
   flex: 1;
-  height: 30px;
-  background: var(--bg-deep);
-  border: 1px solid var(--border-glass);
-  border-radius: var(--nx-radius-sm);
-  clip-path: var(--nx-chamfer);
+  height: 34px;
+  background: color-mix(in srgb, var(--bg-deep) 78%, var(--bg-surface));
+  border: 1.5px solid color-mix(in srgb, var(--border-glass) 130%, transparent);
+  border-radius: 17px;
   display: flex;
   align-items: center;
-  padding: 0 8px;
-  gap: 7px;
-  transition: border-color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+  padding: 0 6px 0 8px;
+  gap: 6px;
+  transition: background var(--nx-motion-fast) var(--nx-motion-ease), border-color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+}
+
+.nx-address-capsule:hover {
+  background: color-mix(in srgb, var(--bg-deep) 66%, var(--bg-surface));
+  border-color: color-mix(in srgb, var(--nx-accent) 45%, var(--border-glass));
 }
 
 .nx-address-capsule:focus-within {
+  background: var(--bg-deep);
   border-color: var(--nx-accent);
-  box-shadow: var(--nx-glow-md), inset 0 0 10px var(--nx-accent-soft);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--nx-accent) 28%, transparent), var(--nx-glow-sm);
 }
 
 .address-lead-icon {
@@ -1238,15 +1266,26 @@ body {
 
 .nx-address-input {
   flex: 1;
+  min-width: 0;
+  height: 100%;
   background: transparent;
   border: none;
   outline: none;
   color: var(--text-main);
-  font-size: 12.5px;
+  font-size: 13.5px;
+  font-weight: 450;
+  letter-spacing: 0.01em;
+  padding: 0 4px;
 }
 
 .nx-address-input::placeholder {
   color: var(--text-muted);
+  opacity: 0.8;
+}
+
+.nx-address-input::selection {
+  background: color-mix(in srgb, var(--nx-accent) 42%, transparent);
+  color: var(--text-main);
 }
 
 .private-pill {
@@ -1257,24 +1296,24 @@ body {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  padding: 2px 8px;
-  border-radius: var(--nx-radius-xs);
-  clip-path: var(--nx-chamfer-sm);
+  padding: 3px 9px;
+  border-radius: 999px;
 }
 
 .capsule-btn {
-  height: 22px;
-  padding: 0 6px;
-  border-radius: var(--nx-radius-xs);
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 13px;
   border: none;
   background: transparent;
   color: var(--text-muted);
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 600;
   cursor: pointer;
+  flex-shrink: 0;
   transition: background var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
 }
 
@@ -1679,8 +1718,7 @@ body {
 .sidebar-btn {
   width: 36px;
   height: 36px;
-  border-radius: var(--nx-radius-md);
-  clip-path: var(--nx-chamfer-sm);
+  border-radius: 10px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-muted);
@@ -1763,8 +1801,8 @@ body {
   max-width: 800px;
   height: 100%;
   background: var(--bg-chrome);
-  border-right: 1px solid var(--nx-accent);
-  box-shadow: var(--nx-shadow-lg), var(--nx-glow-sm);
+  border-right: none;
+  box-shadow: var(--nx-shadow-lg);
   display: flex;
   flex-direction: column;
   position: absolute;
@@ -1859,13 +1897,13 @@ body {
 
 .sidebar-panel-resizer:hover::before,
 .sidebar-panel-resizer.dragging::before {
-  background: var(--nx-accent-bright);
+  background: transparent;
 }
 
 .sidebar-panel-resizer:hover,
 .sidebar-panel-resizer.dragging {
-  background: var(--nx-accent);
-  box-shadow: var(--nx-glow-sm);
+  background: transparent;
+  box-shadow: none;
 }
 
 /* DRAWERS */
@@ -3007,7 +3045,9 @@ input:focus-visible,
   text-overflow: ellipsis;
 }
 
-.nx-sidebar.rail-hover-expand:hover,
+/* Only expand the rail when explicitly toggled via #btnRailExpand (.expanded),
+   which shifts WebContentsView bounds to 184px cleanly. Hover-expanding via
+   position:absolute over a native WebContentsView gets sliced off at 50px. */
 .nx-sidebar.expanded {
   position: absolute;
   left: 0;
@@ -3021,12 +3061,10 @@ input:focus-visible,
   padding: 10px 8px;
 }
 
-.nx-sidebar.rail-hover-expand:hover .sidebar-group,
 .nx-sidebar.expanded .sidebar-group {
   align-items: stretch;
 }
 
-.nx-sidebar.rail-hover-expand:hover .sidebar-btn,
 .nx-sidebar.expanded .sidebar-btn {
   width: 100%;
   justify-content: flex-start;
@@ -3034,12 +3072,10 @@ input:focus-visible,
   gap: 10px;
 }
 
-.nx-sidebar.rail-hover-expand:hover .sidebar-label,
 .nx-sidebar.expanded .sidebar-label {
   display: block;
 }
 
-.nx-sidebar.rail-hover-expand:hover .sidebar-btn.active::before,
 .nx-sidebar.expanded .sidebar-btn.active::before {
   left: -8px;
 }
@@ -3203,6 +3239,7 @@ input:focus-visible,
    Loading spinners keep spinning (they signal work in progress). */
 body.battery-saver .nx-modal,
 body.battery-saver .sidebar-panel,
+body.battery-saver .nx-sidebar-panel,
 body.battery-saver .nx-toast,
 body.battery-saver .nx-right-drawer {
   animation-duration: 0.01ms !important;

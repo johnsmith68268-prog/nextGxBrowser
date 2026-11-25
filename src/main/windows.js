@@ -71,10 +71,16 @@ function createBrowserWindow({ incognito = false, restoreTabs = null, profileId 
     : ensureProfileSessionInitialized(resolvedProfileId, { setupPermissionsForSession });
 
   if (incognito) {
-    state.adBlocker.attachToSession(winSession);
+    state.adBlocker.attachToSession(winSession, resolvedProfileId);
     setupPermissionsForSession(winSession, resolvedProfileId, { incognito: true });
     setupDownloadListener(winSession, resolvedProfileId, { incognito: true });
     registerCornerPreloadForSession(winSession);
+    try {
+      const { applySessionPrivacyAndPrefs } = require('./ipc');
+      if (typeof applySessionPrivacyAndPrefs === 'function') {
+        applySessionPrivacyAndPrefs(winSession, { incognito: true, profileId: resolvedProfileId });
+      }
+    } catch (_) {}
   }
 
   const profileSettings = state.storage ? state.storage.getSettings(resolvedProfileId) : {};
@@ -179,12 +185,18 @@ function createBrowserWindow({ incognito = false, restoreTabs = null, profileId 
     query: getInternalUiQuery(incognito, resolvedProfileId)
   });
 
+  const TRANSIENT_POPOVERS = new Set([
+    'tab-context',
+    'bookmark-folder',
+    'omnibox-suggest',
+    'omnibox-suggest-alt',
+    'rail-context',
+    'tab-search',
+    'tab-hover'
+  ]);
   win.on('resize', () => {
-    if (
-      ctx.popoverOpenKind === 'tab-context' ||
-      ctx.popoverOpenKind === 'bookmark-folder'
-    ) {
-      closePopover(ctx);
+    if (TRANSIENT_POPOVERS.has(ctx.popoverOpenKind)) {
+      closePopover(ctx, { restoreFocus: false });
     }
     updateActiveViewBounds(ctx);
     if (ctx.sidebarPanel?.open) {
@@ -192,11 +204,8 @@ function createBrowserWindow({ incognito = false, restoreTabs = null, profileId 
     }
   });
   win.on('blur', () => {
-    if (
-      ctx.popoverOpenKind === 'tab-context' ||
-      ctx.popoverOpenKind === 'bookmark-folder'
-    ) {
-      closePopover(ctx);
+    if (TRANSIENT_POPOVERS.has(ctx.popoverOpenKind)) {
+      closePopover(ctx, { restoreFocus: false });
     }
   });
   win.on('maximize', () => updateActiveViewBounds(ctx));
@@ -232,13 +241,29 @@ function createBrowserWindow({ incognito = false, restoreTabs = null, profileId 
     }
     cleanupWindowFullscreen(ctx);
     cleanupSidebarPanelViews(ctx);
+    try {
+      const { closeExtensionPopup } = require('./extension-popup');
+      if (typeof closeExtensionPopup === 'function') closeExtensionPopup(ctx);
+    } catch (_) {}
     if (ctx.screenshotView) {
-      if (ctx.screenshotView.webContents) webContentsToWinId.delete(ctx.screenshotView.webContents.id);
+      try {
+        const wc = ctx.screenshotView.webContents;
+        if (wc) {
+          webContentsToWinId.delete(wc.id);
+          if (typeof wc.isDestroyed === 'function' && !wc.isDestroyed()) wc.close();
+        }
+      } catch (_) {}
       ctx.screenshotView = null;
     }
     ctx.pendingScreenshotDataUrl = '';
     if (ctx.popoverView) {
-      if (ctx.popoverView.webContents) webContentsToWinId.delete(ctx.popoverView.webContents.id);
+      try {
+        const wc = ctx.popoverView.webContents;
+        if (wc) {
+          webContentsToWinId.delete(wc.id);
+          if (typeof wc.isDestroyed === 'function' && !wc.isDestroyed()) wc.close();
+        }
+      } catch (_) {}
       ctx.popoverView = null;
     }
     // [FIXUP] Destroy the window's remaining tab views. closeTab() does this

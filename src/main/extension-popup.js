@@ -180,7 +180,7 @@ function openExtensionPopup(ctx, id, anchor = null) {
 
   const view = new WebContentsView({
     webPreferences: {
-      session: session.defaultSession,
+      session: ctx.session || session.defaultSession,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true

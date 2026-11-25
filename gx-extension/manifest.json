@@ -1,31 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "GX Browser Core — Player, AdBlocker & Speed Dial",
+  "name": "GX Browser Core — AdBlocker DNR Ruleset",
   "version": "2.0.0",
-  "description": "Built-in Opera GX Sidebar Player (YouTube Music, Spotify, SoundCloud), Ad & Tracker Blocker, RAM Saver, and Speed Dial for Chromium.",
+  "description": "Internal bundled DNR ad & tracker ruleset for nextGx Browser.",
   "permissions": [
-    "sidePanel",
-    "storage",
-    "tabs",
-    "declarativeNetRequest",
-    "declarativeNetRequestWithHostAccess",
-    "browsingData"
+    "declarativeNetRequest"
   ],
-  "host_permissions": [
-    "<all_urls>"
-  ],
-  "background": {
-    "service_worker": "background.js"
-  },
-  "action": {
-    "default_title": "Open GX Sidebar Player & Control"
-  },
-  "side_panel": {
-    "default_path": "sidepanel.html"
-  },
-  "chrome_url_overrides": {
-    "newtab": "newtab.html"
-  },
   "declarative_net_request": {
     "rule_resources": [
       {
@@ -34,12 +14,5 @@
         "path": "rules.json"
       }
     ]
-  },
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "css": ["cosmetic-adblock.css"],
-      "run_at": "document_start"
-    }
-  ]
+  }
 }

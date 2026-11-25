@@ -2,7 +2,7 @@
   "name": "nextgx-browser",
   "productName": "nextGx Browser",
   "desktopName": "nextgx-browser.desktop",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "homepage": "https://github.com/johnsmith68268-prog/nextGxBrowser",
   "description": "nextGx Browser — Modern Apple-Crafted Chromium Desktop Browser with Built-in Privacy Shield, Media Dock, Pro Download Manager, and 8 GB Memory Saver",
   "main": "src/main.js",
@@ -45,7 +45,18 @@
       "package.json"
     ],
     "asarUnpack": [
-      "gx-extension/**/*"
+      "gx-extension/**/*",
+      "build/icon.ico",
+      "build/icon.png"
+    ],
+    "protocols": [
+      {
+        "name": "nextGx Browser Web Protocol",
+        "schemes": [
+          "http",
+          "https"
+        ]
+      }
     ],
     "linux": {
       "icon": "build/icon.png",
@@ -103,6 +114,7 @@
       "createStartMenuShortcut": true,
       "shortcutName": "nextGx Browser",
       "artifactName": "${productName}-Setup-${version}-${arch}.${ext}",
+      "include": "build/installer.nsh",
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "installerHeaderIcon": "build/icon.ico"

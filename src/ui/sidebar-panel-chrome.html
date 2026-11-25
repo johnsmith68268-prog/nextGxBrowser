@@ -37,7 +37,7 @@
       width: 100%;
       height: 100%;
       background: var(--bg-chrome);
-      border-right: 1px solid var(--nx-accent);
+      border-right: none;
       display: flex;
       flex-direction: column;
       position: relative;
@@ -134,19 +134,18 @@
     .sidebar-panel-resizer {
       position: absolute;
       top: 0;
-      right: -1px;
-      width: 7px;
+      right: 0;
+      width: 10px;
       height: 100%;
       cursor: ew-resize;
       background: transparent;
       z-index: 2;
-      transition: background var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
     }
 
     .sidebar-panel-resizer:hover,
     .sidebar-panel-resizer.dragging {
-      background: var(--nx-accent);
-      box-shadow: var(--nx-glow-sm);
+      background: transparent;
+      box-shadow: none;
     }
   </style>
 </head>
@@ -345,11 +344,12 @@
       applySidebarPanelState(state);
     });
 
-    function beginSidebarPanelResize(clientX, pointerId = null) {
+    function beginSidebarPanelResize(screenX, pointerId = null) {
       if (isResizingSidebarPanel) return;
       isResizingSidebarPanel = true;
+      window.gxAPI.setSidebarResizing?.(true);
       sidebarResizeStartWidth = clampEffectiveWidth(sidebarPanelState.width);
-      sidebarResizeStartX = typeof clientX === 'number' ? clientX : sidebarResizeStartWidth;
+      sidebarResizeStartX = typeof screenX === 'number' ? screenX : sidebarResizeStartWidth;
       activeSidebarPointerId = pointerId;
       sidebarPanelResizer.classList.add('dragging');
       sidebarPanel.classList.add('resizing');
@@ -360,9 +360,9 @@
       }
     }
 
-    function updateSidebarPanelResize(clientX) {
-      if (!isResizingSidebarPanel || typeof clientX !== 'number') return;
-      const delta = clientX - sidebarResizeStartX;
+    function updateSidebarPanelResize(screenX) {
+      if (!isResizingSidebarPanel || typeof screenX !== 'number') return;
+      const delta = screenX - sidebarResizeStartX;
       const nextWidth = clampEffectiveWidth(sidebarResizeStartWidth + delta);
       if (nextWidth !== sidebarPanelState.width) {
         sidebarPanelState.width = nextWidth;
@@ -384,28 +384,35 @@
       const finalWidth = clampEffectiveWidth(sidebarPanelState.width);
       sidebarPanelState.width = finalWidth;
       window.gxAPI.setSidebarWidth(finalWidth, { persist: true });
+      window.gxAPI.setSidebarResizing?.(false);
     }
+
+    sidebarPanelResizer.addEventListener('dblclick', (e) => {
+      e.preventDefault();
+      sidebarPanelState.width = 380;
+      window.gxAPI.setSidebarWidth(380, { persist: true });
+    });
 
     sidebarPanelResizer.addEventListener('pointerdown', (e) => {
       if (e.button !== undefined && e.button !== 0) return;
       e.preventDefault();
-      beginSidebarPanelResize(e.clientX, e.pointerId);
+      beginSidebarPanelResize(e.screenX, e.pointerId);
     });
 
     sidebarPanelResizer.addEventListener('mousedown', (e) => {
       if (e.button !== 0 || isResizingSidebarPanel) return;
       e.preventDefault();
-      beginSidebarPanelResize(e.clientX, null);
+      beginSidebarPanelResize(e.screenX, null);
     });
 
     window.addEventListener('pointermove', (e) => {
       if (!isResizingSidebarPanel) return;
-      updateSidebarPanelResize(e.clientX);
+      updateSidebarPanelResize(e.screenX);
     });
 
     window.addEventListener('mousemove', (e) => {
       if (!isResizingSidebarPanel) return;
-      updateSidebarPanelResize(e.clientX);
+      updateSidebarPanelResize(e.screenX);
     });
 
     window.addEventListener('pointerup', () => {

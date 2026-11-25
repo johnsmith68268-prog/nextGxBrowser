@@ -151,7 +151,7 @@ function buildPrivacyDashboardData(ctx, profileId) {
     adblock,
     adblockSites,
     sitePermissions,
-    trackedPermissionKeys: ['camera', 'microphone', 'geolocation', 'notifications'],
+    trackedPermissionKeys: ['camera', 'microphone', 'geolocation', 'notifications', 'clipboard-read', 'screen-share'],
     settings: {
       adblockEnabled: Boolean(settings.adblockEnabled),
       trackerBlockEnabled:

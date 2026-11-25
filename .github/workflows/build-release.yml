@@ -17,17 +17,14 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      # NOTE (s-11): build:win:all intentionally builds NSIS + portable only.
-      # The MSIX target is unsigned (publisher CN=Marjan, no code-signing
-      # certificate) and will not install on a normal Windows machine without
-      # developer mode. Build it opt-in with `npm run build:win:msix` once a
-      # code-signing certificate is configured (see "appx" in package.json).
       - run: npm run build:win:all
+      - run: npm run build:win:msix
       - uses: actions/upload-artifact@v4
         with:
           name: nextgx-windows-x64
           path: |
             dist/*.exe
+            dist/*.msix
 
   build-linux:
     runs-on: ubuntu-latest
@@ -64,15 +61,28 @@ jobs:
       - name: Stage release assets and generate SHA256SUMS.txt
         run: |
           mkdir -p release-assets
-          find artifacts -type f \( -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' \) -exec cp -t release-assets {} +
+          find artifacts -type f \( -name '*.exe' -o -name '*.msix' -o -name '*.AppImage' -o -name '*.deb' \) -exec cp -t release-assets {} +
           cd release-assets
           sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt
+      - name: Remove older GitHub Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CURRENT_TAG: ${{ github.ref_name }}
+        run: |
+          OLD_TAGS=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 50 --json tagName --jq '.[].tagName' || true)
+          for tag in $OLD_TAGS; do
+            if [ -n "$tag" ] && [ "$tag" != "$CURRENT_TAG" ]; then
+              echo "Deleting old release $tag..."
+              gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+            fi
+          done
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: |
             release-assets/*.exe
+            release-assets/*.msix
             release-assets/*.AppImage
             release-assets/*.deb
             release-assets/SHA256SUMS.txt

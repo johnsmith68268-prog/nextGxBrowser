@@ -43,13 +43,17 @@
       background: var(--bg);
       color: var(--text);
       font-family: var(--nx-font-sans);
-      border: 1px solid var(--nx-brand);
-      box-shadow: var(--specular-top), inset 0 0 10px var(--nx-brand-soft);
+      border: 1px solid color-mix(in srgb, var(--border, rgba(255, 255, 255, 0.14)) 125%, transparent);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
       border-radius: var(--nx-radius-md);
       overflow: hidden;
       padding: 6px;
       display: flex;
       flex-direction: column;
+    }
+
+    .pop-brand-accent {
+      border: 1px solid var(--nx-brand);
     }
 
     html,
@@ -168,6 +172,31 @@
 
     /* [FIXUP-1] Site-info bubble + zoom bubble (Chrome parity gaps 3.3/3.4/3.5):
        moved here from the renderer — same contents as worker B's panels. */
+    .site-info-icon-badge {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      background: rgba(16, 185, 129, 0.14);
+      color: #34d399;
+      border: 1px solid rgba(52, 211, 153, 0.28);
+    }
+
+    .site-info-icon-badge.insecure {
+      background: rgba(245, 158, 11, 0.14);
+      color: #fbbf24;
+      border-color: rgba(251, 191, 36, 0.3);
+    }
+
+    .site-info-icon-badge.neutral {
+      background: rgba(148, 163, 184, 0.14);
+      color: #cbd5e1;
+      border-color: rgba(148, 163, 184, 0.25);
+    }
+
     .site-info-cert {
       font-size: 11px;
       line-height: 1.4;
@@ -1721,11 +1750,16 @@
       gap: 3px;
     }
 
+    .bm-bubble-label,
     .bm-bubble-field label {
+      display: block;
       font-size: 11px;
       color: var(--muted);
+      margin-top: 6px;
+      margin-bottom: 3px;
     }
 
+    .bm-bubble-input,
     .bm-bubble-field input,
     .bm-bubble-field select {
       width: 100%;
@@ -1733,25 +1767,32 @@
       padding: 6px 8px;
       border-radius: var(--nx-radius-xs);
       border: 1px solid var(--border);
-      background: var(--surface);
+      background: var(--bg-surface);
       color: var(--text);
       font-size: 12px;
       outline: none;
     }
 
+    .bm-bubble-input:focus,
     .bm-bubble-field input:focus,
     .bm-bubble-field select:focus {
       border-color: var(--accent);
+    }
+
+    .bm-bubble-done {
+      width: auto !important;
+      padding: 6px 16px !important;
     }
 
     .bm-bubble-actions {
       display: flex;
       justify-content: flex-end;
       gap: 6px;
-      padding-top: 2px;
+      padding-top: 8px;
     }
 
-    .qr-wrap {
+    .qr-wrap,
+    .qr-canvas-wrap {
       display: flex;
       justify-content: center;
       padding: 6px 0 2px;
@@ -1791,7 +1832,7 @@
     }
 
     .rl-row:hover {
-      background: var(--surface);
+      background: var(--bg-hover, rgba(255, 255, 255, 0.08));
     }
 
     .rl-open {
@@ -1862,7 +1903,7 @@
 
     .rl-mark:hover,
     .rl-remove:hover {
-      background: var(--surface);
+      background: var(--bg-hover, rgba(255, 255, 255, 0.08));
       color: var(--text);
     }
 
@@ -1880,7 +1921,7 @@
     }
 
     #view-omnibox-suggest {
-      width: 480px;
+      width: 100%;
     }
 
     #view-tab-search .ctx-input {
@@ -1893,8 +1934,9 @@
       overflow-y: auto;
     }
 
-    .ts-list .rl-row.selected {
-      background: var(--surface);
+    .ts-list .rl-row.selected,
+    #osList .rl-row.selected {
+      background: var(--accent-subtle, rgba(250, 30, 78, 0.18));
     }
 
     /* UX phase: omnibox suggestions — group header + site favicons. */
@@ -2226,7 +2268,9 @@
        permission rows, "Site settings" → nextgx://privacy. -->
   <div id="view-site-info" class="hidden" style="display:flex;flex-direction:column;gap:8px;">
     <div class="sec-header">
-      <span id="siteInfoIcon" style="font-size:20px;line-height:1.2;flex-shrink:0;">🔒</span>
+      <span id="siteInfoIcon" class="site-info-icon-badge" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+      </span>
       <div style="min-width:0;flex:1;">
         <div class="sec-status" id="siteInfoStatus">Connection is secure</div>
         <div class="sec-origin" id="siteInfoOrigin"></div>
@@ -3030,7 +3074,9 @@
           (parseFloat(bodyStyle.borderTopWidth) || 0) +
           (parseFloat(bodyStyle.borderBottomWidth) || 0);
 
-        const innerLists = Array.from(viewEl.querySelectorAll('.pop-scroll-list'));
+        const innerLists = Array.from(viewEl.querySelectorAll('.pop-scroll-list')).filter(
+          (el) => !el.classList.contains('ts-list')
+        );
         const prevViewMaxH = viewEl.style.maxHeight;
         const prevViewOverflowY = viewEl.style.overflowY;
         const prevViewWidth = viewEl.style.width;
@@ -3897,6 +3943,7 @@
       const listEl = document.getElementById('osList');
       if (!listEl) return;
       const suggestions = Array.isArray(payload?.suggestions) ? payload.suggestions : [];
+      const selectedIdx = typeof payload?.selectedIndex === 'number' ? payload.selectedIndex : -1;
       listEl.innerHTML = '';
       if (suggestions.length) {
         const head = document.createElement('div');
@@ -3904,9 +3951,10 @@
         head.textContent = 'From your history';
         listEl.appendChild(head);
       }
-      for (const m of suggestions) {
+      for (let i = 0; i < suggestions.length; i++) {
+        const m = suggestions[i];
         const row = document.createElement('div');
-        row.className = 'rl-row';
+        row.className = i === selectedIdx ? 'rl-row selected' : 'rl-row';
         // Market audit bugs #1/#39: the favicon used to be string-built with
         // an inline onerror whose \" escapes are NOT escapes in HTML — the
         // attribute terminated early, leaking garbled markup into the row and
@@ -4090,10 +4138,11 @@
     async function renderSiteInfoPopover(payload) {
       const url = payload?.url || '';
       const origin = payload?.origin || '';
+      const secState = payload?.securityState || (url.startsWith('https://') ? 'secure' : url.startsWith('http://') ? 'insecure' : 'neutral');
       currentSiteInfoOrigin = origin;
       currentSiteInfoUrl = url;
-      const isHttps = url.startsWith('https://');
-      const isHttp = url.startsWith('http://');
+      const isHttps = secState === 'secure';
+      const isInsecure = secState === 'insecure';
       const statusEl = document.getElementById('siteInfoStatus');
       const iconEl = document.getElementById('siteInfoIcon');
       const originEl = document.getElementById('siteInfoOrigin');
@@ -4101,11 +4150,18 @@
       if (statusEl) {
         statusEl.textContent = isHttps
           ? 'Connection is secure'
-          : isHttp
-          ? 'Your connection to this site is not secure'
+          : isInsecure
+          ? (payload?.hasCertBypass ? 'Certificate warning bypassed (not secure)' : 'Your connection to this site is not secure')
           : 'Internal browser page';
       }
-      if (iconEl) iconEl.textContent = isHttps ? '🔒' : isHttp ? '⚠️' : 'ⓘ';
+      if (iconEl) {
+        iconEl.className = `site-info-icon-badge ${isHttps ? 'secure' : isInsecure ? 'insecure' : 'neutral'}`;
+        iconEl.innerHTML = isHttps
+          ? '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>'
+          : isInsecure
+          ? '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'
+          : '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
+      }
       if (originEl) originEl.textContent = origin || url;
       if (certEl) certEl.textContent = '';
       renderSiteInfoPermRows(origin, {});
@@ -5720,6 +5776,7 @@
       const shotView = document.getElementById('view-screenshot');
       const extDdView = document.getElementById('view-extensions-dropdown');
       const profView = document.getElementById('view-profiles');
+      const railCtxView = document.getElementById('view-rail-context');
       const activeMenu =
         tabCtxView && !tabCtxView.classList.contains('hidden')
           ? tabCtxView
@@ -5739,7 +5796,9 @@
                       ? extDdView
                       : profView && !profView.classList.contains('hidden')
                         ? profView
-                        : null;
+                        : railCtxView && !railCtxView.classList.contains('hidden')
+                          ? railCtxView
+                          : null;
       if (!activeMenu) return;
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
       const items = Array.from(
@@ -5761,12 +5820,12 @@
         if (act === 'screenshot-area') {
           window.gxAPI.startAreaScreenshot();
         } else if (act === 'reading-list') {
-          // [TABS-W2] Gap 8.8 — swap the menu for the reading-list view.
+          // [TABS-W2] Gap 8.8 — swap the menu for the reading-list view (right-aligned to main window).
           window.gxAPI.openPopover({
             kind: 'reading-list',
-            x: Math.max(8, window.innerWidth - 328),
+            x: 9999,
             y: 90,
-            width: 320,
+            width: 330,
             height: 380
           });
         } else if (act === 'delete-browsing-data') {
@@ -5774,21 +5833,22 @@
           window.gxAPI.closePopover();
           window.gxAPI.createTab({ url: 'nextgx://privacy', active: true });
         } else if (act === 'bookmark-current') {
-          // [TABS-W2] Gap 7.4 — open the bookmark bubble instead of toggling.
-          const active = lastMenuActiveTab || {};
-          if (!active.url || /^nextgx:\/\//i.test(active.url)) return;
-          window.gxAPI.openPopover({
-            kind: 'bookmark-bubble',
-            x: Math.max(8, window.innerWidth - 316),
-            y: 90,
-            width: 308,
-            height: 260,
-            payload: {
-              url: active.url,
-              title: active.title || active.url,
-              favicon: active.favicon || '',
-              isBookmarked: Boolean(active.isBookmarked)
-            }
+          // [TABS-W2] Gap 7.4 — fetch live active tab if state hasn't pushed yet.
+          Promise.resolve(lastMenuActiveTab || window.gxAPI.getState?.().then((s) => s?.activeTab)).then((active) => {
+            if (!active || !active.url || /^nextgx:\/\//i.test(active.url)) return;
+            window.gxAPI.openPopover({
+              kind: 'bookmark-bubble',
+              x: 9999,
+              y: 90,
+              width: 320,
+              height: 240,
+              payload: {
+                url: active.url,
+                title: active.title || active.url,
+                favicon: active.favicon || '',
+                isBookmarked: Boolean(active.isBookmarked)
+              }
+            });
           });
         } else {
           window.gxAPI.triggerMenuAction(act);
@@ -5840,18 +5900,21 @@
         return;
       }
       for (const d of recent) {
-        const pct = d.totalBytes > 0 ? Math.min(100, Math.round((d.receivedBytes / d.totalBytes) * 100)) : 100;
+        const isDone = d.state === 'completed';
+        const hasTotal = Number(d.totalBytes) > 0;
+        const pct = hasTotal ? Math.min(100, Math.round((d.receivedBytes / d.totalBytes) * 100)) : isDone ? 100 : null;
+        const statusLabel = pct !== null ? `${d.state} (${pct}%)` : `${d.state} (${Math.round((d.receivedBytes || 0) / 1024)} KB)`;
         const card = document.createElement('div');
         card.className = 'dl-mini-card';
         card.innerHTML = `
           <div class="dl-mini-top">
             <span class="dl-name">${escapeHtml(d.filename)}</span>
-            <button class="mini-btn open-btn">Open</button>
+            <button class="mini-btn open-btn" ${isDone && d.savePath ? '' : 'disabled'}>Open</button>
           </div>
-          <div style="font-size:10.5px;color:var(--muted);">${escapeHtml(d.state)} (${pct}%)</div>
+          <div style="font-size:10.5px;color:var(--muted);">${escapeHtml(statusLabel)}</div>
         `;
         card.querySelector('.open-btn').addEventListener('click', () => {
-          window.gxAPI.openDownloadItem(d.savePath);
+          if (isDone && d.savePath) window.gxAPI.openDownloadItem(d.savePath);
         });
         el.appendChild(card);
       }
@@ -5951,9 +6014,12 @@
         !bmView.classList.contains('hidden') &&
         currentBmFolderName
       ) {
-        const items = (list || []).filter(
-          (b) => b && typeof b.folder === 'string' && b.folder.trim() === currentBmFolderName
-        );
+        const items =
+          currentBmFolderName === 'All Bookmarks'
+            ? (list || []).filter(Boolean)
+            : (list || []).filter(
+                (b) => b && typeof b.folder === 'string' && b.folder.trim() === currentBmFolderName
+              );
         if (!items.length) {
           window.gxAPI.closePopover();
         } else {

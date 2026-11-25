@@ -2627,11 +2627,14 @@ class StorageManager {
   // [Wave2-D] Reset settings to factory defaults (gap 5.14). Only the
   // settings store is touched — passwords, history, bookmarks, etc. stay.
   resetSettings(profileId) {
-    if (this.isProfileChild) return this.getSettings();
+    if (this.isProfileChild) {
+      this._write('settings', {});
+      return this.getSettings();
+    }
     const pid = this._resolveProfileId(profileId);
     if (pid !== DEFAULT_PROFILE_ID) {
-      // Non-default profiles only override theme/sidebar; nothing to reset.
-      return this.getSettings(pid);
+      const child = this._targetFor(pid);
+      if (child && child !== this) child._write('settings', {});
     }
     this._write('settings', this._cloneDefault('settings'));
     return this.getSettings(pid);
@@ -3305,7 +3308,7 @@ class StorageManager {
   // Panic-button snapshot (src/main/panic.js): the pre-panic tab list, so
   // a restore stays possible after a restart. Incognito windows never
   // write here (memory-only snapshot in panic.js).
-  savePanicSnapshot(snapshot) {
+  savePanicSnapshot(snapshot, profileId) {
     if (!snapshot || typeof snapshot !== 'object' || !Array.isArray(snapshot.tabs)) return null;
     const clean = {
       version: 1,
@@ -3322,17 +3325,20 @@ class StorageManager {
           workspaceId: typeof t.workspaceId === 'string' ? t.workspaceId.slice(0, 80) : 'default'
         }))
     };
-    return this._write('panicSnapshot', clean);
+    const target = this._targetFor(profileId);
+    return target._write('panicSnapshot', clean);
   }
 
-  getPanicSnapshot() {
-    const raw = this.get('panicSnapshot');
+  getPanicSnapshot(profileId) {
+    const target = this._targetFor(profileId);
+    const raw = target.get('panicSnapshot');
     if (!raw || typeof raw !== 'object' || !Array.isArray(raw.tabs)) return null;
     return raw;
   }
 
-  clearPanicSnapshot() {
-    return this._write('panicSnapshot', null);
+  clearPanicSnapshot(profileId) {
+    const target = this._targetFor(profileId);
+    return target._write('panicSnapshot', null);
   }
 }
 

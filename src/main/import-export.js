@@ -22,7 +22,7 @@ const { sleepTab } = require('./tabs');
 const MAX_BOOKMARKS_IMPORT_BYTES = 10 * 1024 * 1024;
 const MAX_SETTINGS_IMPORT_BYTES = 2 * 1024 * 1024;
 const MAX_PASSWORDS_IMPORT_BYTES = 5 * 1024 * 1024;
-const VALID_SEARCH_ENGINES = new Set(['google', 'duckduckgo', 'bing']);
+const VALID_SEARCH_ENGINES = new Set(['google', 'duckduckgo', 'bing', 'brave', 'ecosia']);
 const VALID_THEMES = new Set(VALID_PROFILE_COLORS);
 const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
@@ -257,9 +257,127 @@ function validateSettingsImport(rawParsed, storageInstance) {
     }
 
     if (key === 'searchEngine') {
-      if (typeof val === 'string' && VALID_SEARCH_ENGINES.has(val.trim().toLowerCase())) {
-        validated.searchEngine = val.trim().toLowerCase();
+      if (typeof val === 'string') {
+        const cleanId = val.trim().toLowerCase();
+        const customEngines = Array.isArray(candidate.searchEngines)
+          ? candidate.searchEngines
+          : storageInstance.getSettings?.().searchEngines || [];
+        const hasMatch =
+          VALID_SEARCH_ENGINES.has(cleanId) ||
+          customEngines.some((e) => e && typeof e.id === 'string' && e.id.toLowerCase() === cleanId && !e.siteSearch);
+        if (cleanId && hasMatch) {
+          validated.searchEngine = cleanId;
+          appliedKeys.push(key);
+        } else {
+          ignoredKeys.push(key);
+        }
+      } else {
+        ignoredKeys.push(key);
+      }
+      continue;
+    }
+
+    if (key === 'searchEngines') {
+      if (Array.isArray(val) && typeof storageInstance._sanitizeSearchEngines === 'function') {
+        validated.searchEngines = storageInstance._sanitizeSearchEngines(val);
         appliedKeys.push(key);
+      } else {
+        ignoredKeys.push(key);
+      }
+      continue;
+    }
+
+    if (key === 'searchShortcutMode') {
+      if (val === 'space-or-tab' || val === 'tab') {
+        validated.searchShortcutMode = val;
+        appliedKeys.push(key);
+      } else {
+        ignoredKeys.push(key);
+      }
+      continue;
+    }
+
+    if (key === 'startupMode') {
+      if (val === 'newtab' || val === 'restore' || val === 'urls') {
+        validated.startupMode = val;
+        appliedKeys.push(key);
+      } else {
+        ignoredKeys.push(key);
+      }
+      continue;
+    }
+
+    if (key === 'startupUrls') {
+      if (Array.isArray(val) && typeof storageInstance._sanitizeStartupUrls === 'function') {
+        validated.startupUrls = storageInstance._sanitizeStartupUrls(val);
+        appliedKeys.push(key);
+      } else {
+        ignoredKeys.push(key);
+      }
+      continue;
+    }
+
+    if (key === 'preferredLanguages') {
+      if (Array.isArray(val) && typeof storageInstance._sanitizeLanguages === 'function') {
+        validated.preferredLanguages = storageInstance._sanitizeLanguages(val);
+        appliedKeys.push(key);
+      } else {
+        ignoredKeys.push(key);
+      }
+      continue;
+    }
+
+    if (key === 'thirdPartyCookies') {
+      if (val === 'allow' || val === 'block-incognito' || val === 'block') {
+        validated.thirdPartyCookies = val;
+        appliedKeys.push(key);
+      } else {
+        ignoredKeys.push(key);
+      }
+      continue;
+    }
+
+    if (key === 'sitePermissionDefaults') {
+      if (val && typeof val === 'object' && !Array.isArray(val) && typeof storageInstance._sanitizeSitePermissionDefaults === 'function') {
+        validated.sitePermissionDefaults = storageInstance._sanitizeSitePermissionDefaults(val);
+        appliedKeys.push(key);
+      } else {
+        ignoredKeys.push(key);
+      }
+      continue;
+    }
+
+    if (key === 'shaderPreset') {
+      const VALID_SHADERS = new Set(['none', 'grayscale', 'sepia', 'warm', 'cool', 'high-contrast', 'vignette', 'night']);
+      if (typeof val === 'string' && VALID_SHADERS.has(val.trim())) {
+        validated.shaderPreset = val.trim();
+        appliedKeys.push(key);
+      } else {
+        ignoredKeys.push(key);
+      }
+      continue;
+    }
+
+    if (key === 'videoEnhancePreset') {
+      const VALID_ENHANCE = new Set(['off', 'vivid', 'crisp', 'cinema']);
+      if (typeof val === 'string' && VALID_ENHANCE.has(val.trim())) {
+        validated.videoEnhancePreset = val.trim();
+        appliedKeys.push(key);
+      } else {
+        ignoredKeys.push(key);
+      }
+      continue;
+    }
+
+    if (key === 'downloadPath') {
+      if (typeof val === 'string') {
+        const trimmed = val.trim().slice(0, 500);
+        if (!trimmed || (path.isAbsolute(trimmed) && fs.existsSync(trimmed))) {
+          validated.downloadPath = trimmed;
+          appliedKeys.push(key);
+        } else {
+          ignoredKeys.push(key);
+        }
       } else {
         ignoredKeys.push(key);
       }
@@ -698,6 +816,17 @@ function registerImportExportIpcHandlers(handleInternal) {
         await gxControl.onSettingsChanged(updated, { sleepTab });
         broadcastSystemStatsNow();
       }
+
+      try {
+        const { applySessionPrivacyAndPrefs } = require('./ipc');
+        if (typeof applySessionPrivacyAndPrefs === 'function') {
+          for (const ctx of windowContexts.values()) {
+            if (ctx?.session && (ctx.profileId || DEFAULT_PROFILE_ID) === profileId) {
+              applySessionPrivacyAndPrefs(ctx.session, { incognito: Boolean(ctx.incognito), profileId });
+            }
+          }
+        }
+      } catch (_) {}
 
       broadcastSettingsUpdate(updated, { profileId });
       const panelChanged =

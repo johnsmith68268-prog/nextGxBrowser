@@ -161,13 +161,17 @@ function getEffectiveAutoSleepMs(settings) {
 // it is reported as measured, never inflated.
 function hibernateNow() {
   const beforeMB = gxControl.sampleProcessMetrics({ force: true }).browserRamMB;
+  let splitView = null;
+  try { splitView = require('./splitview'); } catch (_) {}
   let sleptCount = 0;
   for (const ctx of windowContexts.values()) {
     if (!ctx || !ctx.win || ctx.win.isDestroyed()) continue;
     for (const [id, tab] of ctx.tabs.entries()) {
       const pipActive = Boolean(tab?.pipActive || playerMod().getTabVideoState(tab)?.pipActive);
+      const inSplit = Boolean(splitView && typeof splitView.isTabInVisibleSplit === 'function' && splitView.isTabInVisibleSplit(ctx, id));
       if (
         id !== ctx.activeTabId &&
+        !inSplit &&
         !tab.sleeping &&
         !tab.pinned &&
         !tab.audible &&
@@ -259,11 +263,15 @@ function startBackgroundTimers() {
     // sooner; otherwise the configured timeout applies.
     const timeoutMs = getEffectiveAutoSleepMs(s);
     const now = Date.now();
+    let splitView = null;
+    try { splitView = require('./splitview'); } catch (_) {}
     for (const ctx of windowContexts.values()) {
       for (const [id, tab] of ctx.tabs.entries()) {
         const pipActive = Boolean(tab?.pipActive || playerMod().getTabVideoState(tab)?.pipActive);
+        const inSplit = Boolean(splitView && typeof splitView.isTabInVisibleSplit === 'function' && splitView.isTabInVisibleSplit(ctx, id));
         if (
           id !== ctx.activeTabId &&
+          !inSplit &&
           !tab.sleeping &&
           !tab.pinned &&
           !tab.audible &&

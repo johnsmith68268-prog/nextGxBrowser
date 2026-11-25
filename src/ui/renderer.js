@@ -222,8 +222,7 @@ function getEffectiveSidebarPanelWidth(rawWidth) {
   if (!contentWidth) return base;
   const rightOffset = activeRightDrawer ? RIGHT_DRAWER_WIDTH : 0;
   const maxAvail = Math.max(240, Math.floor(contentWidth - SIDEBAR_ICON_WIDTH - rightOffset - 160));
-  // UX phase: never wider than 800px or half the window, whichever is smaller.
-  return Math.min(base, maxAvail, Math.floor(contentWidth / 2));
+  return Math.min(base, maxAvail, Math.floor(contentWidth * 0.72));
 }
 
 function syncLayoutOffsets() {
@@ -235,11 +234,14 @@ function syncLayoutOffsets() {
   // native view offset in step. A floating (unpinned) panel is an overlay
   // and needs no offset change.
   const railShift = railExpandedState ? RAIL_EXPANDED_WIDTH - SIDEBAR_ICON_WIDTH : 0;
+  const railWidth = SIDEBAR_ICON_WIDTH + railShift;
   let left = SIDEBAR_ICON_WIDTH;
   if (activeLeftTool) {
     left += LEFT_TOOL_WIDTH + railShift;
   } else if (sidebarPanelState.open && sidebarPanelState.pinned) {
     left += getEffectiveSidebarPanelWidth(sidebarPanelState.width) + railShift;
+  } else {
+    left += railShift;
   }
 
   let right = 0;
@@ -254,6 +256,7 @@ function syncLayoutOffsets() {
 
   window.gxAPI.setLayoutOffsets({
     left,
+    railWidth,
     top,
     right,
     bottom: 0,
@@ -841,16 +844,13 @@ function buildTabElement(tab, group, state, activeWsGroupsList, otherClosableCou
     el.dataset.splitPane = splitRole;
   }
   el.draggable = true;
-  // [TABS-W2] Gap 5.1 — no native `title` tooltip on the tab: the hover
-  // preview card is the tooltip, and the native one would double it.
+  el.title = tab.title || 'Start Page';
 
-  // UX phase: a loading tab shows a spinner instead of its favicon, so the
-  // strip always says what the tab is doing (Chrome-style).
-  const iconHtml = tab.isLoading
-    ? `<span class="tab-loading-spinner" aria-label="Loading"></span>`
-    : tab.favicon
-      ? `<img class="tab-favicon" draggable="false" src="${escapeHtml(tab.favicon)}" alt="" onerror="this.style.display='none'" />`
-      : `<svg class="tab-favicon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8"/></svg>`;
+  // Loading indicator spins around the corner Stop (✕) button (#btnReload.is-stop)
+  // rather than replacing the tab favicon in the top strip (tab-loading-spinner kept for CSS compat).
+  const iconHtml = tab.favicon
+    ? `<img class="tab-favicon" draggable="false" src="${escapeHtml(tab.favicon)}" alt="" onerror="this.style.display='none'" />`
+    : `<svg class="tab-favicon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8"/></svg>`;
 
   const splitSvg = splitRole
     ? `<span class="tab-split-badge" title="Split view (${splitRole === 'left' ? 'Left' : 'Right'} pane)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/>${
@@ -1274,35 +1274,9 @@ function patchTabElementInPlace(el, tab, group, state) {
     }
   }
 
-  // UX phase: swap the favicon for a spinner while the tab is loading.
-  const wasLoading = el.dataset.loading === '1';
-  const isLoadingNow = Boolean(tab.isLoading);
-  if (wasLoading !== isLoadingNow) {
-    el.dataset.loading = isLoadingNow ? '1' : '0';
-    const spinner = el.querySelector('.tab-loading-spinner');
-    if (isLoadingNow && !spinner) {
-      const sp = document.createElement('span');
-      sp.className = 'tab-loading-spinner';
-      sp.setAttribute('aria-label', 'Loading');
-      const fav = el.querySelector('.tab-favicon, .tab-favicon-svg');
-      if (fav) fav.replaceWith(sp);
-      else el.prepend(sp);
-    } else if (!isLoadingNow && spinner) {
-      if (nextFav) {
-        const img = document.createElement('img');
-        img.className = 'tab-favicon';
-        img.draggable = false;
-        img.alt = '';
-        img.src = nextFav;
-        img.onerror = () => { img.style.display = 'none'; };
-        spinner.replaceWith(img);
-      } else {
-        const wrap = document.createElement('span');
-        wrap.innerHTML = `<svg class="tab-favicon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8"/></svg>`;
-        spinner.replaceWith(wrap.firstElementChild);
-      }
-    }
-  }
+  // Keep tab favicon stable during load (loading spinner orbits #btnReload.is-stop in the toolbar corner).
+  el.dataset.loading = tab.isLoading ? '1' : '0';
+  el.title = tab.title || 'Start Page';
 
   if (!tab.pinned) {
     // [TABS-W2] Gap 8.2/8.6 — speaker button: present when audible OR muted;
@@ -1356,6 +1330,9 @@ function scheduleTabHoverCard(tab, group, tabEl) {
   // is in progress (draggedTabId set on dragstart), so never schedule one.
   if (draggedTabId) return;
   tabHoverTimer = setTimeout(() => {
+    // Floating DOM tab hover overview card is disabled — native tab title tooltip is cleaner
+    // and avoids WebContentsView clipping.
+    if (settingsState.tabHoverPreview !== 'card') return;
     const card = getTabHoverCardEl();
     // Memory readout (Chrome-style): per-tab RAM/CPU from the last
     // system-stats sample, when the tab has been measured yet.
@@ -1457,6 +1434,11 @@ function openTabSearchPopover() {
 let omniboxSuggestTimer = null;
 let omniboxSuggestKindAlt = false;
 let omniboxSuggestLastUrls = '';
+let omniboxSuggestReqId = 0;
+let omniboxSuggestItems = [];
+let omniboxSuggestSelectedIdx = -1;
+const addressDraftByTabId = new Map();
+let selectAllOnMouseUp = false;
 
 async function getHistoryForSuggestions() {
   const now = Date.now();
@@ -1475,14 +1457,33 @@ async function getHistoryForSuggestions() {
   return historyCache;
 }
 
+function pushOmniboxSuggestPopover(items, selectedIdx) {
+  omniboxSuggestKindAlt = !omniboxSuggestKindAlt;
+  const rect = addressForm.getBoundingClientRect();
+  window.gxAPI.openPopover({
+    kind: omniboxSuggestKindAlt ? 'omnibox-suggest-alt' : 'omnibox-suggest',
+    x: Math.round(rect.left),
+    y: Math.round(rect.bottom + 6),
+    width: Math.max(320, Math.min(560, Math.round(rect.width))),
+    height: Math.min(320, 54 + items.length * 36),
+    payload: { suggestions: items, selectedIndex: selectedIdx }
+  });
+}
+
 async function renderOmniboxSuggestions() {
+  if (document.activeElement !== addressInput || !document.hasFocus()) {
+    return;
+  }
+  const reqId = ++omniboxSuggestReqId;
   const q = addressInput.value.trim().toLowerCase();
   if (!q || q.length < 2) {
-    if (omniboxSuggestLastUrls) window.gxAPI.closePopover();
-    omniboxSuggestLastUrls = '';
+    hideOmniboxSuggestions();
     return;
   }
   const history = await getHistoryForSuggestions();
+  if (reqId !== omniboxSuggestReqId || document.activeElement !== addressInput || !document.hasFocus()) {
+    return;
+  }
   const seen = new Set();
   const matches = [];
   for (const entry of history) {
@@ -1498,30 +1499,29 @@ async function renderOmniboxSuggestions() {
   const filtered = matches.filter((m) => m.url.toLowerCase() !== q);
   const urlsKey = filtered.map((m) => m.url).join('|');
   if (!filtered.length) {
-    if (omniboxSuggestLastUrls) window.gxAPI.closePopover();
-    omniboxSuggestLastUrls = '';
+    hideOmniboxSuggestions();
     return;
   }
+  omniboxSuggestItems = filtered;
+  omniboxSuggestSelectedIdx = -1;
   // Same list as last time — don't churn the popover.
   if (urlsKey === omniboxSuggestLastUrls) return;
   omniboxSuggestLastUrls = urlsKey;
-  omniboxSuggestKindAlt = !omniboxSuggestKindAlt;
-  const rect = addressForm.getBoundingClientRect();
-  window.gxAPI.openPopover({
-    kind: omniboxSuggestKindAlt ? 'omnibox-suggest-alt' : 'omnibox-suggest',
-    x: Math.round(rect.left),
-    y: Math.round(rect.bottom + 6),
-    width: Math.max(320, Math.min(560, Math.round(rect.width))),
-    height: Math.min(320, 54 + filtered.length * 36),
-    payload: { suggestions: filtered }
-  });
+  pushOmniboxSuggestPopover(filtered, -1);
 }
 
 function hideOmniboxSuggestions() {
+  clearTimeout(omniboxSuggestTimer);
+  omniboxSuggestTimer = null;
+  omniboxSuggestReqId += 1;
   // Only close when the suggestions popover may be open — never clobber
-  // another popover (e.g. a permission prompt) with a blind close.
-  if (omniboxSuggestLastUrls) window.gxAPI.closePopover();
+  // another popover (e.g. a permission prompt) and NEVER steal focus back to the tab!
+  if (omniboxSuggestLastUrls) {
+    window.gxAPI.closePopover({ kind: 'omnibox-suggest', restoreFocus: false });
+  }
   omniboxSuggestLastUrls = '';
+  omniboxSuggestItems = [];
+  omniboxSuggestSelectedIdx = -1;
 }
 
 // [TABS-W2] Gap 1.5 — omnibox permission chip (while a prompt is open) and
@@ -1823,31 +1823,56 @@ function syncActiveTabBarControls(state, activeChanged = false) {
     btnReload.title = isLoading ? 'Stop loading (Esc)' : 'Reload (Ctrl+R)';
     btnReload.setAttribute('aria-label', isLoading ? 'Stop loading' : 'Reload');
 
-    if (document.activeElement !== addressInput || !document.hasFocus() || activeChanged) {
+    const activeDraft = active.id ? addressDraftByTabId.get(active.id) : undefined;
+    if (activeChanged) {
+      if (typeof activeDraft === 'string') {
+        addressInput.value = activeDraft;
+      } else {
+        addressInput.value = active.url === 'nextgx://newtab' ? '' : elideUrlForDisplay(active.url);
+      }
+    } else if (document.activeElement !== addressInput && typeof activeDraft !== 'string') {
       // [URLBAR-3.1] Unfocused omnibox shows the elided display value (no scheme).
       addressInput.value = active.url === 'nextgx://newtab' ? '' : elideUrlForDisplay(active.url);
     }
 
-    // [FIXUP-1] Close the site-info / zoom popover when the active tab
-    // navigates away — the popover content is per-URL (same as the old
-    // renderer panels). closePopover is a no-op when nothing is open;
-    // Chrome closes these bubbles on navigation too.
     if (siteInfoPopoverUrl && active.url !== siteInfoPopoverUrl) {
       siteInfoPopoverUrl = '';
-      window.gxAPI.closePopover();
+      window.gxAPI.closePopover({ kind: 'site-info', restoreFocus: false });
     }
     if (zoomPopoverUrl && active.url !== zoomPopoverUrl) {
       zoomPopoverUrl = '';
-      window.gxAPI.closePopover();
+      window.gxAPI.closePopover({ kind: 'zoom-bubble', restoreFocus: false });
     }
 
-    const isHttpInsecure = Boolean(active.isHttpInsecure);
+    const secState =
+      active.securityState ||
+      (active.isHttpInsecure ? 'insecure' : active.isSecure ? 'secure' : 'neutral');
+    const isHttpInsecure = secState === 'insecure';
+    const isNeutralSec = secState === 'neutral';
     btnSiteSecurity.classList.toggle('insecure', isHttpInsecure);
+    btnSiteSecurity.classList.toggle('neutral', isNeutralSec);
     secNotSecureLabel.classList.toggle('hidden', !isHttpInsecure);
     const secLockSvg = document.getElementById('secLockSvg');
-    if (secLockSvg && secLockSvg.dataset.state !== (isHttpInsecure ? 'warn' : 'lock')) {
-      secLockSvg.innerHTML = isHttpInsecure ? WARN_ICON_PATHS : LOCK_ICON_PATHS;
-      secLockSvg.dataset.state = isHttpInsecure ? 'warn' : 'lock';
+    const nextIconState = isHttpInsecure ? 'warn' : isNeutralSec ? 'info' : 'lock';
+    const INFO_ICON_PATHS =
+      '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>';
+    if (secLockSvg && secLockSvg.dataset.state !== nextIconState) {
+      secLockSvg.innerHTML =
+        nextIconState === 'warn'
+          ? WARN_ICON_PATHS
+          : nextIconState === 'info'
+          ? INFO_ICON_PATHS
+          : LOCK_ICON_PATHS;
+      secLockSvg.dataset.state = nextIconState;
+    }
+
+    if (btnPanic && typeof state.panicActive === 'boolean') {
+      const pActive = Boolean(state.panicActive);
+      btnPanic.classList.toggle('active', pActive);
+      btnPanic.setAttribute('aria-pressed', pActive ? 'true' : 'false');
+      btnPanic.title = pActive
+        ? 'Panic active — click to restore your tabs (Ctrl+Shift+P)'
+        : 'Panic button — instantly hide all tabs (Ctrl+Shift+P), press again to restore';
     }
 
     incognitoIndicator.classList.toggle('hidden', !active.incognito);
@@ -2203,9 +2228,15 @@ btnReload.addEventListener('click', () => {
 
 addressForm.addEventListener('submit', (e) => {
   e.preventDefault();
-  const val = addressInput.value.trim();
+  const picked =
+    omniboxSuggestSelectedIdx >= 0 && omniboxSuggestItems[omniboxSuggestSelectedIdx]
+      ? omniboxSuggestItems[omniboxSuggestSelectedIdx].url
+      : '';
+  const val = (picked || addressInput.value).trim();
+  const activeId = currentState.activeTab?.id;
+  if (activeId) addressDraftByTabId.delete(activeId);
+  hideOmniboxSuggestions();
   if (val) {
-    window.gxAPI.closePopover();
     window.gxAPI.navigate(val);
     addressInput.blur();
   }
@@ -2244,26 +2275,55 @@ if (btnPanic) {
 let lastKeySoundAt = 0;
 document.addEventListener('keydown', (e) => {
   if (!settingsState || !settingsState.keyboardSoundsEnabled) return;
-  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
   if (typeof e.key !== 'string' || e.key.length !== 1) return;
   const now = Date.now();
   if (now - lastKeySoundAt < 60) return;
   lastKeySoundAt = now;
-  window.gxSounds?.playClick();
+  window.gxSounds?.playKeyTick ? window.gxSounds.playKeyTick() : window.gxSounds?.playClick();
 });
 
 addressInput.addEventListener('focus', () => {
   if (suppressAddressFocusSelect) return;
-  // [URLBAR-3.1/3.2] Focus reveals the FULL URL (including scheme) and selects it.
-  const full = getActiveTabFullUrl();
-  if (full && addressInput.value !== full) addressInput.value = full;
+  const activeId = currentState.activeTab?.id;
+  const hasDraft = activeId && addressDraftByTabId.has(activeId);
+  if (!hasDraft) {
+    // [URLBAR-3.1/3.2] Focus reveals the FULL URL (including scheme) and selects it.
+    const full = getActiveTabFullUrl();
+    if (full && addressInput.value !== full) addressInput.value = full;
+  }
+  selectAllOnMouseUp = true;
   addressInput.select();
 });
 
+addressInput.addEventListener('mouseup', (e) => {
+  if (selectAllOnMouseUp) {
+    selectAllOnMouseUp = false;
+    if (addressInput.selectionStart === addressInput.selectionEnd) {
+      e.preventDefault();
+      addressInput.select();
+    }
+  }
+});
+
 addressInput.addEventListener('blur', () => {
-  // [URLBAR-3.1] Back to the elided display value once focus leaves the omnibox.
-  const full = getActiveTabFullUrl();
-  addressInput.value = full ? elideUrlForDisplay(full) : '';
+  selectAllOnMouseUp = false;
+  clearTimeout(omniboxSuggestTimer);
+  omniboxSuggestTimer = null;
+  const activeId = currentState.activeTab?.id;
+  const hasDraft = activeId && addressDraftByTabId.has(activeId);
+  if (!hasDraft) {
+    // [URLBAR-3.1] Back to the elided display value once focus leaves the omnibox.
+    const full = getActiveTabFullUrl();
+    addressInput.value = full ? elideUrlForDisplay(full) : '';
+  }
+  // mousedown on a suggestion row fires before blur and navigates; closing
+  // with kind='omnibox-suggest' guarantees we never clobber a newly opened toolbar menu.
+  setTimeout(() => {
+    if (document.activeElement !== addressInput) {
+      hideOmniboxSuggestions();
+    }
+  }, 150);
 });
 
 addressInput.addEventListener('mousedown', (e) => {
@@ -2277,19 +2337,56 @@ addressInput.addEventListener('mousedown', (e) => {
 });
 
 // [TABS-W2] Gap 3.7 — history suggestions while typing in the omnibox.
-addressInput.addEventListener('input', () => {
+addressInput.addEventListener('input', (e) => {
+  if (e && e.isComposing) return;
+  const activeId = currentState.activeTab?.id;
+  if (activeId) {
+    addressDraftByTabId.set(activeId, addressInput.value);
+  }
   clearTimeout(omniboxSuggestTimer);
   omniboxSuggestTimer = setTimeout(() => {
     renderOmniboxSuggestions();
   }, 120);
 });
 addressInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') hideOmniboxSuggestions();
-});
-addressInput.addEventListener('blur', () => {
-  // mousedown on a suggestion row fires before blur and navigates; hiding
-  // here only clears the panel when focus genuinely leaves the omnibox.
-  setTimeout(() => hideOmniboxSuggestions(), 150);
+  if (e.isComposing || e.keyCode === 229) return;
+  if (e.key === 'Escape') {
+    if (omniboxSuggestLastUrls) {
+      e.preventDefault();
+      hideOmniboxSuggestions();
+      return;
+    }
+    const activeId = currentState.activeTab?.id;
+    if (activeId) addressDraftByTabId.delete(activeId);
+    const full = getActiveTabFullUrl();
+    addressInput.value = full || '';
+    addressInput.select();
+    return;
+  }
+  if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && omniboxSuggestItems.length > 0) {
+    e.preventDefault();
+    const len = omniboxSuggestItems.length;
+    if (e.key === 'ArrowDown') {
+      omniboxSuggestSelectedIdx = (omniboxSuggestSelectedIdx + 1) % len;
+    } else {
+      omniboxSuggestSelectedIdx = omniboxSuggestSelectedIdx <= 0 ? len - 1 : omniboxSuggestSelectedIdx - 1;
+    }
+    const sel = omniboxSuggestItems[omniboxSuggestSelectedIdx];
+    if (sel && sel.url) {
+      addressInput.value = sel.url;
+      const activeId = currentState.activeTab?.id;
+      if (activeId) addressDraftByTabId.set(activeId, sel.url);
+    }
+    pushOmniboxSuggestPopover(omniboxSuggestItems, omniboxSuggestSelectedIdx);
+    return;
+  }
+  if (e.key === 'Tab' && settingsState?.searchShortcutMode === 'tab') {
+    const val = addressInput.value;
+    if (val && !/\s/.test(val)) {
+      e.preventDefault();
+      addressInput.value = val + '\t';
+    }
+  }
 });
 
 // [FIXUP-1] Site-info bubble + zoom bubble (Chrome parity gaps 3.3/3.4/3.5):
@@ -2333,7 +2430,12 @@ btnSiteSecurity.addEventListener('click', () => {
       y: TOP_CHROME_HEIGHT + 2,
       width: 320,
       height: 424,
-      payload: { origin: active.origin || '', url }
+      payload: {
+        origin: active.origin || '',
+        url,
+        securityState: active.securityState || (active.isHttpInsecure ? 'insecure' : active.isSecure ? 'secure' : 'neutral'),
+        hasCertBypass: Boolean(active.hasCertBypass)
+      }
     })
   ).then((opened) => {
     // Toggled closed by the same click.
@@ -3236,10 +3338,10 @@ function applySidebarPanelDOMState() {
     btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
   });
 
-  // UX phase: hover-expanding the rail is an overlay flyout; it must not
-  // run while the panel is pinned (pinned panel is in flex flow).
+  // Hover-expanding the rail via CSS position:absolute gets sliced by the
+  // native WebContentsView at x=50px; expand only on explicit #btnRailExpand click.
   if (nxSidebarEl) {
-    nxSidebarEl.classList.toggle('rail-hover-expand', !pinned);
+    nxSidebarEl.classList.remove('rail-hover-expand');
     if (pinned && nxSidebarEl.classList.contains('expanded')) {
       setRailExpanded(false);
     }
@@ -4577,6 +4679,11 @@ window.gxAPI.onPopoverData?.((data) => {
   if (data && data.closed) {
     tabContextMenuOpen = false;
     activeTabContextMode = null;
+    omniboxSuggestLastUrls = '';
+    omniboxSuggestItems = [];
+    omniboxSuggestSelectedIdx = -1;
+    siteInfoPopoverUrl = '';
+    zoomPopoverUrl = '';
     if (openBookmarkFolderName) {
       openBookmarkFolderName = null;
       updateBookmarkFolderButtonsState();

@@ -36,6 +36,8 @@ function serializeTabs(ctx) {
     ? state.storage.getTabGroups()
     : [];
 
+  const { isErrorPageUrl } = require('./utils');
+  const { isCertExceptionAllowed } = require('./cert-exceptions');
   const ordered = ctx.tabOrder
     .map((id) => ctx.tabs.get(id))
     .filter(Boolean)
@@ -44,13 +46,28 @@ function serializeTabs(ctx) {
       const origin = getOriginForUrl(t.url);
       const pinned = Boolean(t.pinned);
       const videoState = playerMod().getTabVideoState(t);
+      const isErrPage = isErrorPageUrl(t.url);
+      const hasCertBypass = Boolean(origin && isCertExceptionAllowed(origin));
+      const isInternal =
+        displayUrl.startsWith('nextgx://') ||
+        t.url.startsWith('file://') ||
+        t.url.startsWith('about:') ||
+        t.url.startsWith('data:');
+      const isHttpInsecure =
+        t.url.startsWith('http://') ||
+        hasCertBypass ||
+        (isErrPage && typeof displayUrl === 'string' && /^https?:\/\//i.test(displayUrl));
+      const isSecure = !isHttpInsecure && !isErrPage && t.url.startsWith('https://');
+      const securityState = isHttpInsecure ? 'insecure' : isSecure ? 'secure' : isInternal ? 'neutral' : 'neutral';
       return {
         id: t.id,
         title: t.title || (ctx.incognito ? 'Private Start' : 'Start Page'),
         url: displayUrl,
         origin,
-        isSecure: t.url.startsWith('https://') || displayUrl.startsWith('nextgx://'),
-        isHttpInsecure: t.url.startsWith('http://'),
+        isSecure,
+        isHttpInsecure,
+        securityState,
+        hasCertBypass,
         favicon: t.favicon || '',
         isLoading: Boolean(t.isLoading),
         canGoBack: Boolean(t.canGoBack),
@@ -69,8 +86,8 @@ function serializeTabs(ctx) {
         isBookmarked: state.storage.isBookmarked(displayUrl, ctx.profileId),
         adblockSiteEnabled: state.adBlocker
           ? origin
-            ? state.adBlocker.isSiteBlockingActive(origin)
-            : state.adBlocker.isEnabled()
+            ? state.adBlocker.isSiteBlockingActive(origin, ctx.profileId)
+            : state.adBlocker.isEnabled(ctx.profileId)
           : true
       };
     });

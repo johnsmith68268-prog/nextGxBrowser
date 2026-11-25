@@ -1,4 +1,18 @@
 const { app, session, nativeTheme } = require('electron');
+const fs = require('fs');
+const path = require('path');
+
+// Honor gpuAcceleration setting before app.whenReady() (Chromium requires
+// disableHardwareAcceleration() prior to ready).
+try {
+  const settingsFile = path.join(app.getPath('userData'), 'nextgx-data', 'settings.json');
+  if (fs.existsSync(settingsFile)) {
+    const raw = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+    if (raw && raw.gpuAcceleration === false && typeof app.disableHardwareAcceleration === 'function') {
+      app.disableHardwareAcceleration();
+    }
+  }
+} catch (_) {}
 
 if (process.platform === 'win32' && typeof app.setAppUserModelId === 'function') {
   app.setAppUserModelId('com.marjan.nextgxbrowser');

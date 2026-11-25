@@ -1,17 +1,11 @@
 [
   {
     "id": 1,
-    "priority": 2,
-    "action": {
-      "type": "modifyHeaders",
-      "responseHeaders": [
-        { "header": "x-frame-options", "operation": "remove" },
-        { "header": "content-security-policy", "operation": "remove" },
-        { "header": "frame-options", "operation": "remove" }
-      ]
-    },
+    "priority": 1,
+    "action": { "type": "block" },
     "condition": {
-      "resourceTypes": ["sub_frame"]
+      "urlFilter": "||adform.net^",
+      "resourceTypes": ["script", "image", "sub_frame", "xmlhttprequest", "other"]
     }
   },
   {

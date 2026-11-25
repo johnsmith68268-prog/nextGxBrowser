@@ -54,6 +54,17 @@ class GXSoundEngine {
     this._playTone(520, 320, 0.04, 'triangle', 0.14);
   }
 
+  playKeyTick() {
+    if (this.volume <= 0) return;
+    const prev = this.enabled;
+    this.enabled = true;
+    try {
+      this._playTone(620, 380, 0.025, 'triangle', 0.1);
+    } finally {
+      this.enabled = prev;
+    }
+  }
+
   playTabOpen() {
     this._playTone(440, 680, 0.08, 'sine', 0.16);
   }

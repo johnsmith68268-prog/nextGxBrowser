@@ -1028,13 +1028,17 @@
       updateSeekVisual(val, max);
     });
 
-    const commitSeek = async () => {
+    let lastSeekCommitAt = 0;
+    const commitSeek = async ({ fromChange = false } = {}) => {
       const wasSeeking = isSeeking;
       isSeeking = false;
       const src = playerState.activeSource;
-      if (!wasSeeking || !src || seekRangeEl.disabled) return;
+      if ((!wasSeeking && !fromChange) || !src || seekRangeEl.disabled) return;
+      const now = Date.now();
+      if (now - lastSeekCommitAt < 80) return;
+      lastSeekCommitAt = now;
       const seekTime = Number(seekRangeEl.value) || 0;
-      seekLockUntil = Date.now() + 600;
+      seekLockUntil = now + 600;
       const res = await window.gxPlayerAPI?.control({
         action: 'seek',
         sourceWcId: src.wcId,
@@ -1043,9 +1047,9 @@
       if (res?.state) renderPlayerState(res.state);
     };
 
-    seekRangeEl.addEventListener('change', commitSeek);
-    seekRangeEl.addEventListener('pointerup', commitSeek);
-    seekRangeEl.addEventListener('mouseup', commitSeek);
+    seekRangeEl.addEventListener('change', () => commitSeek({ fromChange: true }));
+    seekRangeEl.addEventListener('pointerup', () => commitSeek());
+    seekRangeEl.addEventListener('mouseup', () => commitSeek());
 
     (function init() {
       const params = new URLSearchParams(window.location.search);

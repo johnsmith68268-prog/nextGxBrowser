@@ -4,6 +4,8 @@ const globalSearchInput = document.getElementById('globalSearchInput');
 const topRightActions = document.getElementById('topRightActions');
 
 let currentPage = 'history';
+let settingsSubTab = 'all'; // 'all' | 'gx' | 'performance' | 'appearance' | 'search-startup' | 'privacy' | 'profiles' | 'system'
+let cookieShowAll = false;
 let searchQuery = '';
 let dlFilterCat = 'all';
 // [Wave2-D] Downloads page search (gap 7.3): local filter on top of the
@@ -43,9 +45,69 @@ function formatBytes(bytes) {
   return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
 }
 
-function switchPage(page) {
+function applySettingsCategoryAndSearch() {
+  if (currentPage !== 'settings') return;
+  const q = (searchQuery || '').trim().toLowerCase();
+  const cards = mainContainer.querySelectorAll('.section-card[data-settings-cat]');
+  let visibleCards = 0;
+  cards.forEach((card) => {
+    const cat = card.dataset.settingsCat || 'system';
+    const rows = card.querySelectorAll('.card-row');
+    if (q) {
+      let matchedRows = 0;
+      const headerText = (card.querySelector('.card-header')?.textContent || '').toLowerCase();
+      const headerHit = headerText.includes(q);
+      rows.forEach((row) => {
+        const text = (row.textContent || '').toLowerCase();
+        const hit = headerHit || text.includes(q);
+        row.style.display = hit ? '' : 'none';
+        if (hit) matchedRows += 1;
+      });
+      const showCard = headerHit || matchedRows > 0;
+      card.style.display = showCard ? '' : 'none';
+      if (showCard) visibleCards += 1;
+    } else {
+      rows.forEach((row) => { row.style.display = ''; });
+      const showCard = settingsSubTab === 'all' || cat === settingsSubTab;
+      card.style.display = showCard ? '' : 'none';
+      if (showCard) visibleCards += 1;
+    }
+  });
+  let emptyEl = document.getElementById('settingsSearchEmpty');
+  if (q && visibleCards === 0) {
+    if (!emptyEl) {
+      emptyEl = document.createElement('div');
+      emptyEl.id = 'settingsSearchEmpty';
+      emptyEl.className = 'section-card';
+      mainContainer.appendChild(emptyEl);
+    }
+    emptyEl.innerHTML = `<div class="nx-empty-state"><div class="nx-empty-art" aria-hidden="true">🔍</div><div class="nx-empty-title">No settings match "${escapeHtml(searchQuery)}"</div><div class="nx-empty-copy">Try searching for theme, ad blocker, search engine, downloads, panic, or shaders.</div></div>`;
+    emptyEl.style.display = '';
+  } else if (emptyEl) {
+    emptyEl.style.display = 'none';
+  }
+}
+
+function switchPage(rawPage) {
+  const rawStr = String(rawPage || '').trim().toLowerCase();
+  let page = rawStr;
+  if (rawStr.startsWith('settings/')) {
+    page = 'settings';
+    const sub = rawStr.slice('settings/'.length);
+    if (['all', 'gx', 'performance', 'appearance', 'search-startup', 'privacy', 'profiles', 'system'].includes(sub)) {
+      settingsSubTab = sub;
+    }
+  }
+  const VALID_PAGES = new Set(['history', 'downloads', 'bookmarks', 'passwords', 'privacy', 'extensions', 'settings']);
+  if (!VALID_PAGES.has(page)) page = 'settings';
+
+  // Clear cross-page search query when moving between pages.
+  if (currentPage !== page) {
+    searchQuery = '';
+    if (globalSearchInput) globalSearchInput.value = '';
+  }
   currentPage = page;
-  window.location.hash = page;
+  window.location.hash = page === 'settings' && settingsSubTab !== 'all' ? `settings/${settingsSubTab}` : page;
   lastHistoryRenderKey = '';
   lastDownloadsRenderKey = '';
   lastBookmarksRenderKey = '';
@@ -71,7 +133,6 @@ function switchPage(page) {
     revealedPasswordIds.clear();
     pwGenState.error = '';
     pwGenState.feedback = '';
-    // [Wave2-D] Autofill forms (gaps 6.2/6.3)
     addrFormOpen = false;
     addrEditingId = null;
     addrFormError = '';
@@ -112,6 +173,11 @@ document.querySelectorAll('.nav-link').forEach((btn) => {
 
 globalSearchInput.addEventListener('input', (e) => {
   searchQuery = e.target.value.trim().toLowerCase();
+  if (currentPage === 'settings') {
+    // Instant synchronous DOM filter — zero IPC thrash, never wipes active inputs!
+    applySettingsCategoryAndSearch();
+    return;
+  }
   renderCurrentPage();
 });
 
@@ -960,10 +1026,6 @@ async function renderBookmarksPage({ force = true } = {}) {
     renderBookmarksPage({ force: true });
   });
 
-  document.getElementById('btnEmptyBookmarkAdd')?.addEventListener('click', () => {
-    document.getElementById('btnToggleAddBookmark')?.click();
-  });
-
   document.getElementById('btnToggleAddBookmark').addEventListener('click', () => {
     addingBookmarkOpen = !addingBookmarkOpen;
     addingBookmarkError = '';
@@ -1093,6 +1155,10 @@ async function renderBookmarksPage({ force = true } = {}) {
 
   mainContainer.innerHTML = bmBannerHtml + datalistHtml + addCardHtml + sectionsHtml;
   bindBookmarkFavicons(mainContainer);
+
+  document.getElementById('btnEmptyBookmarkAdd')?.addEventListener('click', () => {
+    document.getElementById('btnToggleAddBookmark')?.click();
+  });
 
   const btnDismissBmBanner = document.getElementById('btnDismissBookmarksBanner');
   if (btnDismissBmBanner) {
@@ -2033,11 +2099,24 @@ async function renderPasswordsPage() {
     });
   });
 
-  // Passkey row controls: Delete (worker C, gap 4.2)
+  // Passkey row controls: two-step Delete confirm so a misclick cannot destroy an unrecoverable private key
   mainContainer.querySelectorAll('.del-pk').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const id = btn.closest('.card-row')?.dataset.id;
       if (!id || !window.gxChromePagesAPI.deletePasskey) return;
+      if (btn.dataset.confirmDelete !== '1') {
+        btn.dataset.confirmDelete = '1';
+        btn.textContent = 'Confirm delete?';
+        btn.classList.add('danger-solid');
+        clearTimeout(btn._confirmTimer);
+        btn._confirmTimer = setTimeout(() => {
+          btn.dataset.confirmDelete = '';
+          btn.textContent = 'Delete';
+          btn.classList.remove('danger-solid');
+        }, 4500);
+        return;
+      }
+      clearTimeout(btn._confirmTimer);
       btn.disabled = true;
       await window.gxChromePagesAPI.deletePasskey(id);
       renderPasswordsPage();
@@ -2291,7 +2370,9 @@ const PRIVACY_PERMISSION_LABELS = {
   camera: 'Camera',
   microphone: 'Microphone',
   geolocation: 'Location',
-  notifications: 'Notifications'
+  notifications: 'Notifications',
+  'clipboard-read': 'Clipboard',
+  'screen-share': 'Screen sharing'
 };
 
 // [Wave2-D] Site settings defaults (gap 5.12) + Safety Check (gap 5.8).
@@ -3110,7 +3191,8 @@ async function renderExtensionsPage() {
       <span class="nx-slider"></span>
     </label>
     <button class="btn primary" id="btnLoadUnpacked"${devMode ? '' : ' disabled title="Enable Developer Mode to load unpacked extensions" style="opacity:0.45;cursor:not-allowed;"'}>+ Load Unpacked</button>
-    ${devMode ? '' : '<span id="extDevModeHint" style="color:var(--text-secondary);font-size:11.5px;">Enable Developer Mode to load unpacked extensions</span>'}
+    <button class="btn" id="btnLoadPacked"${devMode ? '' : ' disabled title="Enable Developer Mode to load .crx/.zip extensions" style="opacity:0.45;cursor:not-allowed;"'}>+ Load .crx / .zip</button>
+    ${devMode ? '' : '<span id="extDevModeHint" style="color:var(--text-secondary);font-size:11.5px;">Enable Developer Mode to load extensions</span>'}
   `;
 
   const devModeToggle = document.getElementById('extDevModeToggle');
@@ -3123,6 +3205,41 @@ async function renderExtensionsPage() {
     });
   }
 
+  const handleExtLoadResult = (res, label) => {
+    if (!res) {
+      extStatusBanner = {
+        kind: 'error',
+        title: `Failed to load ${label}`,
+        detail: 'No response was returned from the browser extension loader.'
+      };
+    } else if (res.canceled) {
+      // User closed picker
+    } else if (!res.ok) {
+      extStatusBanner = {
+        kind: 'error',
+        title: `Failed to load ${label}`,
+        detail: res.error || 'Unknown error while loading extension.'
+      };
+    } else if (Array.isArray(res.warnings) && res.warnings.length > 0) {
+      extStatusBanner = {
+        kind: 'warning',
+        title: `Loaded "${res.extension?.name || 'Extension'}" with compatibility notes`,
+        detail: res.incognitoNotice
+          ? 'Loaded into standard browser windows (Electron cannot load extensions into temporary Private sessions).'
+          : 'Extension loaded cleanly with the following compatibility notes:',
+        items: res.warnings
+      };
+    } else {
+      extStatusBanner = {
+        kind: 'success',
+        title: `Loaded "${res.extension?.name || 'Extension'}"`,
+        detail: res.incognitoNotice
+          ? 'Loaded into standard browser windows (Electron cannot load extensions into temporary Private sessions).'
+          : `Version ${res.extension?.version || '1.0'} is active in standard browser tabs.`
+      };
+    }
+  };
+
   const loadBtn = document.getElementById('btnLoadUnpacked');
   if (loadBtn && devMode) {
     loadBtn.addEventListener('click', async () => {
@@ -3130,42 +3247,30 @@ async function renderExtensionsPage() {
       loadBtn.textContent = 'Loading...';
       try {
         const res = await window.gxChromePagesAPI.loadUnpackedExtension();
-        if (!res) {
-          extStatusBanner = {
-            kind: 'error',
-            title: 'Failed to load unpacked extension',
-            detail: 'No response was returned from the browser extension loader.'
-          };
-        } else if (res.canceled) {
-          // User closed the directory picker without choosing a folder.
-        } else if (!res.ok) {
-          extStatusBanner = {
-            kind: 'error',
-            title: 'Failed to load unpacked extension',
-            detail: res.error || 'Unknown error while loading extension.'
-          };
-        } else if (Array.isArray(res.warnings) && res.warnings.length > 0) {
-          extStatusBanner = {
-            kind: 'warning',
-            title: `Loaded "${res.extension?.name || 'Extension'}" with compatibility warnings`,
-            detail: res.incognitoNotice
-              ? 'Loaded into standard browser windows (Electron cannot load extensions into temporary Private sessions). Unsupported Chrome APIs/warnings reported by Chromium:'
-              : 'Electron supports a subset of Chrome Extension APIs. Chromium reported the following warnings while loading:',
-            items: res.warnings
-          };
-        } else {
-          extStatusBanner = {
-            kind: 'success',
-            title: `Loaded "${res.extension?.name || 'Extension'}"`,
-            detail: res.incognitoNotice
-              ? 'Loaded into standard browser windows (Electron cannot load extensions into temporary Private sessions).'
-              : `Version ${res.extension?.version || '1.0'} is active in standard browser tabs.`
-          };
-        }
+        handleExtLoadResult(res, 'unpacked extension');
       } catch (err) {
         extStatusBanner = {
           kind: 'error',
           title: 'Failed to load unpacked extension',
+          detail: err?.message || String(err)
+        };
+      }
+      renderExtensionsPage();
+    });
+  }
+
+  const loadPackedBtn = document.getElementById('btnLoadPacked');
+  if (loadPackedBtn && devMode && typeof window.gxChromePagesAPI.loadPackedExtension === 'function') {
+    loadPackedBtn.addEventListener('click', async () => {
+      loadPackedBtn.disabled = true;
+      loadPackedBtn.textContent = 'Unpacking...';
+      try {
+        const res = await window.gxChromePagesAPI.loadPackedExtension();
+        handleExtLoadResult(res, 'packed extension (.crx/.zip)');
+      } catch (err) {
+        extStatusBanner = {
+          kind: 'error',
+          title: 'Failed to load packed extension',
           detail: err?.message || String(err)
         };
       }
@@ -4261,7 +4366,7 @@ function renderCookieDomainsList(force = true) {
     domainMap.set(dom, (domainMap.get(dom) || 0) + 1);
   }
 
-  const activeQuery = (cookieFilterText || searchQuery || '').trim().toLowerCase();
+  const activeQuery = (cookieFilterText || '').trim().toLowerCase();
   const entries = Array.from(domainMap.entries())
     .filter(([dom]) => !activeQuery || dom.includes(activeQuery))
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
@@ -4269,7 +4374,8 @@ function renderCookieDomainsList(force = true) {
   const renderKey = JSON.stringify({
     total: settingsCookies.length,
     q: activeQuery,
-    entries
+    showAll: cookieShowAll,
+    entriesCount: entries.length
   });
   if (!force && renderKey === lastCookiesRenderKey) return;
   lastCookiesRenderKey = renderKey;
@@ -4292,19 +4398,35 @@ function renderCookieDomainsList(force = true) {
     return;
   }
 
+  const MAX_COOKIE_PREVIEW = 10;
+  const visibleEntries = cookieShowAll || activeQuery ? entries : entries.slice(0, MAX_COOKIE_PREVIEW);
   let rowsHtml = '';
-  for (const [domain, count] of entries) {
+  for (const [domain, count] of visibleEntries) {
     rowsHtml += `
       <div class="card-row cookie-domain-row" data-domain="${escapeHtml(domain)}">
         <div class="row-info">
-          <div class="row-title" style="cursor:default;">${escapeHtml(domain)}</div>
+          <div class="row-title">${escapeHtml(domain)}</div>
           <div class="row-sub">${count} ${count === 1 ? 'cookie' : 'cookies'}</div>
         </div>
         <button class="btn danger clear-site-cookies-btn" data-domain="${escapeHtml(domain)}">Clear</button>
       </div>
     `;
   }
+  if (!activeQuery && entries.length > MAX_COOKIE_PREVIEW) {
+    rowsHtml += `
+      <div class="card-row" style="justify-content:center;">
+        <button type="button" class="btn" id="btnToggleCookiesShowAll">
+          ${cookieShowAll ? 'Show fewer domains' : `Show all ${entries.length} domains`}
+        </button>
+      </div>
+    `;
+  }
   container.innerHTML = rowsHtml;
+
+  document.getElementById('btnToggleCookiesShowAll')?.addEventListener('click', () => {
+    cookieShowAll = !cookieShowAll;
+    renderCookieDomainsList(true);
+  });
 
   container.querySelectorAll('.clear-site-cookies-btn').forEach((btn) => {
     btn.addEventListener('click', async () => {
@@ -4557,8 +4679,70 @@ async function renderSettingsPage() {
     ['Split view divider: centre (when focused)', 'Home'],
     ['Close panel / drawer', 'Esc']
   ];
+  const SHADER_LABELS = {
+    none: 'Off',
+    grayscale: 'Grayscale',
+    sepia: 'Sepia',
+    warm: 'Warm',
+    cool: 'Cool',
+    'high-contrast': 'High Contrast',
+    vignette: 'Vignette',
+    night: 'Night'
+  };
+  const VIDEO_FX_LABELS = {
+    off: 'Off',
+    sharp: 'Sharp',
+    vivid: 'Vivid',
+    cinema: 'Cinema'
+  };
+  const SIDEBAR_ITEM_LABELS = [
+    ['gxCorner', 'GX Corner'],
+    ['player', 'Media Player'],
+    ['gxControl', 'GX Control'],
+    ['gxCleaner', 'GX Cleaner'],
+    ['youtube', 'YouTube'],
+    ['ytMusic', 'YT Music'],
+    ['spotify', 'Spotify'],
+    ['twitch', 'Twitch'],
+    ['discord', 'Discord'],
+    ['chatgpt', 'ChatGPT'],
+    ['claude', 'Claude'],
+    ['gemini', 'Gemini'],
+    ['perplexity', 'Perplexity'],
+    ['whatsapp', 'WhatsApp'],
+    ['appleMusic', 'Apple Music'],
+    ['soundcloud', 'SoundCloud'],
+    ['deezer', 'Deezer'],
+    ['tidal', 'Tidal']
+  ];
+  const sidebarDockGridHtml = SIDEBAR_ITEM_LABELS.map(([key, label]) => {
+    const checked = s.sidebarItems && key in s.sidebarItems ? Boolean(s.sidebarItems[key]) : false;
+    return `<label class="sidebar-dock-item"><span>${escapeHtml(label)}</span><input type="checkbox" class="sidebar-dock-chk" data-sidebar-key="${escapeHtml(key)}" ${checked ? 'checked' : ''} /></label>`;
+  }).join('');
+
+  const settingsSubnavTabs = [
+    ['all', 'All Settings', false],
+    ['gx', 'GX Studio', true],
+    ['performance', 'GX Performance', true],
+    ['appearance', 'Appearance & Dock', false],
+    ['search-startup', 'Search & Startup', false],
+    ['privacy', 'Privacy & Data', false],
+    ['profiles', 'Profiles', false],
+    ['system', 'System & About', false]
+  ];
+  const settingsSubnavHtml = `
+    <div class="settings-subnav" role="tablist" aria-label="Settings categories">
+      ${settingsSubnavTabs
+        .map(
+          ([id, label, isGx]) =>
+            `<button type="button" role="tab" class="settings-tab-pill ${isGx ? 'gx-pill' : ''} ${settingsSubTab === id ? 'active' : ''}" data-settings-tab="${id}" aria-selected="${settingsSubTab === id ? 'true' : 'false'}">${label}</button>`
+        )
+        .join('')}
+    </div>
+  `;
+
   const settingsShortcutsHtml = `
-    <div class="section-card" id="settingsShortcutsCard">
+    <div class="section-card" id="settingsShortcutsCard" data-settings-cat="system">
       <div class="card-header"><h2 class="nx-heading">Keyboard shortcuts</h2></div>
       <div class="card-row" style="flex-wrap:wrap;">
         ${settingsShortcutRows
@@ -4571,18 +4755,17 @@ async function renderSettingsPage() {
     </div>
   `;
 
-  mainContainer.innerHTML = `
-    <div class="section-card" id="profilesSettingsCard">
-      <div class="card-header">
-        <h2 class="nx-heading">Profiles (Local)</h2>
-        <button type="button" class="btn primary" id="btnSettingsAddProfile">+ Add Profile</button>
-      </div>
-      <div id="profilesSettingsBody"></div>
-    </div>
-    ${settingsShortcutsHtml}
+  if (s.accessibilityFocusHighlight) {
+    document.documentElement.dataset.focusHighlight = 'true';
+  } else {
+    delete document.documentElement.dataset.focusHighlight;
+  }
 
-    <div class="section-card">
-      <div class="card-header"><h2 class="nx-heading">Appearance, Sound & Behavior</h2></div>
+  mainContainer.innerHTML = `
+    ${settingsSubnavHtml}
+
+    <div class="section-card section-card--gx" id="gxFeaturesCard" data-settings-cat="gx">
+      <div class="card-header"><h2 class="nx-heading">GX Studio &amp; Gaming Features</h2></div>
       <div class="card-row" style="flex-wrap:wrap;align-items:flex-start;">
         <div class="row-info" style="min-width:180px;">
           <div class="row-title">nextGx Theme</div>
@@ -4599,6 +4782,169 @@ async function renderSettingsPage() {
           <button type="button" class="seg-btn theme-card ${s.theme === 'ice' ? 'active' : ''}" data-theme="ice"><span class="theme-preview ice" aria-hidden="true"></span><span class="theme-card-label"><span class="theme-dot ice"></span>Ice</span></button>
         </div>
       </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Panic button</div>
+          <div class="row-sub">Instantly hides all tabs and shows a neutral Start page — Ctrl+Shift+P, press again to restore</div>
+        </div>
+        <button type="button" class="btn danger" id="btnGxPanicNow">Panic now</button>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Shaders</div>
+          <div class="row-sub">CSS filter over web pages — applies live to open and newly opened tabs</div>
+        </div>
+        <select id="setShaderPreset" class="priv-perm-select" style="padding:7px 10px;">
+          ${Object.entries(SHADER_LABELS).map(([p, label]) => `<option value="${p}"${(s.shaderPreset || 'none') === p ? ' selected' : ''}>${label}</option>`).join('')}
+        </select>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Video enhance (filter)</div>
+          <div class="row-sub">Contrast / saturation filter on videos — not AI upscaling</div>
+        </div>
+        <select id="setVideoEnhancePreset" class="priv-perm-select" style="padding:7px 10px;">
+          ${Object.entries(VIDEO_FX_LABELS).map(([p, label]) => `<option value="${p}"${(s.videoEnhancePreset || 'off') === p ? ' selected' : ''}>${label}</option>`).join('')}
+        </select>
+      </div>
+      <div class="card-row sounds-settings-row">
+        <div class="sounds-row-top">
+          <div class="row-info">
+            <div class="row-title">GX Sound Effects</div>
+            <div class="row-sub">Subtle clicks, tab open/close, panel & notification sounds</div>
+          </div>
+          <div class="nx-segmented" id="setSoundsModeSeg" role="radiogroup" aria-label="GX Sound Effects">
+            <button type="button" class="seg-btn ${soundsEnabled ? 'active' : ''}" data-sounds-mode="gx" aria-pressed="${soundsEnabled ? 'true' : 'false'}">GX default</button>
+            <button type="button" class="seg-btn ${!soundsEnabled ? 'active' : ''}" data-sounds-mode="off" aria-pressed="${!soundsEnabled ? 'true' : 'false'}">Off</button>
+          </div>
+        </div>
+        <div class="sounds-volume-row ${soundsEnabled ? '' : 'is-disabled'}" id="setSoundsVolumeRow">
+          <label class="sounds-vol-label" for="setSoundsVolumeSlider">Volume</label>
+          <input type="range" id="setSoundsVolumeSlider" class="nx-range" min="0" max="100" step="1" value="${soundsVolPct}" ${soundsEnabled ? '' : 'disabled'} aria-label="GX sounds volume" />
+          <span class="sounds-vol-value nx-mono" id="setSoundsVolumeVal">${soundsVolPct}%</span>
+        </div>
+        <div class="nx-empty-inline ${soundsEnabled ? 'hidden' : ''}" id="setSoundsOffState" role="status">
+          <div class="nx-empty-inline-left">
+            <span class="nx-empty-copy">Sounds are off — turn them on to hear GX sounds</span>
+          </div>
+          <button type="button" class="btn primary" id="btnEnableSounds">Turn on GX sounds</button>
+        </div>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Keyboard sounds</div>
+          <div class="row-sub">Subtle click on key presses, works independently of UI sound effects</div>
+        </div>
+        <label class="nx-switch">
+          <input type="checkbox" id="setKeyboardSoundsChk" ${s.keyboardSoundsEnabled ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Background music</div>
+          <div class="row-sub">Ambient music preference — requires a local Mod pack with audio files</div>
+        </div>
+        <label class="nx-switch">
+          <input type="checkbox" id="setBackgroundMusicChk" ${s.backgroundMusicEnabled ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
+      <div class="card-row">
+        <div class="row-sub" id="gxSoundsNote">Checking sound pack status…</div>
+      </div>
+      <div class="card-row" style="flex-direction:column;align-items:stretch;gap:10px;">
+        <div class="row-info">
+          <div class="row-title">GX Mods — local packs only</div>
+          <div class="row-sub">A pack is a local folder with a mod.json (theme + wallpaper + optional audio). No online store.</div>
+          <div class="settings-form-msg" id="gxModMsg" style="display:none;"></div>
+        </div>
+        <div id="gxModsList"><div class="row-sub">Loading packs…</div></div>
+        <div><button type="button" class="btn primary" id="btnLoadGxMod">Load a Mod pack folder…</button></div>
+      </div>
+    </div>
+
+    <div class="section-card section-card--gx" data-settings-cat="performance">
+      <div class="card-header"><h2 class="nx-heading">GX Performance, Limiters &amp; Memory Saver</h2></div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">GX RAM Limiter</div>
+          <div class="row-sub">Automatically hibernates background tabs when browser RAM exceeds ${Number(s.gxRamLimitMB) || 4096} MB</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <input type="range" id="setGxRamLimitRange" class="nx-range" min="1024" max="16384" step="512" value="${Number(s.gxRamLimitMB) || 4096}" style="width:120px;" />
+          <span class="nx-mono" id="setGxRamLimitVal" style="font-size:12px;min-width:56px;">${Number(s.gxRamLimitMB) || 4096} MB</span>
+          <label class="nx-switch">
+            <input type="checkbox" id="setGxRamLimiterChk" ${s.gxRamLimiterEnabled ? 'checked' : ''} />
+            <span class="nx-slider"></span>
+          </label>
+        </div>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">GX CPU Limiter</div>
+          <div class="row-sub">Throttle background tab CPU usage to ${Number(s.gxCpuLimitPercent) || 50}%</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <input type="range" id="setGxCpuLimitRange" class="nx-range" min="25" max="100" step="5" value="${Number(s.gxCpuLimitPercent) || 50}" style="width:120px;" />
+          <span class="nx-mono" id="setGxCpuLimitVal" style="font-size:12px;min-width:40px;">${Number(s.gxCpuLimitPercent) || 50}%</span>
+          <label class="nx-switch">
+            <input type="checkbox" id="setGxCpuLimiterChk" ${s.gxCpuLimiterEnabled ? 'checked' : ''} />
+            <span class="nx-slider"></span>
+          </label>
+        </div>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Battery saver</div>
+          <div class="row-sub">Hibernates background tabs sooner (2m cap), slows stats polling, and reduces UI motion</div>
+        </div>
+        <label class="nx-switch">
+          <input type="checkbox" id="setBatterySaverChk" ${s.batterySaverEnabled ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Auto-Memory Saver (Background Tab Hibernation)</div>
+          <div class="row-sub">Browser RAM: ${sys?.browserRamMB || '--'} MB • System RAM: ${sys?.usedSysMB || '--'} / ${sys?.totalSysMB || '--'} MB</div>
+        </div>
+        <label class="nx-switch">
+          <input type="checkbox" id="setAutoSleepChk" ${s.autoSleepEnabled !== false ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Suspend idle background tabs after</div>
+          <div class="row-sub">Active, split-view, pinned, and audio-playing tabs are never hibernated</div>
+        </div>
+        <div class="nx-segmented ${autoSleepEnabled ? '' : 'is-disabled'}" id="setAutoSleepMinsSeg" role="radiogroup" aria-label="Idle tab hibernation delay" aria-disabled="${autoSleepEnabled ? 'false' : 'true'}">
+          <button type="button" class="seg-btn ${autoSleepMins === 2 ? 'active' : ''}" data-mins="2" aria-pressed="${autoSleepMins === 2 ? 'true' : 'false'}" ${autoSleepEnabled ? '' : 'disabled'}>2m</button>
+          <button type="button" class="seg-btn ${autoSleepMins === 5 ? 'active' : ''}" data-mins="5" aria-pressed="${autoSleepMins === 5 ? 'true' : 'false'}" ${autoSleepEnabled ? '' : 'disabled'}>5m</button>
+          <button type="button" class="seg-btn ${autoSleepMins === 10 ? 'active' : ''}" data-mins="10" aria-pressed="${autoSleepMins === 10 ? 'true' : 'false'}" ${autoSleepEnabled ? '' : 'disabled'}>10m</button>
+          <button type="button" class="seg-btn ${autoSleepMins === 20 ? 'active' : ''}" data-mins="20" aria-pressed="${autoSleepMins === 20 ? 'true' : 'false'}" ${autoSleepEnabled ? '' : 'disabled'}>20m</button>
+        </div>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Hibernate all inactive background tabs now</div>
+          <div class="row-sub" id="setSleepNowFeedback">${sys?.sleepingTabsCount || 0} background ${sys?.sleepingTabsCount === 1 ? 'tab' : 'tabs'} hibernated · ${sys?.activeTabsCount || 0} active</div>
+        </div>
+        <button class="btn primary" id="btnSetSleepNow">Hibernate Background Tabs</button>
+      </div>
+    </div>
+
+    <div class="section-card" id="profilesSettingsCard" data-settings-cat="profiles">
+      <div class="card-header">
+        <h2 class="nx-heading">Profiles (Local)</h2>
+        <button type="button" class="btn primary" id="btnSettingsAddProfile">+ Add Profile</button>
+      </div>
+      <div id="profilesSettingsBody"></div>
+    </div>
+
+    <div class="section-card" data-settings-cat="appearance">
+      <div class="card-header"><h2 class="nx-heading">Appearance, Tabs &amp; Behavior</h2></div>
       <div class="card-row">
         <div class="row-info">
           <div class="row-title">Show Bookmarks Bar</div>
@@ -4659,46 +5005,6 @@ async function renderSettingsPage() {
           <span class="nx-slider"></span>
         </label>
       </div>
-      <div class="card-row sounds-settings-row">
-        <div class="sounds-row-top">
-          <div class="row-info">
-            <div class="row-title">GX Sound Effects</div>
-            <div class="row-sub">Subtle clicks, tab open/close, panel & notification sounds</div>
-          </div>
-          <div class="nx-segmented" id="setSoundsModeSeg" role="radiogroup" aria-label="GX Sound Effects">
-            <button type="button" class="seg-btn ${soundsEnabled ? 'active' : ''}" data-sounds-mode="gx" aria-pressed="${soundsEnabled ? 'true' : 'false'}">GX default</button>
-            <button type="button" class="seg-btn ${!soundsEnabled ? 'active' : ''}" data-sounds-mode="off" aria-pressed="${!soundsEnabled ? 'true' : 'false'}">Off</button>
-          </div>
-        </div>
-        <div class="sounds-volume-row ${soundsEnabled ? '' : 'is-disabled'}" id="setSoundsVolumeRow">
-          <label class="sounds-vol-label" for="setSoundsVolumeSlider">Volume</label>
-          <input
-            type="range"
-            id="setSoundsVolumeSlider"
-            class="nx-range"
-            min="0"
-            max="100"
-            step="1"
-            value="${soundsVolPct}"
-            ${soundsEnabled ? '' : 'disabled'}
-            aria-label="GX sounds volume"
-          />
-          <span class="sounds-vol-value nx-mono" id="setSoundsVolumeVal">${soundsVolPct}%</span>
-        </div>
-        <div class="nx-empty-inline ${soundsEnabled ? 'hidden' : ''}" id="setSoundsOffState" role="status">
-          <div class="nx-empty-inline-left">
-            <div class="nx-empty-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                <line x1="23" y1="9" x2="17" y2="15" />
-                <line x1="17" y1="9" x2="23" y2="15" />
-              </svg>
-            </div>
-            <span class="nx-empty-copy">Sounds are off — turn them on to hear GX sounds</span>
-          </div>
-          <button type="button" class="btn primary" id="btnEnableSounds">Turn on GX sounds</button>
-        </div>
-      </div>
       <div class="card-row">
         <div class="row-info">
           <div class="row-title">Close Browser Window on Last Tab</div>
@@ -4719,79 +5025,16 @@ async function renderSettingsPage() {
           <span class="nx-slider"></span>
         </label>
       </div>
-    </div>
-
-    <div class="section-card" id="gxFeaturesCard">
-      <div class="card-header"><h2 class="nx-heading">GX Features</h2></div>
-      <div class="card-row">
-        <div class="row-info">
-          <div class="row-title">Panic button</div>
-          <div class="row-sub">Instantly hides all tabs and shows a neutral Start page — Ctrl+Shift+P, press again to restore</div>
-        </div>
-        <button type="button" class="btn danger" id="btnGxPanicNow">Panic now</button>
-      </div>
-      <div class="card-row">
-        <div class="row-info">
-          <div class="row-title">Shaders</div>
-          <div class="row-sub">CSS filter over web pages — works without a GPU, pages just render slower in software</div>
-        </div>
-        <select id="setShaderPreset" class="priv-perm-select" style="padding:7px 10px;">
-          ${['none', 'grayscale', 'sepia', 'warm', 'cool', 'high-contrast', 'vignette', 'night'].map((p) => `<option value="${p}"${(s.shaderPreset || 'none') === p ? ' selected' : ''}>${p === 'none' ? 'Off' : p}</option>`).join('')}
-        </select>
-      </div>
-      <div class="card-row">
-        <div class="row-info">
-          <div class="row-title">Video enhance (filter)</div>
-          <div class="row-sub">Contrast / saturation filter on videos — not AI upscaling</div>
-        </div>
-        <select id="setVideoEnhancePreset" class="priv-perm-select" style="padding:7px 10px;">
-          ${['off', 'sharp', 'vivid', 'cinema'].map((p) => `<option value="${p}"${(s.videoEnhancePreset || 'off') === p ? ' selected' : ''}>${p === 'off' ? 'Off' : p}</option>`).join('')}
-        </select>
-      </div>
-      <div class="card-row">
-        <div class="row-info">
-          <div class="row-title">Battery saver</div>
-          <div class="row-sub">Hibernates background tabs sooner and slows stats polling</div>
-        </div>
-        <label class="nx-switch">
-          <input type="checkbox" id="setBatterySaverChk" ${s.batterySaverEnabled ? 'checked' : ''} />
-          <span class="nx-slider"></span>
-        </label>
-      </div>
-      <div class="card-row">
-        <div class="row-info">
-          <div class="row-title">Keyboard sounds</div>
-          <div class="row-sub">Subtle click on key presses, from the built-in synth unless a Mod sound pack is installed</div>
-        </div>
-        <label class="nx-switch">
-          <input type="checkbox" id="setKeyboardSoundsChk" ${s.keyboardSoundsEnabled ? 'checked' : ''} />
-          <span class="nx-slider"></span>
-        </label>
-      </div>
-      <div class="card-row">
-        <div class="row-info">
-          <div class="row-title">Background music</div>
-          <div class="row-sub">Ambient music while browsing — needs a local Mod pack with audio files</div>
-        </div>
-        <label class="nx-switch">
-          <input type="checkbox" id="setBackgroundMusicChk" ${s.backgroundMusicEnabled ? 'checked' : ''} />
-          <span class="nx-slider"></span>
-        </label>
-      </div>
-      <div class="card-row">
-        <div class="row-sub" id="gxSoundsNote">Checking sound pack status…</div>
-      </div>
       <div class="card-row" style="flex-direction:column;align-items:stretch;gap:10px;">
         <div class="row-info">
-          <div class="row-title">GX Mods — local packs only</div>
-          <div class="row-sub">A pack is a local folder with a mod.json (theme + wallpaper + optional audio). No online store.</div>
+          <div class="row-title">Sidebar Dock Services &amp; Tools</div>
+          <div class="row-sub">Toggle which services and GX tools appear on the left sidebar rail</div>
         </div>
-        <div id="gxModsList"><div class="row-sub">Loading packs…</div></div>
-        <div><button type="button" class="btn primary" id="btnLoadGxMod">Load a Mod pack folder…</button></div>
+        <div class="sidebar-dock-grid">${sidebarDockGridHtml}</div>
       </div>
     </div>
 
-    <div class="section-card">
+    <div class="section-card" data-settings-cat="search-startup">
       <div class="card-header"><h2 class="nx-heading">On Startup</h2></div>
       ${startupRadio('newtab', 'Open the new tab page', 'Start with a fresh Speed Dial page')}
       ${startupRadio('restore', 'Continue where you left off', 'Reopen tabs from your last browsing session when nextGx launches')}
@@ -4799,7 +5042,7 @@ async function renderSettingsPage() {
       ${startupUrlsHtml}
     </div>
 
-    <div class="section-card">
+    <div class="section-card" data-settings-cat="search-startup">
       <div class="card-header"><h2 class="nx-heading">Homepage</h2></div>
       <div class="card-row" style="flex-wrap:wrap;">
         <div class="row-info" style="min-width:220px;">
@@ -4823,12 +5066,12 @@ async function renderSettingsPage() {
       </div>
     </div>
 
-    ${searchEngineCardHtml}
-    ${languagesCardHtml}
-    ${downloadsCardHtml}
+    ${searchEngineCardHtml.replace('class="section-card"', 'class="section-card" data-settings-cat="search-startup"')}
+    ${languagesCardHtml.replace('class="section-card"', 'class="section-card" data-settings-cat="system"')}
+    ${downloadsCardHtml.replace('class="section-card"', 'class="section-card" data-settings-cat="system"')}
 
-    <div class="section-card">
-      <div class="card-header"><h2 class="nx-heading">Privacy Shield & Security</h2></div>
+    <div class="section-card" data-settings-cat="privacy">
+      <div class="card-header"><h2 class="nx-heading">Privacy Shield &amp; Security</h2></div>
       <div class="card-row">
         <div class="row-info">
           <div class="row-title">Privacy &amp; Security Dashboard</div>
@@ -4839,7 +5082,7 @@ async function renderSettingsPage() {
       <div class="card-row">
         <div class="row-info">
           <div class="row-title">nextGx Built-in Ad Blocker</div>
-          <div class="row-sub">Blocks ad networks & cosmetic ad slots — Blocked ${ad?.sessionBlocked || 0} this session (${ad?.totalBlocked || 0} lifetime)</div>
+          <div class="row-sub">Blocks ad networks, YouTube ads &amp; cosmetic ad slots — Blocked ${ad?.sessionBlocked || 0} this session (${ad?.totalBlocked || 0} lifetime)</div>
         </div>
         <label class="nx-switch">
           <input type="checkbox" id="setAdblockChk" ${masterAdblockOn ? 'checked' : ''} />
@@ -4848,8 +5091,8 @@ async function renderSettingsPage() {
       </div>
       <div class="card-row">
         <div class="row-info">
-          <div class="row-title">Block Analytics & Trackers</div>
-          <div class="row-sub">Blocks analytics, telemetry, session replay & tracking pixels while the ad blocker is on</div>
+          <div class="row-title">Block Analytics &amp; Trackers</div>
+          <div class="row-sub">Blocks analytics, telemetry, session replay &amp; tracking pixels while the ad blocker is on</div>
         </div>
         <label class="nx-switch">
           <input type="checkbox" id="setTrackerBlockChk" ${trackersActive ? 'checked' : ''} ${masterAdblockOn ? '' : 'disabled'} />
@@ -4873,25 +5116,25 @@ async function renderSettingsPage() {
           </div>
           <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-size:12.5px;color:var(--text-primary);">
             <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
-              <input type="checkbox" id="chkSetClearHistory" checked /> Browsing history
+              <input type="checkbox" id="chkSetClearHistory" style="accent-color:var(--accent);" checked /> Browsing history
             </label>
             <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
-              <input type="checkbox" id="chkSetClearCookies" checked /> Cookies &amp; site data
+              <input type="checkbox" id="chkSetClearCookies" style="accent-color:var(--accent);" checked /> Cookies &amp; site data
             </label>
             <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
-              <input type="checkbox" id="chkSetClearCache" checked /> Cached images &amp; files
+              <input type="checkbox" id="chkSetClearCache" style="accent-color:var(--accent);" checked /> Cached images &amp; files
             </label>
             <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
-              <input type="checkbox" id="chkSetClearDownloads" /> Download history
+              <input type="checkbox" id="chkSetClearDownloads" style="accent-color:var(--accent);" /> Download history
             </label>
             <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
-              <input type="checkbox" id="chkSetClearPasswords" /> Saved passwords
+              <input type="checkbox" id="chkSetClearPasswords" style="accent-color:var(--accent);" /> Saved passwords
             </label>
             <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
-              <input type="checkbox" id="chkSetClearAutofill" /> Autofill form data
+              <input type="checkbox" id="chkSetClearAutofill" style="accent-color:var(--accent);" /> Autofill form data
             </label>
             <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
-              <input type="checkbox" id="chkSetClearSiteSettings" /> Site settings
+              <input type="checkbox" id="chkSetClearSiteSettings" style="accent-color:var(--accent);" /> Site settings
             </label>
           </div>
           <div class="settings-form-msg success" id="setClearDataMsg" style="display:${clearDataMsg ? 'block' : 'none'};">${escapeHtml(clearDataMsg)}</div>
@@ -4900,9 +5143,9 @@ async function renderSettingsPage() {
       </div>
     </div>
 
-    <div class="section-card" id="cookiesSettingsCard">
+    <div class="section-card" id="cookiesSettingsCard" data-settings-cat="privacy">
       <div class="card-header" style="flex-wrap:wrap;">
-        <h2 class="nx-heading">Cookies & Site Data (<span id="totalCookieCountBadge">${settingsCookies.length}</span>)</h2>
+        <h2 class="nx-heading">Cookies &amp; Site Data (<span id="totalCookieCountBadge">${settingsCookies.length}</span>)</h2>
         <div style="display:flex;align-items:center;gap:10px;">
           <input
             type="text"
@@ -4923,50 +5166,12 @@ async function renderSettingsPage() {
       <div id="cookieDomainsContainer"></div>
     </div>
 
-    <div class="section-card">
-      <div class="card-header"><h2 class="nx-heading">Performance & 8 GB Memory Saver</h2></div>
-      <div class="card-row">
-        <div class="row-info">
-          <div class="row-title">Auto-Memory Saver (Background Tab Hibernation)</div>
-          <div class="row-sub">Browser RAM: ${sys?.browserRamMB || '--'} MB • System RAM: ${sys?.usedSysMB || '--'} / ${sys?.totalSysMB || '--'} MB</div>
-        </div>
-        <label class="nx-switch">
-          <input type="checkbox" id="setAutoSleepChk" ${s.autoSleepEnabled !== false ? 'checked' : ''} />
-          <span class="nx-slider"></span>
-        </label>
-      </div>
-      <div class="card-row">
-        <div class="row-info">
-          <div class="row-title">Suspend idle background tabs after</div>
-          <div class="row-sub">Active, pinned, and audio-playing tabs are never hibernated</div>
-        </div>
-        <div class="nx-segmented ${autoSleepEnabled ? '' : 'is-disabled'}" id="setAutoSleepMinsSeg" role="radiogroup" aria-label="Idle tab hibernation delay" aria-disabled="${autoSleepEnabled ? 'false' : 'true'}">
-          <button type="button" class="seg-btn ${autoSleepMins === 2 ? 'active' : ''}" data-mins="2" aria-pressed="${autoSleepMins === 2 ? 'true' : 'false'}" ${autoSleepEnabled ? '' : 'disabled'}>2m</button>
-          <button type="button" class="seg-btn ${autoSleepMins === 5 ? 'active' : ''}" data-mins="5" aria-pressed="${autoSleepMins === 5 ? 'true' : 'false'}" ${autoSleepEnabled ? '' : 'disabled'}>5m</button>
-          <button type="button" class="seg-btn ${autoSleepMins === 10 ? 'active' : ''}" data-mins="10" aria-pressed="${autoSleepMins === 10 ? 'true' : 'false'}" ${autoSleepEnabled ? '' : 'disabled'}>10m</button>
-          <button type="button" class="seg-btn ${autoSleepMins === 20 ? 'active' : ''}" data-mins="20" aria-pressed="${autoSleepMins === 20 ? 'true' : 'false'}" ${autoSleepEnabled ? '' : 'disabled'}>20m</button>
-        </div>
-      </div>
-      <div class="card-row">
-        <div class="row-info">
-          <div class="row-title">Hibernate all inactive background tabs now</div>
-        </div>
-        <button class="btn primary" id="btnSetSleepNow">Hibernate Background Tabs</button>
-      </div>
-      <div class="card-row">
-        <div class="row-info">
-          <div class="row-title">Sleeping tabs right now</div>
-          <div class="row-sub">${sys?.sleepingTabsCount || 0} background ${sys?.sleepingTabsCount === 1 ? 'tab' : 'tabs'} hibernated · ${sys?.activeTabsCount || 0} active</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="section-card" id="accessibilitySettingsCard">
+    <div class="section-card" id="accessibilitySettingsCard" data-settings-cat="system">
       <div class="card-header"><h2 class="nx-heading">Accessibility</h2></div>
       <div class="card-row">
         <div class="row-info">
           <div class="row-title">Caret browsing (F7)</div>
-          <div class="row-sub">Move through pages with a keyboard caret instead of the mouse</div>
+          <div class="row-sub">Saved preference (Chromium caret mode)</div>
         </div>
         <label class="nx-switch">
           <input type="checkbox" id="setCaretBrowsingChk" ${s.accessibilityCaretBrowsing ? 'checked' : ''} />
@@ -4976,7 +5181,7 @@ async function renderSettingsPage() {
       <div class="card-row">
         <div class="row-info">
           <div class="row-title">Highlight the focused item</div>
-          <div class="row-sub">Show a strong outline around the item keyboard focus is on</div>
+          <div class="row-sub">Show a strong high-contrast outline around the item keyboard focus is on</div>
         </div>
         <label class="nx-switch">
           <input type="checkbox" id="setFocusHighlightChk" ${s.accessibilityFocusHighlight ? 'checked' : ''} />
@@ -4985,12 +5190,12 @@ async function renderSettingsPage() {
       </div>
     </div>
 
-    <div class="section-card" id="systemSettingsCard">
+    <div class="section-card" id="systemSettingsCard" data-settings-cat="system">
       <div class="card-header"><h2 class="nx-heading">System</h2></div>
       <div class="card-row">
         <div class="row-info">
           <div class="row-title">Continue running background apps when nextGx is closed</div>
-          <div class="row-sub">Let installed extensions and web apps keep running after you close the browser window</div>
+          <div class="row-sub">Saved preference for background keep-alive</div>
         </div>
         <label class="nx-switch">
           <input type="checkbox" id="setBackgroundAppsChk" ${s.runBackgroundApps ? 'checked' : ''} />
@@ -5000,7 +5205,7 @@ async function renderSettingsPage() {
       <div class="card-row">
         <div class="row-info">
           <div class="row-title">Use graphics acceleration when available</div>
-          <div class="row-sub">Takes effect after restarting the browser</div>
+          <div class="row-sub">Applies at startup via Chromium GPU flag — restart nextGx to take effect</div>
         </div>
         <label class="nx-switch">
           <input type="checkbox" id="setGpuChk" ${s.gpuAcceleration !== false ? 'checked' : ''} />
@@ -5009,7 +5214,9 @@ async function renderSettingsPage() {
       </div>
     </div>
 
-    <div class="section-card" id="settingsImportExportCard">
+    ${settingsShortcutsHtml}
+
+    <div class="section-card" id="settingsImportExportCard" data-settings-cat="system">
       <div class="card-header"><h2 class="nx-heading">Backup &amp; Restore Settings</h2></div>
       ${settingsIoBannerHtml}
       <div class="card-row" style="flex-wrap:wrap;">
@@ -5024,7 +5231,7 @@ async function renderSettingsPage() {
       </div>
     </div>
 
-    <div class="section-card" id="aboutSettingsCard">
+    <div class="section-card" id="aboutSettingsCard" data-settings-cat="system">
       <div class="card-header"><h2 class="nx-heading">About nextGx Browser</h2></div>
       <div class="card-row">
         <div class="row-info">
@@ -5064,10 +5271,10 @@ async function renderSettingsPage() {
     btnSettingsAddProfile.addEventListener('click', async () => {
       // UX phase: the ONE shared "New Profile" modal lives in the shell.
       if (typeof window.gxChromePagesAPI?.openCreateProfileModal === 'function') {
-        await window.gxChromePagesAPI.openCreateProfileModal();
-        return;
+        const res = await window.gxChromePagesAPI.openCreateProfileModal();
+        if (res && res.ok) return;
       }
-      // Fallback (old preload): the inline form in this page.
+      // Fallback (Private window or old preload): the inline form in this page.
       const existing = Array.isArray(settingsProfilesData?.profiles) ? settingsProfilesData.profiles : [];
       const used = new Set(existing.map((p) => p.color));
       settingsProfileCreateColor =
@@ -5260,12 +5467,75 @@ async function renderSettingsPage() {
     window.gxChromePagesAPI.updateSettings({ forceDarkWeb: e.target.checked });
   });
 
+  // Settings sub-category tabs + GX limiters + full sidebar dock grid
+  mainContainer.querySelectorAll('.settings-tab-pill').forEach((pill) => {
+    pill.addEventListener('click', () => {
+      settingsSubTab = pill.dataset.settingsTab || 'all';
+      mainContainer.querySelectorAll('.settings-tab-pill').forEach((p) => {
+        const on = p.dataset.settingsTab === settingsSubTab;
+        p.classList.toggle('active', on);
+        p.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      window.location.hash = settingsSubTab === 'all' ? 'settings' : `settings/${settingsSubTab}`;
+      applySettingsCategoryAndSearch();
+    });
+  });
+
+  mainContainer.querySelectorAll('.sidebar-dock-chk').forEach((chk) => {
+    chk.addEventListener('change', async () => {
+      const key = chk.dataset.sidebarKey;
+      if (!key) return;
+      const fresh = (await window.gxChromePagesAPI.getSettings?.()) || s;
+      const nextItems = { ...(fresh.sidebarItems || {}), [key]: chk.checked };
+      await window.gxChromePagesAPI.updateSettings({ sidebarItems: nextItems });
+    });
+  });
+
+  const setGxRamLimitRange = document.getElementById('setGxRamLimitRange');
+  const setGxRamLimitVal = document.getElementById('setGxRamLimitVal');
+  if (setGxRamLimitRange) {
+    setGxRamLimitRange.addEventListener('input', () => {
+      if (setGxRamLimitVal) setGxRamLimitVal.textContent = `${setGxRamLimitRange.value} MB`;
+    });
+    setGxRamLimitRange.addEventListener('change', () => {
+      window.gxChromePagesAPI.updateSettings({ gxRamLimitMB: Number(setGxRamLimitRange.value) });
+    });
+  }
+  bindSettingsToggle('setGxRamLimiterChk', 'gxRamLimiterEnabled');
+
+  const setGxCpuLimitRange = document.getElementById('setGxCpuLimitRange');
+  const setGxCpuLimitVal = document.getElementById('setGxCpuLimitVal');
+  if (setGxCpuLimitRange) {
+    setGxCpuLimitRange.addEventListener('input', () => {
+      if (setGxCpuLimitVal) setGxCpuLimitVal.textContent = `${setGxCpuLimitRange.value}%`;
+    });
+    setGxCpuLimitRange.addEventListener('change', () => {
+      window.gxChromePagesAPI.updateSettings({ gxCpuLimitPercent: Number(setGxCpuLimitRange.value) });
+    });
+  }
+  bindSettingsToggle('setGxCpuLimiterChk', 'gxCpuLimiterEnabled');
+
+  document.getElementById('setFocusHighlightChk')?.addEventListener('change', (e) => {
+    if (e.target.checked) document.documentElement.dataset.focusHighlight = 'true';
+    else delete document.documentElement.dataset.focusHighlight;
+  });
+
   // [Fix2 integration] GX Features card: Panic, Shaders, video enhance,
   // battery saver, keyboard sounds / background music, local Mod packs.
   const btnGxPanicNow = document.getElementById('btnGxPanicNow');
   if (btnGxPanicNow) {
+    const syncPanicBtn = async () => {
+      if (!window.gxChromePagesAPI.getPanicState) return;
+      try {
+        const pst = await window.gxChromePagesAPI.getPanicState();
+        btnGxPanicNow.textContent = pst && pst.active ? `Restore tabs (${pst.tabCount || 0})` : 'Panic now';
+      } catch (_) {}
+    };
+    syncPanicBtn();
     btnGxPanicNow.addEventListener('click', async () => {
-      if (window.gxChromePagesAPI.triggerPanic) await window.gxChromePagesAPI.triggerPanic();
+      if (window.gxChromePagesAPI.togglePanic) await window.gxChromePagesAPI.togglePanic();
+      else if (window.gxChromePagesAPI.triggerPanic) await window.gxChromePagesAPI.triggerPanic();
+      syncPanicBtn();
     });
   }
   const setShaderPreset = document.getElementById('setShaderPreset');
@@ -5291,6 +5561,14 @@ async function renderSettingsPage() {
       gxSoundsNote.textContent = 'Sound status unavailable.';
     });
   }
+  const showGxModMsg = (text, kind = 'error') => {
+    const el = document.getElementById('gxModMsg');
+    if (!el) return;
+    if (!text) { el.style.display = 'none'; el.textContent = ''; return; }
+    el.className = `settings-form-msg ${kind}`;
+    el.textContent = text;
+    el.style.display = 'block';
+  };
   const renderGxModsList = async () => {
     const listEl = document.getElementById('gxModsList');
     if (!listEl || !window.gxChromePagesAPI.getGxModStatus) return;
@@ -5299,7 +5577,7 @@ async function renderSettingsPage() {
       const packs = (st && st.packs) || [];
       listEl.innerHTML = packs.length
         ? packs.map((p) => `
-          <div class="card-row" style="padding:9px 0;">
+          <div class="gxmod-item-row">
             <div class="row-info">
               <div class="row-title">${escapeHtml(p.name || p.id)}</div>
               <div class="row-sub">${escapeHtml(p.theme || '')}${st.activeId === p.id ? ' • Active' : ''}</div>
@@ -5312,7 +5590,11 @@ async function renderSettingsPage() {
         : '<div class="row-sub">No Mod packs loaded yet.</div>';
       listEl.querySelectorAll('[data-gxmod-apply]').forEach((b) => {
         b.addEventListener('click', async () => {
-          await window.gxChromePagesAPI.applyGxMod(b.dataset.gxmodApply);
+          const res = await window.gxChromePagesAPI.applyGxMod(b.dataset.gxmodApply);
+          if (res && !res.ok && res.error) {
+            showGxModMsg(res.error, 'error');
+            return;
+          }
           renderSettingsPage();
         });
       });
@@ -5331,8 +5613,13 @@ async function renderSettingsPage() {
   if (btnLoadGxMod) {
     btnLoadGxMod.addEventListener('click', async () => {
       if (!window.gxChromePagesAPI.loadGxMod) return;
+      showGxModMsg('');
       const res = await window.gxChromePagesAPI.loadGxMod();
-      if (res && res.ok) renderSettingsPage();
+      if (res && res.ok) {
+        renderSettingsPage();
+      } else if (res && !res.canceled && res.error) {
+        showGxModMsg(res.error, 'error');
+      }
     });
   }
 
@@ -5608,15 +5895,30 @@ async function renderSettingsPage() {
     renderSettingsPage();
   });
   document.getElementById('btnSetSleepNow').addEventListener('click', async () => {
+    const fb = document.getElementById('setSleepNowFeedback');
+    if (window.gxChromePagesAPI.hibernateNow) {
+      const res = await window.gxChromePagesAPI.hibernateNow();
+      if (fb && res) {
+        fb.textContent = `Hibernated ${res.sleptCount || 0} tab(s) · RAM ${res.afterMB || '--'} MB (${res.savedMB > 0 ? `freed ${res.savedMB} MB` : 'measuring…'})`;
+      }
+      return;
+    }
     await window.gxChromePagesAPI.sleepBackgroundTabs();
     renderSettingsPage();
   });
+
+  applySettingsCategoryAndSearch();
 
   if (pendingSettingsScrollTarget) {
     const targetId = pendingSettingsScrollTarget;
     pendingSettingsScrollTarget = '';
     const el = document.getElementById(targetId);
     if (el) {
+      const parentCard = el.closest('.section-card[data-settings-cat]');
+      if (parentCard && parentCard.style.display === 'none') {
+        settingsSubTab = parentCard.dataset.settingsCat || 'all';
+        applySettingsCategoryAndSearch();
+      }
       const highlightEl = el.closest('.card-row') || el;
       requestAnimationFrame(() => {
         highlightEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -5637,6 +5939,12 @@ function refreshVisiblePage() {
     renderPrivacyPage({ force: false });
   } else if (currentPage === 'downloads') {
     renderDownloadsPage({ force: false });
+  } else if (currentPage === 'passwords') {
+    if (!editingPasswordId && !addrFormOpen && !cardFormOpen) {
+      renderPasswordsPage();
+    }
+  } else if (currentPage === 'extensions') {
+    renderExtensionsPage();
   } else if (currentPage === 'bookmarks') {
     if (!addingBookmarkOpen && !renamingFolderName && !editingBookmarkId) {
       renderBookmarksPage({ force: false });
@@ -5767,6 +6075,19 @@ function initThemeSync() {
       syncToggle('setFocusHighlightChk', 'accessibilityFocusHighlight');
       syncToggle('setBackgroundAppsChk', 'runBackgroundApps');
       syncToggle('setGpuChk', 'gpuAcceleration');
+      syncToggle('setBatterySaverChk', 'batterySaverEnabled');
+      syncToggle('setKeyboardSoundsChk', 'keyboardSoundsEnabled');
+      syncToggle('setBackgroundMusicChk', 'backgroundMusicEnabled');
+      syncToggle('setGxRamLimiterChk', 'gxRamLimiterEnabled');
+      syncToggle('setGxCpuLimiterChk', 'gxCpuLimiterEnabled');
+      const shaderSel = document.getElementById('setShaderPreset');
+      if (shaderSel && s && typeof s.shaderPreset === 'string') shaderSel.value = s.shaderPreset;
+      const vidSel = document.getElementById('setVideoEnhancePreset');
+      if (vidSel && s && typeof s.videoEnhancePreset === 'string') vidSel.value = s.videoEnhancePreset;
+      if (s && typeof s.accessibilityFocusHighlight === 'boolean') {
+        if (s.accessibilityFocusHighlight) document.documentElement.dataset.focusHighlight = 'true';
+        else delete document.documentElement.dataset.focusHighlight;
+      }
       const homeInp = document.getElementById('setHomepageInput');
       if (homeInp && s && typeof s.homepageUrl === 'string' && document.activeElement !== homeInp) {
         homeInp.value = s.homepageUrl;
@@ -5844,7 +6165,7 @@ function initThemeSync() {
   if (window.gxChromePagesAPI?.onPasswordsUpdate) {
     window.gxChromePagesAPI.onPasswordsUpdate(() => {
       if (currentPage === 'passwords') {
-        if (!editingPasswordId) {
+        if (!editingPasswordId && !addrFormOpen && !cardFormOpen) {
           renderPasswordsPage();
         }
       } else if (currentPage === 'privacy') {

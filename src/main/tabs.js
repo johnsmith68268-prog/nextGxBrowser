@@ -124,7 +124,15 @@ function buildWebContentsViewForTab(ctx, tab) {
     state.adBlocker.injectCosmeticFilters(wc);
     const s = state.storage.getSettings(ctx.profileId);
     if (s.forceDarkWeb && /^https?:/i.test(tab.url)) {
-      wc.insertCSS(`html { filter: invert(0.92) hue-rotate(180deg) !important; background: #0d0e12 !important; } img, video, iframe, canvas { filter: invert(1) hue-rotate(180deg) !important; }`).catch(() => {});
+      if (!tab._forceDarkCssKey) {
+        wc.insertCSS(`html { filter: invert(0.92) hue-rotate(180deg) !important; background: #0d0e12 !important; } img, video, iframe, canvas { filter: invert(1) hue-rotate(180deg) !important; }`)
+          .then((key) => { tab._forceDarkCssKey = key; })
+          .catch(() => {});
+      }
+    } else if (tab._forceDarkCssKey) {
+      const k = tab._forceDarkCssKey;
+      tab._forceDarkCssKey = null;
+      wc.removeInsertedCSS?.(k).catch(() => {});
     }
     broadcastState(ctx);
   });
@@ -283,6 +291,8 @@ function buildWebContentsViewForTab(ctx, tab) {
 
   wc.on('did-navigate', (_e, url) => {
     clearTabAudioHoldTimer(tab);
+    tab.readerMode = false;
+    tab._forceDarkCssKey = null;
     tab.audible = Boolean(typeof wc.isCurrentlyAudible === 'function' && wc.isCurrentlyAudible());
     state.adBlocker.clearCosmeticKeys(wc);
     player.onTabNavigated(ctx, tab);
@@ -676,7 +686,12 @@ function sleepBackgroundTabs(ctx) {
   return { sleptCount, state: serializeTabs(ctx) };
 }
 
-function closeTab(ctx, tabId) {
+function closeTab(ctx, tabId, opts = {}) {
+  const {
+    skipSessionClose = false,
+    skipRecentlyClosed = false,
+    skipAutoNewTab = false
+  } = opts || {};
   const tab = ctx.tabs.get(tabId);
   if (!tab) return serializeTabs(ctx);
 
@@ -697,7 +712,9 @@ function closeTab(ctx, tabId) {
       tab.view.webContents.isFocused()
   );
 
-  recordClosedTabIfEligible(ctx, tab);
+  if (!skipRecentlyClosed) {
+    recordClosedTabIfEligible(ctx, tab);
+  }
 
   const idx = ctx.tabOrder.indexOf(tabId);
   if (idx !== -1) ctx.tabOrder.splice(idx, 1);
@@ -723,8 +740,13 @@ function closeTab(ctx, tabId) {
   const prunedGroup = prevGroupId ? pruneGroupIfEmpty(ctx, prevGroupId, { broadcast: false }) : false;
 
   if (ctx.tabOrder.length === 0) {
+    if (skipAutoNewTab) {
+      ctx.activeTabId = null;
+      if (prunedGroup) broadcastGroupsChange(ctx);
+      return serializeTabs(ctx);
+    }
     const s = state.storage.getSettings();
-    if (s.closeWindowOnLastTab) {
+    if (!skipSessionClose && s.closeWindowOnLastTab) {
       if (prunedGroup) broadcastGroupsChange(ctx);
       ctx.win?.close();
       return serializeTabs(ctx);
@@ -745,7 +767,7 @@ function closeTab(ctx, tabId) {
     isTabVisibleInWorkspace(ctx.tabs.get(id), activeWsId)
   );
 
-  if (remainingVisible.length === 0 || (!wasPinned && remainingWsUnpinned.length === 0)) {
+  if (!skipAutoNewTab && (remainingVisible.length === 0 || (!wasPinned && remainingWsUnpinned.length === 0))) {
     const nextState = createTab(ctx, { url: 'nextgx://newtab', workspaceId: activeWsId, active: true });
     if (prunedGroup) broadcastGroupsChange(ctx);
     if (wasActive || wasFocused) {
@@ -1195,11 +1217,17 @@ async function toggleReaderModeExtract(ctx) {
     a{color:#8ab4ff} blockquote{border-left:3px solid #7c5cff;margin:18px 0;padding-left:16px;color:#b9c0d0}
     ul,ol{margin:0 0 18px;padding-left:24px}
   </style></head><body>
-  <div class="nx-reader-bar"><button onclick="location.reload()">← Back to original</button><span>Reader view</span><a href="${esc(url)}">${esc(url)}</a></div>
+  <div class="nx-reader-bar"><button id="nxReaderBackBtn" type="button">← Back to original</button><span>Reader view</span><a href="${esc(url)}">${esc(url)}</a></div>
   <article><h1>${esc(extracted.title || 'Untitled')}</h1>${extracted.byline ? `<div class="nx-byline">${esc(extracted.byline)}</div>` : ''}${extracted.html}</article>
   </body></html>`;
   try {
-    await wc.executeJavaScript(`document.open(); document.write(${JSON.stringify(readerHtml)}); document.close();`);
+    await wc.executeJavaScript(`(() => {
+      document.open();
+      document.write(${JSON.stringify(readerHtml)});
+      document.close();
+      const b = document.getElementById('nxReaderBackBtn');
+      if (b) b.addEventListener('click', () => location.reload());
+    })()`);
   } catch (err) {
     return { ok: false, error: err?.message || 'Reader view failed.' };
   }

@@ -491,8 +491,17 @@ function showPasskeyDialog(parentWin, request, timeoutMs) {
 
 function isDialogSender(event) {
   try {
-    const url = event?.senderFrame?.url || event?.sender?.getURL?.() || '';
-    return typeof url === 'string' && url.startsWith(PASSKEY_DIALOG_FILE_URL);
+    if (!event?.sender || !event?.senderFrame || event.senderFrame !== event.sender.mainFrame) {
+      return false;
+    }
+    const url = event.senderFrame.url || event.sender.getURL?.() || '';
+    if (typeof url !== 'string' || !url.startsWith(PASSKEY_DIALOG_FILE_URL)) return false;
+    for (const pending of pendingDialogs.values()) {
+      if (pending && pending.win && !pending.win.isDestroyed() && pending.win.webContents === event.sender) {
+        return true;
+      }
+    }
+    return false;
   } catch (_) {
     return false;
   }
@@ -745,10 +754,12 @@ async function handleCeremony(event, payload, deps) {
       return ceremonyError('NotAllowedError', 'The stored passkey could not be unlocked on this device.');
     }
     const nextCounter = (chosen.counter || 0) + 1;
-    store.touch(profileId, chosen.id, (rec) => {
-      rec.counter = nextCounter;
-      rec.lastUsedAt = Date.now();
-    });
+    if (!incognito) {
+      store.touch(profileId, chosen.id, (rec) => {
+        rec.counter = nextCounter;
+        rec.lastUsedAt = Date.now();
+      });
+    }
     const authenticatorData = buildAuthenticatorData(rpId, { counter: nextCounter });
     const clientDataJSON = buildClientData('webauthn.get', challengeB64url, origin);
     const clientDataHash = crypto.createHash('sha256').update(clientDataJSON).digest();
