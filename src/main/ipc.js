@@ -937,7 +937,7 @@ function registerIpcHandlers() {
         }
       });
       registerWebContents(ctx.screenshotView.webContents, ctx.win.id);
-      attachInternalNavigationGuard(ctx.screenshotView.webContents);
+      //attachInternalNavigationGuard(ctx.screenshotView.webContents);
       ctx.screenshotView.webContents.loadFile(SCREENSHOT_FILE, {
         query: getInternalUiQuery(ctx.incognito)
       });
