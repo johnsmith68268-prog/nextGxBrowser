@@ -359,9 +359,10 @@ function validateSettingsImport(rawParsed, storageInstance) {
     }
 
     if (key === 'videoEnhancePreset') {
-      const VALID_ENHANCE = new Set(['off', 'vivid', 'crisp', 'cinema']);
+      const VALID_ENHANCE = new Set(['off', 'vivid', 'sharp', 'crisp', 'cinema']);
       if (typeof val === 'string' && VALID_ENHANCE.has(val.trim())) {
-        validated.videoEnhancePreset = val.trim();
+        const cleanVal = val.trim();
+        validated.videoEnhancePreset = cleanVal === 'crisp' ? 'sharp' : cleanVal;
         appliedKeys.push(key);
       } else {
         ignoredKeys.push(key);
@@ -372,7 +373,15 @@ function validateSettingsImport(rawParsed, storageInstance) {
     if (key === 'downloadPath') {
       if (typeof val === 'string') {
         const trimmed = val.trim().slice(0, 500);
-        if (!trimmed || (path.isAbsolute(trimmed) && fs.existsSync(trimmed))) {
+        let isValidDir = false;
+        if (trimmed && path.isAbsolute(trimmed)) {
+          try {
+            isValidDir = fs.existsSync(trimmed) && fs.statSync(trimmed).isDirectory();
+          } catch (_) {
+            isValidDir = false;
+          }
+        }
+        if (!trimmed || isValidDir) {
           validated.downloadPath = trimmed;
           appliedKeys.push(key);
         } else {

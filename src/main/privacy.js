@@ -18,6 +18,8 @@ const PASSWORD_CHARSETS = {
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_MAX_LENGTH = 64;
 const PASSWORD_DEFAULT_LENGTH = 16;
+const CLIPBOARD_CLEAR_DELAY_MS = 30000;
+let clipboardClearTimer = null;
 
 /**
  * Unbiased cryptographically secure integer in [0, max) using Node crypto.randomBytes
@@ -222,7 +224,23 @@ function registerPrivacyAndPasswordIpcHandlers(handleInternal, { getSenderProfil
       return { ok: false, error: 'Password entry not found.' };
     }
     try {
-      await clipboard.writeText(String(entry.password ?? ''));
+      const secret = String(entry.password ?? '');
+      await clipboard.writeText(secret);
+      if (clipboardClearTimer) {
+        clearTimeout(clipboardClearTimer);
+        clipboardClearTimer = null;
+      }
+      if (secret) {
+        clipboardClearTimer = setTimeout(() => {
+          clipboardClearTimer = null;
+          try {
+            if (typeof clipboard.readText === 'function' && clipboard.readText() === secret) {
+              clipboard.writeText('');
+            }
+          } catch (_) {}
+        }, CLIPBOARD_CLEAR_DELAY_MS);
+        if (typeof clipboardClearTimer.unref === 'function') clipboardClearTimer.unref();
+      }
       return { ok: true, id: entry.id };
     } catch (err) {
       return { ok: false, error: err?.message || 'Failed to copy to clipboard.' };

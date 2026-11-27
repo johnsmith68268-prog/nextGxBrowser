@@ -65,6 +65,9 @@ function isNonContentWebContents(ctx, wc) {
     return true;
   }
   if (ctx.screenshotView && ctx.screenshotView.webContents && wc.id === ctx.screenshotView.webContents.id) return true;
+  if (ctx.drawerOverlayView && ctx.drawerOverlayView.webContents && wc.id === ctx.drawerOverlayView.webContents.id) {
+    return true;
+  }
   return false;
 }
 
@@ -182,6 +185,7 @@ function collectManagedViews(ctx) {
   if (ctx.popoverView) views.add(ctx.popoverView);
   if (ctx.extensionPopupView) views.add(ctx.extensionPopupView);
   if (ctx.screenshotView) views.add(ctx.screenshotView);
+  if (ctx.drawerOverlayView) views.add(ctx.drawerOverlayView);
 
   return views;
 }
@@ -229,7 +233,7 @@ function applyFullscreenBounds(ctx) {
     try {
       if (typeof view.setVisible === 'function') view.setVisible(false);
       view.setBounds(PARKED_BOUNDS);
-    } catch (_) {}
+    } catch (_) { }
   }
 
   try {
@@ -256,8 +260,8 @@ function exitDomFullscreen(wc) {
         'if (document.fullscreenElement || document.webkitFullscreenElement) { Promise.resolve((document.exitFullscreen ? document.exitFullscreen() : document.webkitExitFullscreen && document.webkitExitFullscreen())).catch(() => {}); }',
         true
       )
-    ).catch(() => {});
-  } catch (_) {}
+    ).catch(() => { });
+  } catch (_) { }
 }
 
 function enterFullscreen(
@@ -341,13 +345,13 @@ function enterFullscreen(
     if (!ctx.win.isDestroyed() && !ctx.win.isFullScreen()) {
       try {
         ctx.win.setFullScreen(true);
-      } catch (_) {}
+      } catch (_) { }
     }
     layoutMod().updateActiveViewBounds(ctx);
     if (fs.webContents && !fs.webContents.isDestroyed()) {
       try {
         fs.webContents.focus();
-      } catch (_) {}
+      } catch (_) { }
     }
     return true;
   }
@@ -355,10 +359,10 @@ function enterFullscreen(
   const panel = ctx.sidebarPanel;
   const savedPanel = panel
     ? {
-        open: Boolean(panel.open && panel.activeKey),
-        pinned: Boolean(panel.pinned),
-        activeKey: panel.activeKey || null
-      }
+      open: Boolean(panel.open && panel.activeKey),
+      pinned: Boolean(panel.pinned),
+      activeKey: panel.activeKey || null
+    }
     : null;
 
   const savedChildOrder = Array.isArray(ctx.win.contentView?.children)
@@ -370,7 +374,8 @@ function enterFullscreen(
       !child ||
       child === ctx.popoverView ||
       child === ctx.sidebarPanelFrameView ||
-      child === ctx.extensionPopupView
+      child === ctx.extensionPopupView ||
+      child === ctx.drawerOverlayView
     ) {
       continue;
     }
@@ -378,7 +383,7 @@ function enterFullscreen(
       if (typeof child.getBounds === 'function') {
         savedViewBounds.set(child, { ...child.getBounds() });
       }
-    } catch (_) {}
+    } catch (_) { }
   }
 
   fs.entering = true;
@@ -396,21 +401,25 @@ function enterFullscreen(
 
   try {
     if (ctx.popoverOpenKind || ctx.extensionPopupView) {
-      popoversMod().closePopover(ctx);
+      popoversMod().closePopover(ctx, { restoreFocus: false });
     }
-  } catch (_) {}
+  } catch (_) { }
+
+  try {
+    require('./drawer-overlay').closeShellDrawer(ctx);
+  } catch (_) { }
 
   try {
     if (panel && panel.open) {
       sidebarMod().closeSidebarPanel(ctx, { restoreFocus: false });
     }
-  } catch (_) {}
+  } catch (_) { }
 
   try {
     if (!ctx.win.isDestroyed() && !ctx.win.isFullScreen()) {
       ctx.win.setFullScreen(true);
     }
-  } catch (_) {}
+  } catch (_) { }
 
   fs.entering = false;
 
@@ -419,7 +428,7 @@ function enterFullscreen(
     if (targetWc && !targetWc.isDestroyed()) {
       try {
         targetWc.focus();
-      } catch (_) {}
+      } catch (_) { }
     }
   }
 
@@ -435,7 +444,7 @@ function exitFullscreen(ctx, { skipLayout = false } = {}) {
     if (ctx.win && !ctx.win.isDestroyed() && ctx.win.isFullScreen()) {
       try {
         ctx.win.setFullScreen(false);
-      } catch (_) {}
+      } catch (_) { }
     }
     return false;
   }
@@ -464,7 +473,7 @@ function exitFullscreen(ctx, { skipLayout = false } = {}) {
   if (ctx.win && !ctx.win.isDestroyed()) {
     try {
       ctx.win.setFullScreen(false);
-    } catch (_) {}
+    } catch (_) { }
   }
 
   if (ctx.win && !ctx.win.isDestroyed()) {
@@ -485,7 +494,7 @@ function exitFullscreen(ctx, { skipLayout = false } = {}) {
           if (bounds && bounds.x >= -1000 && bounds.width > 1 && bounds.height > 1 && typeof child.setVisible === 'function') {
             child.setVisible(true);
           }
-        } catch (_) {}
+        } catch (_) { }
       }
     }
     if (Array.isArray(savedChildOrder) && ctx.win.contentView) {
@@ -496,7 +505,7 @@ function exitFullscreen(ctx, { skipLayout = false } = {}) {
         if (child && (!currentChildren || currentChildren.has(child))) {
           try {
             ctx.win.contentView.addChildView(child);
-          } catch (_) {}
+          } catch (_) { }
         }
       }
     }
@@ -515,7 +524,7 @@ function exitFullscreen(ctx, { skipLayout = false } = {}) {
       } else if (ctx.sidebarPanel && ctx.sidebarPanel.open) {
         closeSidebarPanel(ctx, { restoreFocus: false });
       }
-    } catch (_) {}
+    } catch (_) { }
   }
 
   fs.exiting = false;
@@ -527,7 +536,7 @@ function exitFullscreen(ctx, { skipLayout = false } = {}) {
     if (!(prevSource === 'sidebar' && restoredPanel)) {
       try {
         popoversMod().restoreFocusToActiveTab(ctx);
-      } catch (_) {}
+      } catch (_) { }
     }
   }
 
@@ -568,7 +577,7 @@ function handleWindowEnterFullScreen(ctx) {
     if (fs.webContents && !fs.webContents.isDestroyed()) {
       try {
         fs.webContents.focus();
-      } catch (_) {}
+      } catch (_) { }
     }
     return;
   }

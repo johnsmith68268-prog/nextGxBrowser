@@ -4,6 +4,7 @@ const {
   CORNER_FILE_URL,
   WEBUI_FILE_URL,
   ONBOARDING_FILE_URL,
+  SPLIT_PICKER_FILE_URL,
   ERROR_PAGE_FILE_URL,
   state
 } = require('./core');
@@ -12,6 +13,7 @@ const {
   isCornerUrl,
   isWebUiUrl,
   isOnboardingUrl,
+  isSplitPickerUrl,
   isErrorPageUrl
 } = require('./utils');
 
@@ -55,6 +57,7 @@ function formatDisplayUrl(rawUrl) {
   if (isNewTabUrl(rawUrl)) return 'nextgx://newtab';
   if (isCornerUrl(rawUrl)) return 'nextgx://corner';
   if (isOnboardingUrl(rawUrl)) return 'nextgx://welcome';
+  if (isSplitPickerUrl(rawUrl)) return 'nextgx://split-picker';
   if (isWebUiUrl(rawUrl)) {
     const hash = (rawUrl.split('#')[1] || 'history').toLowerCase();
     if (hash === 'passwords') return 'nextgx://passwords';
@@ -127,15 +130,19 @@ function isLocalOrPrivateAuthority(host) {
     host === 'localhost' ||
     host.endsWith('.localhost') ||
     host.endsWith('.local') ||
-    host === '[::1]'
+    host === '[::1]' ||
+    host === '[::]' ||
+    /^\[(fc|fd|fe[89ab])[0-9a-f:]*\]$/i.test(host)
   ) {
     return true;
   }
   if (!isValidIpv4Host(host)) return false;
   const parts = host.split('.').map(Number);
   return (
+    parts[0] === 0 ||
     parts[0] === 127 ||
     parts[0] === 10 ||
+    (parts[0] === 169 && parts[1] === 254) ||
     (parts[0] === 192 && parts[1] === 168) ||
     (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31)
   );
@@ -185,6 +192,9 @@ function resolveNavigateInput(input, settingsOverride = null) {
     if (page === 'welcome' || page === 'setup' || page === 'onboarding') {
       return ONBOARDING_FILE_URL;
     }
+    if (page === 'split-picker' || page === 'split') {
+      return SPLIT_PICKER_FILE_URL;
+    }
     if (page === 'password-manager') page = 'passwords';
     if (page === 'privacy-dashboard') page = 'privacy';
     if (['history', 'downloads', 'bookmarks', 'passwords', 'privacy', 'extensions', 'settings'].includes(page)) {
@@ -198,7 +208,7 @@ function resolveNavigateInput(input, settingsOverride = null) {
     }
     return NEW_TAB_FILE_URL;
   }
-  if (/^(https?:\/\/|chrome-extension:\/\/|file:\/\/|view-source:|data:|blob:|about:)/i.test(trimmed)) {
+  if (!/\s/.test(trimmed) && /^(https?:\/\/|chrome-extension:\/\/|file:\/\/|view-source:https?:\/\/|data:|blob:|about:)/i.test(trimmed)) {
     return trimmed;
   }
   if (/^[a-zA-Z]:[\\/]/.test(trimmed)) {

@@ -108,12 +108,18 @@ async function copyScreenshotPng(ctx, pngBuffer) {
 async function saveScreenshotPng(ctx, pngBuffer, label = 'Full') {
   const filename = `nextGx-${label}-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
   const savePath = path.join(app.getPath('downloads'), filename);
-  fs.writeFileSync(savePath, pngBuffer);
+  try {
+    fs.writeFileSync(savePath, pngBuffer);
+  } catch (err) {
+    const message = err?.message || 'Unknown error';
+    ctx?.win?.webContents?.send('ui:toast', `Screenshot save failed: ${message}`);
+    return { ok: false, error: message };
+  }
 
   await writeClipboardPng(pngBuffer);
 
   recordSavedFileInDownloads(ctx, { filename, savePath, bytes: pngBuffer.length });
-  ctx.win?.webContents.send('ui:toast', `Screenshot saved & copied: ${filename}`);
+  ctx?.win?.webContents?.send('ui:toast', `Screenshot saved & copied: ${filename}`);
   return { ok: true, savePath, filename };
 }
 

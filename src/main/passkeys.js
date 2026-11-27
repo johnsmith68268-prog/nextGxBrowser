@@ -149,6 +149,22 @@ function cborEncode(value) {
 // allowed, rp.id must be the host or a domain suffix of it).
 // Returns { ok: true, rpId } or { ok: false, name, message }.
 // ---------------------------------------------------------------------------
+const KNOWN_PUBLIC_SUFFIXES = new Set([
+  'co.uk', 'org.uk', 'ac.uk', 'gov.uk', 'me.uk', 'net.uk',
+  'com.au', 'net.au', 'org.au', 'edu.au', 'gov.au',
+  'co.jp', 'ne.jp', 'or.jp', 'ac.jp', 'go.jp',
+  'co.kr', 'or.kr', 'co.nz', 'org.nz', 'net.nz',
+  'com.br', 'net.br', 'org.br', 'com.cn', 'net.cn', 'org.cn',
+  'com.in', 'co.in', 'org.in', 'co.za', 'org.za',
+  'com.mx', 'com.tw', 'org.tw', 'com.hk', 'co.il', 'com.sg',
+  'com.ar', 'com.co', 'com.pl', 'co.th', 'com.tr', 'com.ua',
+  'com.vn', 'com.my', 'com.ph', 'com.pk', 'com.bd', 'com.eg', 'com.ng',
+  'github.io', 'gitlab.io', 'bitbucket.io', 'pages.dev', 'workers.dev',
+  'vercel.app', 'netlify.app', 'web.app', 'firebaseapp.com', 'herokuapp.com',
+  'blogspot.com', 'wordpress.com', 'azurewebsites.net', 'cloudfront.net',
+  'onrender.com', 'fly.dev', 'railway.app', 'surge.sh'
+]);
+
 function validateRpId(hostname, requestedRpId) {
   const host = typeof hostname === 'string' ? hostname.toLowerCase() : '';
   if (!host) {
@@ -164,6 +180,9 @@ function validateRpId(hostname, requestedRpId) {
     return { ok: false, name: 'SecurityError', message: 'This is an invalid domain' };
   }
   if (rpId !== 'localhost' && !rpId.includes('.')) {
+    return { ok: false, name: 'SecurityError', message: 'This is an invalid domain' };
+  }
+  if (KNOWN_PUBLIC_SUFFIXES.has(rpId)) {
     return { ok: false, name: 'SecurityError', message: 'This is an invalid domain' };
   }
   if (host !== rpId && !host.endsWith(`.${rpId}`)) {
@@ -260,6 +279,13 @@ function verifySignature(publicJwk, data, signature) {
 // ---------------------------------------------------------------------------
 // safeStorage helpers (mirrors the password store's approach)
 // ---------------------------------------------------------------------------
+const HAS_ASYNC_SAFE_STORAGE = Boolean(
+  safeStorage &&
+    typeof safeStorage.isAsyncEncryptionAvailable === 'function' &&
+    typeof safeStorage.encryptStringAsync === 'function' &&
+    typeof safeStorage.decryptStringAsync === 'function'
+);
+
 function isEncryptionAvailable() {
   try {
     return Boolean(
@@ -270,6 +296,17 @@ function isEncryptionAvailable() {
   } catch (_) {
     return false;
   }
+}
+
+async function isEncryptionAvailableAsync() {
+  if (HAS_ASYNC_SAFE_STORAGE) {
+    try {
+      return Boolean(await safeStorage.isAsyncEncryptionAvailable());
+    } catch (_) {
+      return false;
+    }
+  }
+  return isEncryptionAvailable();
 }
 
 function encryptPrivateKey(privateD) {
@@ -286,6 +323,21 @@ function encryptPrivateKey(privateD) {
   return { plain: privateD, encrypted: false };
 }
 
+async function encryptPrivateKeyAsync(privateD) {
+  if (HAS_ASYNC_SAFE_STORAGE) {
+    if (await isEncryptionAvailableAsync()) {
+      try {
+        const buf = await safeStorage.encryptStringAsync(JSON.stringify({ d: privateD }));
+        return { enc: buf.toString('base64'), encrypted: true };
+      } catch (err) {
+        console.warn('[Passkeys] Failed to encrypt private key:', err.message);
+      }
+    }
+    return { plain: privateD, encrypted: false };
+  }
+  return encryptPrivateKey(privateD);
+}
+
 function decryptPrivateKey(record) {
   if (!record) return null;
   if (typeof record.enc === 'string') {
@@ -299,6 +351,22 @@ function decryptPrivateKey(record) {
     }
   }
   return typeof record.plain === 'string' ? record.plain : null;
+}
+
+async function decryptPrivateKeyAsync(record) {
+  if (!record) return null;
+  if (HAS_ASYNC_SAFE_STORAGE && typeof record.enc === 'string') {
+    if (!(await isEncryptionAvailableAsync())) return null;
+    try {
+      const raw = await safeStorage.decryptStringAsync(Buffer.from(record.enc, 'base64'));
+      const parsed = JSON.parse(raw);
+      return typeof parsed?.d === 'string' ? parsed.d : null;
+    } catch (err) {
+      console.warn('[Passkeys] Failed to decrypt a stored passkey:', err.message);
+      return null;
+    }
+  }
+  return decryptPrivateKey(record);
 }
 
 // ---------------------------------------------------------------------------
@@ -409,12 +477,31 @@ class PasskeyStore {
     if (entry.data.credentials.length !== before) this._save(profileId);
     return this.listPublic(profileId);
   }
+
+  async migratePlaintextIfAvailable(profileId) {
+    const entry = this._load(profileId);
+    if (!entry || !Array.isArray(entry.data.credentials) || !entry.data.credentials.length) return;
+    if (!(await isEncryptionAvailableAsync())) return;
+    let changed = false;
+    for (const cred of entry.data.credentials) {
+      if (cred && cred.privateKey && typeof cred.privateKey.plain === 'string') {
+        const nextKey = await encryptPrivateKeyAsync(cred.privateKey.plain);
+        if (nextKey.encrypted && typeof nextKey.enc === 'string') {
+          cred.privateKey = nextKey;
+          changed = true;
+        }
+      }
+    }
+    if (changed) this._save(profileId);
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Authenticator dialog (modal BrowserWindow; NOT the popover system)
 // ---------------------------------------------------------------------------
 const pendingDialogs = new Map(); // dialogId -> { request, resolve, win, timer }
+const MAX_CONCURRENT_PASSKEY_DIALOGS = 2;
+const incognitoSessionCounters = new Map(); // credentialId -> counter
 
 function resolveParentWindow(senderWebContents) {
   try {
@@ -437,6 +524,11 @@ function resolveParentWindow(senderWebContents) {
 
 function showPasskeyDialog(parentWin, request, timeoutMs) {
   return new Promise((resolve) => {
+    if (pendingDialogs.size >= MAX_CONCURRENT_PASSKEY_DIALOGS) {
+      resolve({ action: 'cancel' });
+      return;
+    }
+    const { attachInternalNavigationGuard } = require('./utils');
     const dialogId = `pk-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const fullRequest = { ...request, dialogId };
     let settled = false;
@@ -476,6 +568,7 @@ function showPasskeyDialog(parentWin, request, timeoutMs) {
         sandbox: true
       }
     });
+    attachInternalNavigationGuard(win.webContents);
     pendingDialogs.set(dialogId, { request: fullRequest, resolve: settle, win });
     win.once('ready-to-show', () => {
       if (!win.isDestroyed()) win.show();
@@ -514,13 +607,16 @@ function registerDialogIpc() {
   ipcMain.handle('passkey:dialog-get', (e, dialogId) => {
     if (!isDialogSender(e)) throw new Error('Forbidden IPC channel: passkey:dialog-get');
     const pending = typeof dialogId === 'string' ? pendingDialogs.get(dialogId) : null;
-    return pending ? pending.request : null;
+    if (!pending || !pending.win || pending.win.isDestroyed() || pending.win.webContents !== e.sender) {
+      return null;
+    }
+    return pending.request;
   });
   ipcMain.on('passkey:dialog-result', (e, payload) => {
     if (!isDialogSender(e)) return;
     const dialogId = payload && typeof payload.dialogId === 'string' ? payload.dialogId : '';
     const pending = pendingDialogs.get(dialogId);
-    if (!pending) return;
+    if (!pending || !pending.win || pending.win.isDestroyed() || pending.win.webContents !== e.sender) return;
     if (payload.action === 'confirm') {
       pending.resolve({
         action: 'confirm',
@@ -593,6 +689,9 @@ async function handleCeremony(event, payload, deps) {
     const profileId = getSenderProfileId(event);
     const ctx = getCtxFromSender ? getCtxFromSender(event.sender) : null;
     const incognito = Boolean(ctx?.incognito);
+    if (!incognito && typeof store.migratePlaintextIfAvailable === 'function') {
+      await store.migratePlaintextIfAvailable(profileId);
+    }
 
     const challengeBuf = parseBinaryField(options.challenge, 'challenge', { maxLength: 1024 });
     const challengeB64url = b64urlEncode(challengeBuf);
@@ -637,7 +736,8 @@ async function handleCeremony(event, payload, deps) {
       const excludeList = Array.isArray(options.excludeCredentials) ? options.excludeCredentials : [];
       for (const ex of excludeList) {
         if (ex && ex.type === 'public-key' && typeof ex.id === 'string') {
-          if (store.findById(profileId, ex.id)) {
+          const existing = store.findById(profileId, ex.id);
+          if (existing && existing.rpId === rpId) {
             return ceremonyError('InvalidStateError', 'A passkey for this site already exists on this authenticator.');
           }
         }
@@ -674,7 +774,7 @@ async function handleCeremony(event, payload, deps) {
       const authenticatorData = buildAuthenticatorData(rpId, { counter: 0, attested });
       const attestationObject = buildAttestationObject(authenticatorData);
       const clientDataJSON = buildClientData('webauthn.create', challengeB64url, origin);
-      const keyStorage = encryptPrivateKey(privateD);
+      const keyStorage = await encryptPrivateKeyAsync(privateD);
       store.add(profileId, {
         id: b64urlEncode(rawId),
         rpId,
@@ -749,12 +849,17 @@ async function handleCeremony(event, payload, deps) {
     const chosen =
       (dialog.selectedCredentialId && candidates.find((c) => c.id === dialog.selectedCredentialId)) ||
       candidates[0];
-    const privateD = decryptPrivateKey(chosen.privateKey);
+    const privateD = await decryptPrivateKeyAsync(chosen.privateKey);
     if (!privateD) {
       return ceremonyError('NotAllowedError', 'The stored passkey could not be unlocked on this device.');
     }
-    const nextCounter = (chosen.counter || 0) + 1;
-    if (!incognito) {
+    let nextCounter;
+    if (incognito) {
+      const prev = Math.max(chosen.counter || 0, incognitoSessionCounters.get(chosen.id) || 0);
+      nextCounter = prev + 1;
+      incognitoSessionCounters.set(chosen.id, nextCounter);
+    } else {
+      nextCounter = (chosen.counter || 0) + 1;
       store.touch(profileId, chosen.id, (rec) => {
         rec.counter = nextCounter;
         rec.lastUsedAt = Date.now();

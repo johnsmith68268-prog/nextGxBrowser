@@ -166,7 +166,10 @@ test('MA-30: rail-context popover kind is registered; shell:open-left-tool IPC +
   assert.match(preload, /setShellModalOpen: \(open\) => ipcRenderer\.invoke\('shell:set-modal-open', Boolean\(open\)\)/);
   assert.match(preload, /getCacheSize: \(\) => ipcRenderer\.invoke\('cleaner:get-cache-size'\)/);
 
-  const popover = fs.readFileSync(path.join(ROOT, 'src', 'ui', 'popover.html'), 'utf8');
+  const popover =
+    fs.readFileSync(path.join(ROOT, 'src', 'ui', 'popover.html'), 'utf8') +
+    '\n' +
+    fs.readFileSync(path.join(ROOT, 'src', 'ui', 'popover.js'), 'utf8');
   assert.match(popover, /id="view-rail-context"/);
   assert.match(popover, /kind === 'rail-context'/);
   // showOnly() must list the new view or it stays hidden forever (the menu
@@ -185,7 +188,10 @@ test('MA-30: rail-context popover kind is registered; shell:open-left-tool IPC +
 });
 
 test('MA-1/MA-39: omnibox suggestion favicon no longer uses the broken inline onerror', () => {
-  const popover = fs.readFileSync(path.join(ROOT, 'src', 'ui', 'popover.html'), 'utf8');
+  const popover =
+    fs.readFileSync(path.join(ROOT, 'src', 'ui', 'popover.html'), 'utf8') +
+    '\n' +
+    fs.readFileSync(path.join(ROOT, 'src', 'ui', 'popover.js'), 'utf8');
   assert.ok(
     !popover.includes("this.outerHTML='<span"),
     'broken outerHTML inline handler still present in popover.html'
@@ -201,7 +207,10 @@ test('MA-1/MA-39: omnibox suggestion favicon no longer uses the broken inline on
 });
 
 test('MA-33: tab-search rows no longer hide a dead favicon with no fallback and no longer tooltip raw nextgx:// URLs', () => {
-  const popover = fs.readFileSync(path.join(ROOT, 'src', 'ui', 'popover.html'), 'utf8');
+  const popover =
+    fs.readFileSync(path.join(ROOT, 'src', 'ui', 'popover.html'), 'utf8') +
+    '\n' +
+    fs.readFileSync(path.join(ROOT, 'src', 'ui', 'popover.js'), 'utf8');
   assert.ok(
     !popover.includes("onerror=\"this.style.display='none'\""),
     'tab-search dead-favicon hide with no fallback still present'
@@ -263,7 +272,10 @@ test('MA-13/MA-14: pinned favicon fallback listener and collapsed-pill active-ta
 });
 
 test('MA-24/MA-25: Speed Dial delete shows an undo bar; tile titles allow two lines', () => {
-  const newtab = fs.readFileSync(path.join(ROOT, 'src', 'ui', 'newtab.html'), 'utf8');
+  const newtab =
+    fs.readFileSync(path.join(ROOT, 'src', 'ui', 'newtab.html'), 'utf8') +
+    '\n' +
+    fs.readFileSync(path.join(ROOT, 'src', 'ui', 'newtab.js'), 'utf8');
   assert.match(newtab, /id="dialUndoBar"/);
   assert.match(newtab, /function showDialUndo\(removed\)/);
   assert.match(newtab, /addSpeedDial\(\{ title: removed\.title, url: removed\.url \}\)/);

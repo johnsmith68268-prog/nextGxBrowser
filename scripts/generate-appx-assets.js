@@ -28,12 +28,13 @@ app.whenReady().then(async () => {
     });
     await win.loadURL('data:text/html;charset=utf-8,<!DOCTYPE html><html><body></body></html>');
 
+    const dataUrlJson = JSON.stringify(`data:image/png;base64,${iconB64}`);
     const rendered = await win.webContents.executeJavaScript(`(async () => {
       const img = new Image();
       await new Promise((resolve, reject) => {
         img.onload = resolve;
         img.onerror = reject;
-        img.src = 'data:image/png;base64,${iconB64}';
+        img.src = ${dataUrlJson};
       });
       const specs = ${JSON.stringify(specs)};
       const out = {};

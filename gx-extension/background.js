@@ -33,6 +33,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }).then(() => {
       chrome.storage.local.set({ adblockEnabled: enable });
       sendResponse({ enabled: enable });
+    }).catch((err) => {
+      sendResponse({ enabled: false, error: err && err.message ? err.message : 'Failed to update ruleset' });
     });
     return true;
   }

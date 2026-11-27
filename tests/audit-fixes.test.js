@@ -262,17 +262,15 @@ test('SEC-3 / BUG-9: Every active internal UI HTML file has a CSP meta tag with 
   assert.ok(htmlFiles.length >= 9, 'Expected all 9 active UI HTML files');
 
   // Documented intended policy (shared by all internal pages):
-  // - script-src 'self' 'unsafe-inline' is genuinely required: 7 of the 9 pages
-  //   carry inline <script> blocks (corner, error, newtab, player, popover,
-  //   screenshot, sidebar-panel-chrome). chrome-webui.html and index.html only
-  //   load external scripts, but keep the uniform policy for consistency.
+  // - script-src 'self' is strictly enforced across all 12 UI pages; every page
+  //   loads external scripts only, with zero inline <script> blocks or handlers.
   // - style-src 'self' 'unsafe-inline' is required by inline <style> blocks and
   //   inline style="" attributes used across the pages.
   // - No remote code is ever allowed: no http:/https: in script-src or style-src,
   //   no 'unsafe-eval', no wildcard '*', and no network at all (connect-src 'none').
   const COMMON_DIRECTIVES = {
     'default-src': ["'self'"],
-    'script-src': ["'self'", "'unsafe-inline'"],
+    'script-src': ["'self'"],
     'style-src': ["'self'", "'unsafe-inline'"],
     'font-src': ["'self'", 'data:'],
     'connect-src': ["'none'"],
@@ -288,6 +286,7 @@ test('SEC-3 / BUG-9: Every active internal UI HTML file has a CSP meta tag with 
     'chrome-webui.html': ["'self'", 'data:', 'file:', 'https:', 'http:'],
     'newtab.html': ["'self'", 'data:', 'file:', 'https:', 'http:'],
     'onboarding.html': ["'self'", 'data:', 'file:', 'https:', 'http:'],
+    'split-picker.html': ["'self'", 'data:', 'file:', 'https:', 'http:'],
     'corner.html': ["'self'", 'data:', 'https:', 'http:'],
     'index.html': ["'self'", 'data:', 'https:', 'http:'],
     'player.html': ["'self'", 'data:', 'https:', 'http:'],
@@ -324,8 +323,10 @@ test('SEC-3 / BUG-9: Every active internal UI HTML file has a CSP meta tag with 
       assert.deepEqual(directives[directive], values, `${file} CSP ${directive} must be exactly: ${values.join(' ')}`);
     }
 
-    // Belt-and-braces guards: never allow a wildcard source or eval anywhere.
+    // Belt-and-braces guards: never allow a wildcard source, eval, inline <script>, or inline event handler.
     assert.ok(!cspValue.includes('*'), `${file} CSP must not contain a wildcard source`);
     assert.ok(!cspValue.includes('unsafe-eval'), `${file} CSP must not allow unsafe-eval`);
+    assert.equal([...content.matchAll(/<script(?![^>]*\bsrc=)[^>]*>/gi)].length, 0, `${file} must not contain inline <script> blocks`);
+    assert.equal(/\bon(?:error|click|load|change|input|submit)\s*=/i.test(content), false, `${file} must not contain inline event handlers`);
   }
 });

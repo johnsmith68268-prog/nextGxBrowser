@@ -1,13 +1,14 @@
 const { app, session, dialog } = require('electron');
 const crypto = require('crypto');
-const { execFileSync } = require('child_process');
+const { execFile, execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { state } = require('./core');
-const { normalizePathForCompare } = require('./utils');
+const { normalizePathForCompare, isPathInsideDir } = require('./utils');
 const { getCtxFromSender, broadcastSettingsUpdate } = require('./broadcast');
 const {
+  sanitizeRelativeAssetPath,
   resolveExtensionPopup,
   resolveExtensionIcon,
   readManifestFromPath
@@ -32,7 +33,7 @@ function getAllProfileExtensionSessions() {
   return Array.from(sessions);
 }
 
-async function mirrorExtensionLoadToOtherSessions(resolvedPath) {
+async function mirrorExtensionLoadToOtherSessions(resolvedPath, extId = '') {
   const sessions = getAllProfileExtensionSessions();
   await Promise.allSettled(
     sessions
@@ -40,6 +41,7 @@ async function mirrorExtensionLoadToOtherSessions(resolvedPath) {
       .map(async (ses) => {
         const api = getSessionExtensionsApi(ses);
         if (api && typeof api.loadExtension === 'function') {
+          if (extId && typeof api.getExtension === 'function' && api.getExtension(extId)) return;
           await api.loadExtension(resolvedPath, { allowFileAccess: false });
         }
       })
@@ -181,11 +183,36 @@ function getManagedExtensionsBaseDir(subdir) {
   return base;
 }
 
+function stripJsonTrailingCommas(src) {
+  let out = '';
+  let inStr = false;
+  let esc = false;
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (inStr) {
+      out += ch;
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') {
+      inStr = true;
+      out += ch;
+      continue;
+    }
+    if (ch === ',') {
+      let j = i + 1;
+      while (j < src.length && /\s/.test(src[j])) j++;
+      if (src[j] === '}' || src[j] === ']') continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
 function parseManifestJsonText(raw) {
-  const cleaned = String(raw || '')
-    .replace(/^\uFEFF/, '')
-    // Tolerate harmless trailing commas in unpacked manifests
-    .replace(/,\s*([}\]])/g, '$1');
+  const cleaned = stripJsonTrailingCommas(String(raw || '').replace(/^\uFEFF/, ''));
   return JSON.parse(cleaned);
 }
 
@@ -254,13 +281,15 @@ function copyExtensionDirSanitized(srcDir, destDir, isRoot = true) {
 
 function pruneMissingIconRefs(iconMap, baseDir) {
   if (!iconMap || typeof iconMap !== 'object') return iconMap;
+  const resolvedBase = path.resolve(baseDir);
   const out = {};
   let kept = 0;
   for (const [size, rel] of Object.entries(iconMap)) {
-    if (typeof rel !== 'string' || !rel.trim()) continue;
-    const cleanRel = rel.replace(/^\/+/, '');
-    if (fs.existsSync(path.join(baseDir, cleanRel))) {
-      out[size] = rel;
+    const cleanRel = sanitizeRelativeAssetPath(rel);
+    if (!cleanRel) continue;
+    const candidate = path.resolve(resolvedBase, cleanRel);
+    if (isPathInsideDir(resolvedBase, candidate) && fs.existsSync(candidate)) {
+      out[size] = cleanRel;
       kept += 1;
     }
   }
@@ -323,9 +352,13 @@ function sanitizeManifestForElectron(rawManifest, baseDir, { aggressive = false 
       }
     }
     if (manifest.declarative_net_request && Array.isArray(manifest.declarative_net_request.rule_resources)) {
+      const resolvedBase = path.resolve(baseDir);
       const validRules = manifest.declarative_net_request.rule_resources.filter((r) => {
         if (!r || typeof r.path !== 'string') return false;
-        return fs.existsSync(path.join(baseDir, r.path.replace(/^\/+/, '')));
+        const cleanRel = sanitizeRelativeAssetPath(r.path);
+        if (!cleanRel) return false;
+        const absRule = path.resolve(resolvedBase, cleanRel);
+        return isPathInsideDir(resolvedBase, absRule) && fs.existsSync(absRule);
       });
       if (validRules.length) manifest.declarative_net_request.rule_resources = validRules;
       else delete manifest.declarative_net_request;
@@ -339,6 +372,75 @@ function sanitizeManifestForElectron(rawManifest, baseDir, { aggressive = false 
   return { manifest, notes };
 }
 
+const ELECTRON_BG_SHIM_MARKER = '/* __NX_ELECTRON_EXT_SHIM_V1__ */';
+const ELECTRON_BG_SHIM_SOURCE =
+  `${ELECTRON_BG_SHIM_MARKER}\n` +
+  `;(function(){try{if(typeof chrome==='undefined'||!chrome)return;` +
+  `const noopEvt=()=>({addListener(){},removeListener(){},hasListener(){return false;},hasListeners(){return false;}});` +
+  `if(chrome.permissions){for(const fn of['contains','request','remove']){const orig=chrome.permissions[fn];if(typeof orig==='function'){chrome.permissions[fn]=function(perms,cb){try{const r=orig.call(chrome.permissions,perms,cb);if(r&&typeof r.catch==='function')return r.catch(()=>{if(typeof cb==='function'){try{cb(false);}catch(_){}}return false;});return r;}catch(_){if(typeof cb==='function'){try{cb(false);}catch(__){}}return Promise.resolve(false);}};}}}` +
+  `if(!chrome.commands){chrome.commands={getAll(cb){if(typeof cb==='function')try{cb([]);}catch(_){}return Promise.resolve([]);},onCommand:noopEvt()};}` +
+  `if(!chrome.windows){chrome.windows={WINDOW_ID_NONE:-1,WINDOW_ID_CURRENT:-2,getAll(o,cb){const f=typeof o==='function'?o:cb;if(typeof f==='function')try{f([]);}catch(_){}return Promise.resolve([]);},getCurrent(o,cb){const f=typeof o==='function'?o:cb;if(typeof f==='function')try{f(null);}catch(_){}return Promise.resolve(null);},getLastFocused(o,cb){const f=typeof o==='function'?o:cb;if(typeof f==='function')try{f(null);}catch(_){}return Promise.resolve(null);},onCreated:noopEvt(),onRemoved:noopEvt(),onFocusChanged:noopEvt()};}` +
+  `if(!chrome.notifications){chrome.notifications={getAll(cb){if(typeof cb==='function')try{cb({});}catch(_){}return Promise.resolve({});},create(a,b,cb){const f=typeof a==='function'?a:typeof b==='function'?b:cb;if(typeof f==='function')try{f('');}catch(_){}return Promise.resolve('');},clear(a,cb){if(typeof cb==='function')try{cb(false);}catch(_){}return Promise.resolve(false);},onClicked:noopEvt(),onButtonClicked:noopEvt(),onClosed:noopEvt()};}` +
+  `}catch(_){}})();\n`;
+
+function isManagedInternalExtensionCopy(targetDir) {
+  try {
+    const resolved = path.resolve(targetDir);
+    const roots = [];
+    try {
+      roots.push(path.join(app.getPath('userData'), 'nextgx-data'));
+    } catch (_) {}
+    roots.push(path.join(os.tmpdir(), 'nextgx-extensions'));
+    return roots.some((r) => isPathInsideDir(path.resolve(r), resolved));
+  } catch (_) {
+    return false;
+  }
+}
+
+function applyElectronBackgroundCompatShim(extDir, manifest) {
+  if (!extDir || !manifest || typeof manifest !== 'object') return;
+  if (!isManagedInternalExtensionCopy(extDir)) return;
+  const bg = manifest.background;
+  if (!bg || typeof bg !== 'object') return;
+  const candidates = [];
+  if (typeof bg.service_worker === 'string') candidates.push(bg.service_worker);
+  if (Array.isArray(bg.scripts)) {
+    for (const s of bg.scripts) {
+      if (typeof s === 'string') candidates.push(s);
+    }
+  }
+  const resolvedBase = path.resolve(extDir);
+  for (const rel of candidates) {
+    const cleanRel = sanitizeRelativeAssetPath(rel);
+    if (!cleanRel || !/\.m?js$/i.test(cleanRel)) continue;
+    const scriptPath = path.resolve(resolvedBase, cleanRel);
+    if (!isPathInsideDir(resolvedBase, scriptPath)) continue;
+    try {
+      if (!fs.existsSync(scriptPath)) continue;
+      const src = fs.readFileSync(scriptPath, 'utf-8');
+      if (src.startsWith(ELECTRON_BG_SHIM_MARKER)) continue;
+      fs.writeFileSync(scriptPath, ELECTRON_BG_SHIM_SOURCE + src, 'utf-8');
+    } catch (_) {}
+  }
+}
+
+function manifestNeedsCompatibilityStaging(sourceDir, rawManifest) {
+  if (hasForbiddenUnderscoreEntries(sourceDir)) return true;
+  if (!rawManifest || typeof rawManifest !== 'object') return false;
+  if (typeof rawManifest.manifest_version === 'string') return true;
+  for (const key of CHROME_ONLY_MANIFEST_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(rawManifest, key)) return true;
+  }
+  const hasUnsupportedPerm = (list) =>
+    Array.isArray(list) &&
+    list.some((p) => typeof p === 'string' && (p.startsWith('enterprise.') || ELECTRON_UNSUPPORTED_PERMISSIONS.has(p)));
+  if (hasUnsupportedPerm(rawManifest.permissions) || hasUnsupportedPerm(rawManifest.optional_permissions)) {
+    return true;
+  }
+  if (rawManifest.commands) return true;
+  return false;
+}
+
 function prepareCompatibleExtensionDir(sourceDir, rawManifest, { aggressive = false } = {}) {
   const hash = crypto.createHash('sha1').update(`${sourceDir}|${aggressive ? 'agg' : 'std'}`).digest('hex').slice(0, 12);
   const slug = path.basename(sourceDir).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 32) || 'ext';
@@ -350,7 +452,8 @@ function prepareCompatibleExtensionDir(sourceDir, rawManifest, { aggressive = fa
   copyExtensionDirSanitized(sourceDir, stageDir, true);
   const { manifest, notes } = sanitizeManifestForElectron(rawManifest, stageDir, { aggressive });
   fs.writeFileSync(path.join(stageDir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf-8');
-  return { stageDir, notes };
+  applyElectronBackgroundCompatShim(stageDir, manifest);
+  return { stageDir, notes, manifest };
 }
 
 function extractCrxToZipBuffer(buf) {
@@ -381,7 +484,16 @@ function extractCrxToZipBuffer(buf) {
   throw new Error('File is not a valid .crx or .zip extension archive.');
 }
 
-function extractPackedExtensionFile(archivePath) {
+function runExecFileAsync(cmd, args, opts) {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, opts, (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
+async function extractPackedExtensionFileAsync(archivePath) {
   const resolved = path.resolve(String(archivePath || '').trim());
   if (!fs.existsSync(resolved)) {
     return { ok: false, error: `Archive file not found: "${resolved}".` };
@@ -392,13 +504,13 @@ function extractPackedExtensionFile(archivePath) {
   const tempZip = path.join(os.tmpdir(), `nextgx-ext-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.zip`);
 
   try {
-    const rawBuf = fs.readFileSync(resolved);
+    const rawBuf = await fs.promises.readFile(resolved);
     const zipBuf = extractCrxToZipBuffer(rawBuf);
-    fs.writeFileSync(tempZip, zipBuf);
-    fs.mkdirSync(targetDir, { recursive: true });
+    await fs.promises.writeFile(tempZip, zipBuf);
+    await fs.promises.mkdir(targetDir, { recursive: true });
 
     if (process.platform === 'win32') {
-      execFileSync(
+      await runExecFileAsync(
         'powershell.exe',
         ['-NoProfile', '-NonInteractive', '-Command', 'Expand-Archive -LiteralPath $env:NX_ZIP -DestinationPath $env:NX_DEST -Force'],
         {
@@ -409,9 +521,9 @@ function extractPackedExtensionFile(archivePath) {
       );
     } else {
       try {
-        execFileSync('unzip', ['-q', '-o', tempZip, '-d', targetDir], { timeout: 30000 });
+        await runExecFileAsync('unzip', ['-q', '-o', tempZip, '-d', targetDir], { timeout: 30000 });
       } catch (_) {
-        execFileSync('python3', ['-m', 'zipfile', '-e', tempZip, targetDir], { timeout: 30000 });
+        await runExecFileAsync('python3', ['-m', 'zipfile', '-e', tempZip, targetDir], { timeout: 30000 });
       }
     }
     return { ok: true, extractedDir: targetDir };
@@ -555,11 +667,11 @@ function listManagedExtensions() {
   return result;
 }
 
-async function loadUnpackedExtensionFromPath(folderPath, { persist = true } = {}) {
+async function loadUnpackedExtensionFromPath(folderPath, { persist = true, extraRecord = null } = {}) {
   let effectiveInputPath = folderPath;
   // Also allow passing a .crx or .zip archive directly
   if (typeof folderPath === 'string' && /\.(crx|zip)$/i.test(folderPath.trim()) && fs.existsSync(folderPath.trim())) {
-    const unpacked = extractPackedExtensionFile(folderPath.trim());
+    const unpacked = await extractPackedExtensionFileAsync(folderPath.trim());
     if (!unpacked.ok) {
       return {
         ok: false,
@@ -601,14 +713,18 @@ async function loadUnpackedExtensionFromPath(folderPath, { persist = true } = {}
   const compatNotes = [];
   let loadTargetPath = resolvedPath;
 
-  // Proactively stage a clean copy when _metadata (or other forbidden '_' dirs) exist
-  // because Chromium ALWAYS rejects unpacked folders containing _metadata.
-  if (hasForbiddenUnderscoreEntries(resolvedPath) || typeof manifest.manifest_version === 'string') {
+  // Proactively stage a clean Electron-compatible copy whenever _metadata, Chrome-only keys,
+  // or Electron-unsupported permissions exist so Pass 1 never spews runtime permission errors.
+  if (manifestNeedsCompatibilityStaging(resolvedPath, manifest)) {
     try {
-      const staged = prepareCompatibleExtensionDir(resolvedPath, manifest, { aggressive: false });
+      const staged = prepareCompatibleExtensionDir(resolvedPath, manifest, { aggressive: true });
       loadTargetPath = staged.stageDir;
-      compatNotes.push('Cleaned Chrome Web Store metadata (_metadata) for Electron compatibility.');
+      if (staged.notes.length) {
+        compatNotes.push(`Compatibility mode: ${staged.notes.slice(0, 6).join(', ')}.`);
+      }
     } catch (_) {}
+  } else if (isManagedInternalExtensionCopy(loadTargetPath)) {
+    applyElectronBackgroundCompatShim(loadTargetPath, manifest);
   }
 
   // Unload any already-loaded extension from the same path before reloading
@@ -627,9 +743,9 @@ async function loadUnpackedExtensionFromPath(folderPath, { persist = true } = {}
 
   const attemptLoad = async (targetPath) => {
     const res = await captureExtensionLoadWarnings(targetPath, () =>
-      extApi.loadExtension(targetPath, { allowFileAccess: true })
+      extApi.loadExtension(targetPath, { allowFileAccess: false })
     );
-    await mirrorExtensionLoadToOtherSessions(targetPath);
+    await mirrorExtensionLoadToOtherSessions(targetPath, res?.value?.id || '');
     return res;
   };
 
@@ -688,6 +804,7 @@ async function loadUnpackedExtensionFromPath(folderPath, { persist = true } = {}
   }
 
   const record = {
+    ...(extraRecord && typeof extraRecord === 'object' ? extraRecord : {}),
     id: ext.id,
     path: loadTargetPath || ext.path || resolvedPath,
     name: ext.name || manifest.name || path.basename(resolvedPath),

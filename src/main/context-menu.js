@@ -140,39 +140,46 @@ function attachWebContentsContextMenu(ctx, wc, { isSidebar = false } = {}) {
     // 3. Image actions
     if (params.mediaType === 'image' && params.srcURL) {
       const srcUrl = params.srcURL;
-      template.push(
-        {
-          label: 'Open image in new tab',
-          click: () =>
-            tabsMod().createTab(ctx, {
-              url: srcUrl,
-              incognito: ctx.incognito,
-              active: false,
-              insertIndex: getNextBackgroundInsertIndex(ctx, wc)
-            })
-        },
-        {
-          label: 'Save image as...',
-          click: () => {
-            if (!wc.isDestroyed()) wc.downloadURL(srcUrl);
+      const isHttpImage = /^https?:\/\//i.test(srcUrl);
+      if (isHttpImage) {
+        template.push(
+          {
+            label: 'Open image in new tab',
+            click: () =>
+              tabsMod().createTab(ctx, {
+                url: srcUrl,
+                incognito: ctx.incognito,
+                active: false,
+                insertIndex: getNextBackgroundInsertIndex(ctx, wc)
+              })
+          },
+          {
+            label: 'Save image as...',
+            click: () => {
+              if (!wc.isDestroyed()) wc.downloadURL(srcUrl);
+            }
           }
-        },
+        );
+      }
+      template.push(
         {
           label: 'Copy image',
           click: () => {
             if (!wc.isDestroyed()) wc.copyImageAt(params.x, params.y);
           }
-        },
-        {
+        }
+      );
+      if (isHttpImage || /^data:image\//i.test(srcUrl)) {
+        template.push({
           label: 'Copy image address',
           click: async () => {
             if (await writeClipboardText(srcUrl)) {
               ctx.win?.webContents.send('ui:toast', 'Image address copied');
             }
           }
-        },
-        { type: 'separator' }
-      );
+        });
+      }
+      template.push({ type: 'separator' });
     }
 
     // 4. Editable field menu (matches Opera GX text-box right click)
@@ -327,7 +334,7 @@ function attachWebContentsContextMenu(ctx, wc, { isSidebar = false } = {}) {
           enabled: hasWebUrl,
           click: () => {
             if (!hasWebUrl || !state.storage?.addSpeedDial) return;
-            state.storage.addSpeedDial({ title: truncateLabel(pageTitle, 28), url: pageUrl });
+            state.storage.addSpeedDial({ title: truncateLabel(pageTitle, 28), url: pageUrl }, pid);
             ctx.win?.webContents.send('ui:toast', 'Added to Speed Dial');
           }
         },

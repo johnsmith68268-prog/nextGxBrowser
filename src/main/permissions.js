@@ -272,6 +272,24 @@ function getEffectivePermissionState(origin, key, ctx) {
 // Tab preload (src/tab-preload.js) asks for the stored device choice before
 // calling getUserMedia. The channel is origin-bound: a page may only read the
 // prefs for its own origin, so this is safe to expose to web content.
+function verifyTopLevelWebFrameOrigin(e, expectedOrigin) {
+  if (!expectedOrigin || typeof expectedOrigin !== 'string') return false;
+  if (!e || !e.sender) return false;
+  if (e.sender.mainFrame && e.senderFrame && e.senderFrame !== e.sender.mainFrame) {
+    return false;
+  }
+  const rawUrl =
+    (e.senderFrame && typeof e.senderFrame.url === 'string' && e.senderFrame.url) ||
+    (typeof e.sender.getURL === 'function' ? e.sender.getURL() : '');
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    return parsed.origin === expectedOrigin;
+  } catch (_) {
+    return false;
+  }
+}
+
 let mediaIpcRegistered = false;
 function ensureMediaIpcRegistered() {
   if (mediaIpcRegistered) return;
@@ -280,15 +298,7 @@ function ensureMediaIpcRegistered() {
     if (!ipcMain || typeof ipcMain.handle !== 'function') return;
     ipcMain.handle('media:get-preferred-device', (e, payload = {}) => {
       const origin = typeof payload?.origin === 'string' ? payload.origin : '';
-      if (!origin) return {};
-      try {
-        const senderOrigin = e?.sender && typeof e.sender.getURL === 'function'
-          ? new URL(e.sender.getURL()).origin
-          : '';
-        if (senderOrigin !== origin) return {};
-      } catch (_) {
-        return {};
-      }
+      if (!verifyTopLevelWebFrameOrigin(e, origin)) return {};
       const winId = e?.sender ? webContentsToWinId.get(e.sender.id) : null;
       const ctx = winId ? windowContexts.get(winId) : null;
       if (ctx && ctx.incognito) return {};
@@ -299,15 +309,7 @@ function ensureMediaIpcRegistered() {
       const origin = typeof payload?.origin === 'string' ? payload.origin : '';
       const name = typeof payload?.name === 'string' ? payload.name : '';
       const key = PERMISSIONS_QUERY_KEY_BY_NAME[name];
-      if (!origin || !key) return { state: 'prompt' };
-      try {
-        const senderOrigin = e?.sender && typeof e.sender.getURL === 'function'
-          ? new URL(e.sender.getURL()).origin
-          : '';
-        if (senderOrigin !== origin) return { state: 'prompt' };
-      } catch (_) {
-        return { state: 'prompt' };
-      }
+      if (!origin || !key || !verifyTopLevelWebFrameOrigin(e, origin)) return { state: 'prompt' };
       const winId = e?.sender ? webContentsToWinId.get(e.sender.id) : null;
       const ctx = winId ? windowContexts.get(winId) : null;
       return { state: getEffectivePermissionState(origin, key, ctx) };
@@ -450,8 +452,14 @@ function resolvePermissionPrompt(ctx, { requestId, decision, devices, displayMed
         }
       } else {
         const ephemeral = {};
+        if (typeof devices.camera === 'string' && devices.camera) ephemeral.camera = devices.camera;
+        if (typeof devices.microphone === 'string' && devices.microphone) ephemeral.microphone = devices.microphone;
         if (typeof devices.cameraId === 'string' && devices.cameraId) ephemeral.cameraId = devices.cameraId;
         if (typeof devices.micId === 'string' && devices.micId) ephemeral.micId = devices.micId;
+        if (typeof devices.cameraLabel === 'string' && devices.cameraLabel) ephemeral.cameraLabel = devices.cameraLabel;
+        if (typeof devices.microphoneLabel === 'string' && devices.microphoneLabel) {
+          ephemeral.microphoneLabel = devices.microphoneLabel;
+        }
         if (Object.keys(ephemeral).length > 0) {
           pushDeviceChoiceToTab(ctx, active.origin, ephemeral);
         }

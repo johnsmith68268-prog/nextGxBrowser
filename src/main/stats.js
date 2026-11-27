@@ -298,7 +298,9 @@ function startBackgroundTimers() {
         const shouldNormalSleep = item.idleMs >= timeoutMs;
         if (shouldPressureSleep || shouldNormalSleep) {
           sleepTab(ctx, item.id);
-          liveCount -= 1;
+          if (item.tab.sleeping) {
+            liveCount -= 1;
+          }
         }
       }
     }

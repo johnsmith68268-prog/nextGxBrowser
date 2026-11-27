@@ -290,6 +290,8 @@ async function deleteProfileAndCleanup(profileId) {
   try {
     const ses = getSessionForProfile(targetId);
     if (ses && ses !== session.defaultSession) {
+      initializedSessionList.delete(ses);
+      initializedSessions.delete(ses);
       await ses.clearStorageData().catch(() => { });
       await ses.clearCache().catch(() => { });
     }

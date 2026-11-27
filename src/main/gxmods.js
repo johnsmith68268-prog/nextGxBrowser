@@ -184,15 +184,43 @@ function sanitizeModRegistry(raw) {
 // stored file name (or '' when there is nothing to copy). The copy keeps
 // everything local: the pack folder is never referenced at runtime.
 function installPackWallpaper(pack) {
-  if (!pack || !pack.wallpaper || !pack.path) return '';
-  const { resolveSafeWallpaperPath } = require('./wallpapers');
-  const base = path.basename(pack.wallpaper);
-  const storedName = `gxmod-${pack.id.slice(0, 32)}-${base}`.slice(0, 120);
+  if (!pack || typeof pack.wallpaper !== 'string' || !pack.wallpaper || typeof pack.path !== 'string' || !pack.path) {
+    return '';
+  }
+  const { isPathInsideDir } = require('./utils');
+  const {
+    WALLPAPER_MAX_BYTES,
+    detectWallpaperImageFormat,
+    resolveSafeWallpaperPath
+  } = require('./wallpapers');
+  const packDir = path.resolve(pack.path);
+  const srcPath = path.resolve(packDir, pack.wallpaper);
+  if (!isPathInsideDir(packDir, srcPath)) return '';
+
+  let buf = null;
+  try {
+    const stat = fs.statSync(srcPath);
+    if (!stat.isFile() || stat.size <= 0 || stat.size > WALLPAPER_MAX_BYTES) return '';
+    buf = fs.readFileSync(srcPath);
+  } catch (_) {
+    return '';
+  }
+  const detected = detectWallpaperImageFormat(buf);
+  if (!detected) return '';
+
+  const rawStem = path
+    .basename(pack.wallpaper, path.extname(pack.wallpaper))
+    .replace(/[^a-zA-Z0-9._-]/g, '-')
+    .slice(0, 48) || 'wallpaper';
+  const safePackId = String(pack.id || 'mod')
+    .replace(/[^a-zA-Z0-9_-]/g, '-')
+    .slice(0, 32);
+  const storedName = `gxmod-${safePackId}-${rawStem}${detected.ext}`;
   const target = resolveSafeWallpaperPath(storedName);
   if (!target) return '';
   try {
     fs.mkdirSync(path.dirname(target), { recursive: true });
-    fs.copyFileSync(path.resolve(pack.path, pack.wallpaper), target);
+    fs.writeFileSync(target, buf);
     return storedName;
   } catch (_) {
     return '';

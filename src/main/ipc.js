@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const {
   WebContentsView,
   app,
@@ -13,6 +15,7 @@ const {
   CORNER_FILE,
   WEBUI_FILE,
   ONBOARDING_FILE,
+  SPLIT_PICKER_FILE,
   ERROR_PAGE_FILE,
   PLAYER_PANEL_FILE,
   SCREENSHOT_FILE,
@@ -28,6 +31,7 @@ const {
   isInternalUiSender,
   normalizeAutofillHost,
   isAutofillHostMatch,
+  attachInternalNavigationGuard,
   isErrorPageUrl,
   getInternalUiQuery,
   getOriginForUrl
@@ -64,7 +68,12 @@ const {
 const { applyZoomAction } = require('./shortcuts');
 const { openPopover, resizePopover, closePopover } = require('./popovers');
 const { scheduleSessionSave } = require('./session');
-const { allowCertException } = require('./cert-exceptions');
+const {
+  allowCertException,
+  isCertErrorCode,
+  normalizeOrigin,
+  getObservedCertFingerprint
+} = require('./cert-exceptions');
 const {
   createTab,
   openOrFocusGxCornerTab,
@@ -168,17 +177,35 @@ function fastExtractHost(rawUrl) {
   const idx = rawUrl.indexOf('://');
   if (idx === -1) return '';
   const start = idx + 3;
-  let end = rawUrl.length;
-  for (let i = start; i < end; i++) {
+  let authorityEnd = rawUrl.length;
+  for (let i = start; i < authorityEnd; i++) {
     const c = rawUrl.charCodeAt(i);
-    if (c === 47 || c === 63 || c === 35 || c === 58) {
-      // '/', '?', '#', ':'
-      if (c === 58 && rawUrl.charCodeAt(start) === 91) continue; // IPv6 [::1]
-      end = i;
+    if (c === 47 || c === 63 || c === 35) {
+      // '/', '?', '#'
+      authorityEnd = i;
       break;
     }
   }
-  return rawUrl.slice(start, end).toLowerCase();
+  let hostStart = start;
+  const atIdx = rawUrl.lastIndexOf('@', authorityEnd - 1);
+  if (atIdx >= start) {
+    hostStart = atIdx + 1;
+  }
+  if (hostStart >= authorityEnd) return '';
+  if (rawUrl.charCodeAt(hostStart) === 91) {
+    // IPv6 literal [::1] or [::1]:8080
+    const closeBracket = rawUrl.indexOf(']', hostStart + 1);
+    if (closeBracket === -1 || closeBracket >= authorityEnd) return '';
+    return rawUrl.slice(hostStart, closeBracket + 1).toLowerCase();
+  }
+  let hostEnd = authorityEnd;
+  for (let i = hostStart; i < authorityEnd; i++) {
+    if (rawUrl.charCodeAt(i) === 58) {
+      hostEnd = i;
+      break;
+    }
+  }
+  return rawUrl.slice(hostStart, hostEnd).toLowerCase();
 }
 
 function getRegistrableDomain(host) {
@@ -215,14 +242,16 @@ const tpCookieSessions = new Map(); // session -> isIncognito
 function isThirdPartyRequest(details) {
   try {
     if (details.resourceType === 'mainFrame') return false;
+    const reqHost = fastExtractHost(details.url) || new URL(details.url).hostname.toLowerCase();
+    if (!reqHost) return false;
     const initiatorRaw =
       (typeof details.initiator === 'string' && details.initiator) ||
       (typeof details.referrer === 'string' && details.referrer) ||
       '';
-    if (!initiatorRaw || initiatorRaw === 'null') return false;
-    const reqHost = fastExtractHost(details.url) || new URL(details.url).hostname.toLowerCase();
+    if (!initiatorRaw) return false;
+    if (initiatorRaw === 'null') return true;
     const initHost = fastExtractHost(initiatorRaw) || new URL(initiatorRaw).hostname.toLowerCase();
-    if (!reqHost || !initHost || reqHost === initHost) return false;
+    if (!initHost || reqHost === initHost) return false;
     return getRegistrableDomain(reqHost) !== getRegistrableDomain(initHost);
   } catch (_) {
     return false;
@@ -272,6 +301,18 @@ function ensureThirdPartyCookieListeners(ses, isIncognito) {
   } catch (_) { }
 }
 
+function resolveValidDownloadDir(rawPath) {
+  if (typeof rawPath === 'string' && rawPath.trim()) {
+    const candidate = rawPath.trim();
+    try {
+      if (path.isAbsolute(candidate) && fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
+        return candidate;
+      }
+    } catch (_) { }
+  }
+  return app.getPath('downloads');
+}
+
 function applySessionPrivacyAndPrefs(ses, { incognito = false, profileId = 'default' } = {}) {
   if (!ses) return;
   try {
@@ -288,10 +329,7 @@ function applySessionPrivacyAndPrefs(ses, { incognito = false, profileId = 'defa
     if (typeof ses.setSpellCheckerLanguages === 'function') {
       ses.setSpellCheckerLanguages(enabled ? langs : []);
     }
-    const target =
-      typeof s.downloadPath === 'string' && s.downloadPath.trim()
-        ? s.downloadPath.trim()
-        : app.getPath('downloads');
+    const target = resolveValidDownloadDir(s.downloadPath);
     if (typeof ses.setDownloadPath === 'function') {
       ses.setDownloadPath(target);
     }
@@ -341,10 +379,7 @@ function applySpellcheckSettings(settings) {
 function applyDownloadPathSetting(settings) {
   let target = '';
   try {
-    target =
-      settings && typeof settings.downloadPath === 'string' && settings.downloadPath.trim()
-        ? settings.downloadPath.trim()
-        : app.getPath('downloads');
+    target = resolveValidDownloadDir(settings?.downloadPath);
   } catch (_) {
     return;
   }
@@ -410,6 +445,8 @@ function registerIpcHandlers() {
       event.returnValue = 'webui';
     } else if (normalized === normalizePathForCompare(ONBOARDING_FILE)) {
       event.returnValue = 'onboarding';
+    } else if (normalized === normalizePathForCompare(SPLIT_PICKER_FILE)) {
+      event.returnValue = 'split-picker';
     } else if (normalized === normalizePathForCompare(ERROR_PAGE_FILE)) {
       event.returnValue = 'error';
     } else if (normalized === normalizePathForCompare(PLAYER_PANEL_FILE)) {
@@ -462,9 +499,9 @@ function registerIpcHandlers() {
     try {
       const u = new URL(frameUrl);
       const rawHost = (u.hostname || '').toLowerCase();
-      const isLocalDev = rawHost === 'localhost' || rawHost === '127.0.0.1';
+      const isLocalDev = rawHost === 'localhost' || rawHost === '127.0.0.1' || rawHost === '[::1]' || rawHost === '::1';
       if (u.protocol !== 'https:' && !(u.protocol === 'http:' && isLocalDev)) return [];
-      const pageHost = u.hostname;
+      const pageHost = isLocalDev && u.port ? `${u.hostname}:${u.port}` : u.hostname;
       if (!pageHost) return [];
       const pid = getSenderProfileId(e);
       return (state.storage.getPasswords(pid) || []).filter((p) => p && p.site && isAutofillHostMatch(pageHost, p.site));
@@ -523,9 +560,9 @@ function registerIpcHandlers() {
     try {
       const u = new URL(frameUrl);
       const rawHost = (u.hostname || '').toLowerCase();
-      const isLocalDev = rawHost === 'localhost' || rawHost === '127.0.0.1';
+      const isLocalDev = rawHost === 'localhost' || rawHost === '127.0.0.1' || rawHost === '[::1]' || rawHost === '::1';
       if (u.protocol !== 'https:' && !(u.protocol === 'http:' && isLocalDev)) return false;
-      const site = normalizeAutofillHost(u.hostname);
+      const site = normalizeAutofillHost(isLocalDev && u.port ? `${u.hostname}:${u.port}` : u.hostname);
       if (!site) return false;
       const pid = getSenderProfileId(e);
       state.storage.addPassword({ site, username: cleanUser, password }, pid);
@@ -685,13 +722,19 @@ function registerIpcHandlers() {
   handleInternal('tabs:get-state', (e) => serializeTabs(getCtxFromSender(e.sender)));
   handleInternal('tabs:navigate', (e, input) => {
     const ctx = getCtxFromSender(e.sender);
+    if (!ctx) return null;
+    const rawTrimmed = typeof input === 'string' ? input.trim() : '';
+    if (/^(?:data|blob|vbscript):/i.test(rawTrimmed)) {
+      return serializeTabs(ctx);
+    }
+    const safeInput = /^javascript:/i.test(rawTrimmed) ? rawTrimmed.replace(/^javascript:\s*/i, '') : input;
     // [Wave2-D] Custom search engines (gap 5.2): resolve address-bar search
     // queries against the editable engine list before navigating, so a
     // chosen custom engine (or a `keyword query`) actually drives the search.
     // URLs pass through untouched; navigateActiveTab resolves them as before.
-    let resolved = input;
+    let resolved = safeInput;
     try {
-      const searchUrl = resolveAddressBarSearch(input, state.storage.getSettings(getSenderProfileId(e)));
+      const searchUrl = resolveAddressBarSearch(safeInput, state.storage.getSettings(getSenderProfileId(e)));
       if (searchUrl) resolved = searchUrl;
     } catch (_) { }
     navigateActiveTab(ctx, resolved);
@@ -699,6 +742,7 @@ function registerIpcHandlers() {
   });
   handleInternal('tabs:back', (e) => {
     const ctx = getCtxFromSender(e.sender);
+    if (!ctx) return null;
     const goBackSafe = (wc) => {
       if (!wc || wc.isDestroyed()) return;
       if (wc.navigationHistory) {
@@ -718,6 +762,7 @@ function registerIpcHandlers() {
   });
   handleInternal('tabs:forward', (e) => {
     const ctx = getCtxFromSender(e.sender);
+    if (!ctx) return null;
     const goForwardSafe = (wc) => {
       if (!wc || wc.isDestroyed()) return;
       if (wc.navigationHistory) {
@@ -737,12 +782,14 @@ function registerIpcHandlers() {
   });
   handleInternal('tabs:reload', (e, tabId) => {
     const ctx = getCtxFromSender(e.sender);
+    if (!ctx) return null;
     if (tabId) reloadTab(ctx, tabId);
     else reloadActiveTab(ctx);
     return serializeTabs(ctx);
   });
   handleInternal('tabs:retry-failed', (e, requestedUrl) => {
     const ctx = getCtxFromSender(e.sender);
+    if (!ctx) return null;
     const sidebarEntry = findSidebarServiceByWebContents(ctx, e.sender);
     if (sidebarEntry) {
       reloadSidebarPanel(ctx);
@@ -756,7 +803,12 @@ function registerIpcHandlers() {
       tab.failedUrl ||
       getFailedUrlFromErrorPage(tab.url) ||
       (typeof requestedUrl === 'string' ? requestedUrl.trim() : '');
-    if (!candidate || isErrorPageUrl(candidate) || resolveInternalUiFile(candidate)) {
+    if (
+      !candidate ||
+      !/^https?:\/\//i.test(candidate) ||
+      isErrorPageUrl(candidate) ||
+      resolveInternalUiFile(candidate)
+    ) {
       return serializeTabs(ctx);
     }
     tab.url = candidate;
@@ -772,19 +824,42 @@ function registerIpcHandlers() {
   // on quit — see src/main/cert-exceptions.js) and covers exactly the
   // failed origin, https only. It does NOT change the default: every
   // other cert error is still denied by the app-level handler in main.js.
+  const hasErrorPageCertParams = (errorPageUrl) => {
+    if (!errorPageUrl || !isErrorPageUrl(errorPageUrl)) return false;
+    try {
+      const sp = new URL(errorPageUrl).searchParams;
+      return isCertErrorCode(sp.get('code'), sp.get('desc') || sp.get('error'));
+    } catch (_) {
+      return false;
+    }
+  };
+
   handleInternal('tabs:proceed-insecure', (e, requestedUrl) => {
     const ctx = getCtxFromSender(e.sender);
+    if (!ctx) return null;
+    const sessionKey = ctx.incognito
+      ? `incog:${ctx.win?.id || 0}`
+      : `prof:${ctx.profileId || 'default'}`;
     const sidebarEntry = findSidebarServiceByWebContents(ctx, e.sender);
     if (sidebarEntry) {
       const meta = sidebarEntry.meta || null;
+      const currentSidebarUrl =
+        sidebarEntry.view && !sidebarEntry.view.webContents.isDestroyed()
+          ? sidebarEntry.view.webContents.getURL()
+          : '';
       const candidate =
-        (typeof requestedUrl === 'string' ? requestedUrl.trim() : '') ||
+        getFailedUrlFromErrorPage(currentSidebarUrl) ||
         meta?.failedUrl ||
-        '';
-      if (!candidate || isErrorPageUrl(candidate) || resolveInternalUiFile(candidate)) {
+        (typeof requestedUrl === 'string' ? requestedUrl.trim() : '');
+      const safeOrigin = normalizeOrigin(candidate);
+      const isCertFailure =
+        isCertErrorCode(meta?.failedErrorCode, meta?.failedErrorDesc) ||
+        hasErrorPageCertParams(currentSidebarUrl) ||
+        Boolean(safeOrigin && getObservedCertFingerprint(safeOrigin, sessionKey));
+      if (!safeOrigin || !isCertFailure || isErrorPageUrl(candidate) || resolveInternalUiFile(candidate)) {
         return serializeTabs(ctx);
       }
-      allowCertException(candidate);
+      allowCertException(safeOrigin, { sessionKey });
       reloadSidebarPanel(ctx);
       return serializeTabs(ctx);
     }
@@ -796,10 +871,16 @@ function registerIpcHandlers() {
       tab.failedUrl ||
       getFailedUrlFromErrorPage(tab.url) ||
       (typeof requestedUrl === 'string' ? requestedUrl.trim() : '');
-    if (!candidate || isErrorPageUrl(candidate) || resolveInternalUiFile(candidate)) {
+    const safeOrigin = normalizeOrigin(candidate);
+    const isCertFailure =
+      isCertErrorCode(tab.failedErrorCode, tab.failedErrorDesc) ||
+      hasErrorPageCertParams(currentUrl) ||
+      hasErrorPageCertParams(tab.url) ||
+      Boolean(safeOrigin && getObservedCertFingerprint(safeOrigin, sessionKey));
+    if (!safeOrigin || !isCertFailure || isErrorPageUrl(candidate) || resolveInternalUiFile(candidate)) {
       return serializeTabs(ctx);
     }
-    allowCertException(candidate);
+    allowCertException(safeOrigin, { sessionKey });
     tab.url = candidate;
     tab.isLoading = true;
     broadcastState(ctx);
@@ -809,6 +890,7 @@ function registerIpcHandlers() {
   });
   handleInternal('tabs:stop', (e) => {
     const ctx = getCtxFromSender(e.sender);
+    if (!ctx) return null;
     const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
     if (tab?.view && !tab.view.webContents.isDestroyed()) {
       tab.view.webContents.stop();
@@ -821,6 +903,7 @@ function registerIpcHandlers() {
   });
   handleInternal('tabs:home', (e) => {
     const ctx = getCtxFromSender(e.sender);
+    if (!ctx) return null;
     const sidebarEntry = findSidebarServiceByWebContents(ctx, e.sender);
     if (sidebarEntry && sidebarEntry.service) {
       if (sidebarEntry.meta) {
@@ -911,15 +994,17 @@ function registerIpcHandlers() {
 
   handleInternal('tabs:print', (e) => {
     const ctx = getCtxFromSender(e.sender);
+    if (!ctx) return;
     const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
-    if (tab?.view) tab.view.webContents.print();
+    if (tab?.view && !tab.view.webContents.isDestroyed()) tab.view.webContents.print();
   });
 
   handleInternal('tabs:screenshot', async (e) => {
     const ctx = getCtxFromSender(e.sender);
+    if (!ctx) return { ok: false };
     closePopover(ctx);
     const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
-    if (!tab || !tab.view) return { ok: false };
+    if (!tab || !tab.view || tab.view.webContents.isDestroyed()) return { ok: false };
     try {
       const image = await tab.view.webContents.capturePage();
       return await saveScreenshotPng(ctx, image.toPNG(), 'Full');
@@ -955,9 +1040,10 @@ function registerIpcHandlers() {
 
   handleInternal('tabs:screenshot-area-start', async (e) => {
     const ctx = getCtxFromSender(e.sender);
+    if (!ctx || !ctx.win || ctx.win.isDestroyed()) return { ok: false };
     closePopover(ctx);
     const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
-    if (!tab || !tab.view) return { ok: false };
+    if (!tab || !tab.view || tab.view.webContents.isDestroyed()) return { ok: false };
     const image = await tab.view.webContents.capturePage();
     ctx.pendingScreenshotDataUrl = image.toDataURL();
 
@@ -972,9 +1058,9 @@ function registerIpcHandlers() {
         }
       });
       registerWebContents(ctx.screenshotView.webContents, ctx.win.id);
-      //attachInternalNavigationGuard(ctx.screenshotView.webContents);
+      attachInternalNavigationGuard(ctx.screenshotView.webContents);
       ctx.screenshotView.webContents.loadFile(SCREENSHOT_FILE, {
-        query: getInternalUiQuery(ctx.incognito)
+        query: getInternalUiQuery(ctx.incognito, ctx.profileId)
       });
       ctx.win.contentView.addChildView(ctx.screenshotView);
       created = true;
@@ -999,6 +1085,7 @@ function registerIpcHandlers() {
 
   handleInternal('tabs:screenshot-area-finish', async (e, payload) => {
     const ctx = getCtxFromSender(e.sender);
+    if (!ctx) return { ok: false };
     const dataUrl = ctx.pendingScreenshotDataUrl;
     destroyScreenshotView(ctx);
     if (!dataUrl) return { ok: false };
@@ -1032,6 +1119,7 @@ function registerIpcHandlers() {
 
   handleInternal('tabs:save-pdf', async (e) => {
     const ctx = getCtxFromSender(e.sender);
+    if (!ctx) return { ok: false };
     if (ctx.screenshotView || ctx.pendingScreenshotDataUrl) {
       destroyScreenshotView(ctx);
     }
@@ -1046,8 +1134,9 @@ function registerIpcHandlers() {
 
   handleInternal('tabs:reader-mode', async (e) => {
     const ctx = getCtxFromSender(e.sender);
+    if (!ctx) return false;
     const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
-    if (!tab || !tab.view) return false;
+    if (!tab || !tab.view || tab.view.webContents.isDestroyed()) return false;
     tab.readerMode = !tab.readerMode;
     if (tab.readerMode) {
       await tab.view.webContents.insertCSS(`
@@ -1072,6 +1161,7 @@ function registerIpcHandlers() {
 
   handleInternal('tabs:find', (e, { text, forward = true } = {}) => {
     const ctx = getCtxFromSender(e.sender);
+    if (!ctx) return null;
     const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
     if (!text) return null;
     if (!tab || tab.sleeping || !tab.view || !tab.view.webContents || tab.view.webContents.isDestroyed()) {
@@ -1102,6 +1192,7 @@ function registerIpcHandlers() {
 
   handleInternal('tabs:stop-find', (e) => {
     const ctx = getCtxFromSender(e.sender);
+    if (!ctx) return;
     const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
     if (tab) {
       tab.lastFindRequestId = null;
@@ -1140,7 +1231,7 @@ function registerIpcHandlers() {
     const ctx = getCtxFromSender(e.sender);
     const pid = ctx?.profileId || state.storage.getActiveProfileId();
     const targetSession =
-      ctx && !ctx.incognito && ctx.session ? ctx.session : getSessionForProfile(pid) || session.defaultSession;
+      ctx && ctx.session ? ctx.session : getSessionForProfile(pid) || session.defaultSession;
     try {
       const bytes = await targetSession.getCacheSize();
       return { bytes: Number(bytes) || 0 };
@@ -1151,9 +1242,10 @@ function registerIpcHandlers() {
 
   handleInternal('cleaner:run', async (e, { cache = true, cookies = false, history = false, range = 'all', downloads = false, passwords = false, autofill = false, siteSettings = false } = {}) => {
     const ctx = getCtxFromSender(e.sender);
+    const isIncognito = Boolean(ctx?.incognito);
     const pid = ctx?.profileId || state.storage.getActiveProfileId();
     const targetSession =
-      ctx && !ctx.incognito && ctx.session ? ctx.session : getSessionForProfile(pid) || session.defaultSession;
+      ctx && ctx.session ? ctx.session : getSessionForProfile(pid) || session.defaultSession;
     const cleared = {};
     if (cache) {
       await targetSession.clearCache();
@@ -1162,37 +1254,41 @@ function registerIpcHandlers() {
     if (cookies) {
       await targetSession.clearStorageData({ storages: ['cookies', 'localstorage'] });
       await targetSession.cookies.flushStore().catch(() => { });
-      try {
-        const { clearDevicePrefsCache } = require('./permissions');
-        if (typeof clearDevicePrefsCache === 'function') clearDevicePrefsCache(pid);
-      } catch (_) { }
-      broadcastCookiesUpdate({ immediate: true, profileId: pid });
+      if (!isIncognito) {
+        try {
+          const { clearDevicePrefsCache } = require('./permissions');
+          if (typeof clearDevicePrefsCache === 'function') clearDevicePrefsCache(pid);
+        } catch (_) { }
+        broadcastCookiesUpdate({ immediate: true, profileId: pid });
+      }
       cleared.cookies = true;
     }
-    if (history) {
-      state.storage.clearHistory(range || 'all', pid);
-      broadcastHistoryUpdate({ profileId: pid });
-      cleared.history = range || 'all';
-    }
-    if (downloads) {
-      state.storage.clearDownloads(pid);
-      broadcastDownloadsUpdate(state.storage.getDownloads(pid), { profileId: pid });
-      cleared.downloads = true;
-    }
-    if (passwords) {
-      state.storage.clearPasswords(pid);
-      broadcastPasswordsUpdate({ profileId: pid });
-      cleared.passwords = true;
-    }
-    if (autofill) {
-      state.storage.clearAddresses(pid);
-      state.storage.clearPaymentMethods(pid);
-      cleared.autofill = true;
-    }
-    if (siteSettings) {
-      state.storage.clearAllSitePermissions(pid);
-      broadcastPermissionsUpdate({ profileId: pid });
-      cleared.siteSettings = true;
+    if (!isIncognito) {
+      if (history) {
+        state.storage.clearHistory(range || 'all', pid);
+        broadcastHistoryUpdate({ profileId: pid });
+        cleared.history = range || 'all';
+      }
+      if (downloads) {
+        state.storage.clearDownloads(pid);
+        broadcastDownloadsUpdate(state.storage.getDownloads(pid), { profileId: pid });
+        cleared.downloads = true;
+      }
+      if (passwords) {
+        state.storage.clearPasswords(pid);
+        broadcastPasswordsUpdate({ profileId: pid });
+        cleared.passwords = true;
+      }
+      if (autofill) {
+        state.storage.clearAddresses(pid);
+        state.storage.clearPaymentMethods(pid);
+        cleared.autofill = true;
+      }
+      if (siteSettings) {
+        state.storage.clearAllSitePermissions(pid);
+        broadcastPermissionsUpdate({ profileId: pid });
+        cleared.siteSettings = true;
+      }
     }
     return { cleanedAt: Date.now(), cleared };
   });
@@ -1273,8 +1369,9 @@ function registerIpcHandlers() {
     }
 
     closePopover(ctx);
+    if (!ctx) return { ok: false };
     if (action === 'new-tab') createTab(ctx, { url: 'nextgx://newtab', active: true });
-    else if (action === 'new-window') createBrowserWindow({ incognito: false });
+    else if (action === 'new-window') createBrowserWindow({ incognito: false, profileId: ctx.profileId });
     else if (action === 'new-incognito') createBrowserWindow({ incognito: true });
     else if (action === 'passwords') createTab(ctx, { url: 'nextgx://passwords', active: true });
     else if (action === 'privacy') createTab(ctx, { url: 'nextgx://privacy', active: true });
@@ -1302,7 +1399,7 @@ function registerIpcHandlers() {
     } else if (action === 'extensions') createTab(ctx, { url: 'nextgx://extensions', active: true });
     else if (action === 'print') {
       const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
-      if (tab?.view) tab.view.webContents.print();
+      if (tab?.view && !tab.view.webContents.isDestroyed()) tab.view.webContents.print();
     } else if (action === 'find') {
       if (ctx.win && !ctx.win.isDestroyed() && ctx.win.webContents && !ctx.win.webContents.isDestroyed()) {
         try {
@@ -1340,6 +1437,7 @@ function registerIpcHandlers() {
 
   handleInternal('layout:set-offsets', (e, partial) => {
     const ctx = getCtxFromSender(e.sender);
+    if (!ctx) return null;
     const prevRight = ctx.layoutState?.right || 0;
     if (partial && typeof partial.gxControlOpen === 'boolean') {
       ctx.gxControlOpen = partial.gxControlOpen;
@@ -1378,6 +1476,7 @@ function registerIpcHandlers() {
   handleInternal('bookmarks:toggle', (e) => {
     const ctx = getCtxFromSender(e.sender);
     const pid = ctx?.profileId || state.storage.getActiveProfileId();
+    if (!ctx) return { added: false, bookmarks: state.storage.getBookmarks(pid) };
     const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
     if (!tab) return { added: false, bookmarks: state.storage.getBookmarks(pid) };
     const result = state.storage.toggleBookmark(
@@ -1442,8 +1541,20 @@ function registerIpcHandlers() {
   handleInternal('omnibox:remote-suggest', async (e, rawQuery) => {
     const ctx = getCtxFromSender(e.sender);
     if (ctx && ctx.incognito) return [];
+    const pid = getSenderProfileId(e);
+    const settings = state.storage ? state.storage.getSettings(pid) : {};
+    if (settings && settings.addressBarSuggestions === false) return [];
     const q = typeof rawQuery === 'string' ? rawQuery.trim() : '';
-    if (!q || q.length < 2 || q.length > 96 || /^https?:\/\//i.test(q)) return [];
+    if (
+      !q ||
+      q.length < 2 ||
+      q.length > 96 ||
+      /^https?:\/\//i.test(q) ||
+      /^(?:nextgx|chrome|gx|about|file|data|blob|javascript):/i.test(q) ||
+      /^(?:localhost|127\.|10\.|192\.168\.|\[::1\])/i.test(q)
+    ) {
+      return [];
+    }
     const key = q.toLowerCase();
     const cached = remoteSuggestCache.get(key);
     if (cached && Date.now() - cached.at < 120000) return cached.items;
@@ -1618,7 +1729,9 @@ function registerIpcHandlers() {
     if (changedKeys.includes('dnsOverHttps')) {
       try {
         if (typeof app.configureHostResolver === 'function') {
-          app.configureHostResolver({ secureDnsMode: s.dnsOverHttps ? 'automatic' : 'off' });
+          Promise.resolve(app.configureHostResolver({ secureDnsMode: s.dnsOverHttps ? 'automatic' : 'off' })).catch(
+            () => { }
+          );
         }
       } catch (_) { }
     }
@@ -1760,7 +1873,7 @@ function registerIpcHandlers() {
   });
 
   // [Wave2-D] Reset settings (gap 5.14) + About (gap 5.14) + Default browser.
-  handleInternal('settings:reset', (e) => {
+  handleInternal('settings:reset', async (e) => {
     const ctx = getCtxFromSender(e.sender);
     const pid = getSenderProfileId(e);
     const s = state.storage.resetSettings(pid);
@@ -1768,10 +1881,10 @@ function registerIpcHandlers() {
     applyThirdPartyCookieMode(s.thirdPartyCookies);
     applyDownloadPathSetting(s);
     try {
-      gxControl.onSettingsChanged(s, { sleepTab });
+      await gxControl.onSettingsChanged(s, { sleepTab });
     } catch (_) { }
     try {
-      syncAdblockCosmeticFilters();
+      await syncAdblockCosmeticFilters();
       if (state.adBlocker) broadcastAdblockUpdate(state.adBlocker.getStats());
     } catch (_) { }
     broadcastSettingsUpdate(s, { profileId: pid });

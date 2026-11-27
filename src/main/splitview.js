@@ -265,7 +265,7 @@ function focusTabWebContentsSafe(tab) {
   }
 }
 
-function createCompanionSplitTab(ctx, anchorTab) {
+function createCompanionSplitTab(ctx, anchorTab, { url = 'nextgx://newtab', isSplitPicker = false } = {}) {
   const { createTabInternal } = tabsMod();
   const activeWsId = getActiveWorkspaceId(ctx);
   let insertIndex;
@@ -275,17 +275,36 @@ function createCompanionSplitTab(ctx, anchorTab) {
       insertIndex = anchorIdx + 1;
     }
   }
-  return createTabInternal(ctx, {
-    url: 'nextgx://newtab',
+  const created = createTabInternal(ctx, {
+    url,
     workspaceId: activeWsId,
     groupId: null,
     active: false,
     deferActivate: true,
     insertIndex
   });
+  if (created && isSplitPicker) {
+    created.isSplitPicker = true;
+    created.title = 'Split View';
+  }
+  return created;
 }
 
-function startSplit(ctx, { tabId = null } = {}) {
+function isTemporarySplitPickerTab(tab) {
+  if (!tab) return false;
+  const { isSplitPickerUrl } = require('./utils');
+  return Boolean(tab.isSplitPicker || isSplitPickerUrl(tab.url));
+}
+
+function cleanupDetachedPickerTab(ctx, tabId) {
+  if (!ctx || !tabId || !(ctx.tabs instanceof Map)) return false;
+  const tab = ctx.tabs.get(tabId);
+  if (!isTemporarySplitPickerTab(tab)) return false;
+  removeTemporaryPickerTab(ctx, tabId);
+  return true;
+}
+
+function startSplit(ctx, { tabId = null, openPicker = true } = {}) {
   const { serializeTabs, broadcastState, notifyActiveWebUiTabShown } = broadcastMod();
   if (!ctx || !(ctx.tabs instanceof Map)) return null;
 
@@ -298,10 +317,12 @@ function startSplit(ctx, { tabId = null } = {}) {
     return serializeTabs(ctx);
   }
 
+  const activeWsId = getActiveWorkspaceId(ctx);
   const vis = getVisibleSplitTabs(ctx);
 
   if (vis) {
     const { split } = vis;
+    let newlyFocusedTab = null;
     // Invoked on a tab while split is active and visible
     if (requestedTabId) {
       if (requestedTabId === split.leftTabId || requestedTabId === split.rightTabId) {
@@ -310,32 +331,69 @@ function startSplit(ctx, { tabId = null } = {}) {
       // Replace the NON-focused pane with requestedTabId
       const replacementTab = ctx.tabs.get(requestedTabId);
       if (!replacementTab) return serializeTabs(ctx);
+      if (!ctx.incognito && !replacementTab.pinned && replacementTab.workspaceId !== activeWsId) {
+        replacementTab.workspaceId = activeWsId;
+      }
       if (replacementTab.sleeping) wakeTab(ctx, replacementTab);
+      const replacedTabId = split.focusedPane === 'right' ? split.leftTabId : split.rightTabId;
       if (split.focusedPane === 'right') {
         split.leftTabId = requestedTabId;
       } else {
         split.rightTabId = requestedTabId;
       }
+      if (replacedTabId && replacedTabId !== requestedTabId) {
+        cleanupDetachedPickerTab(ctx, replacedTabId);
+      }
       replacementTab.lastActiveAt = Date.now();
     } else {
-      // Explicit split:start with no tabId while already split: open a new tab in the non-focused pane
-      const focusedTab = split.focusedPane === 'right' ? vis.rightTab : vis.leftTab;
-      const newTab = createCompanionSplitTab(ctx, focusedTab);
-      if (!newTab) return serializeTabs(ctx);
-      if (split.focusedPane === 'right') {
-        split.leftTabId = newTab.id;
+      const existingPicker = findPickerPaneInSplit(ctx);
+      if (openPicker && existingPicker && existingPicker.pickerTab) {
+        split.focusedPane = existingPicker.side;
+        ctx.activeTabId = existingPicker.pickerTab.id;
+        newlyFocusedTab = existingPicker.pickerTab;
       } else {
-        split.rightTabId = newTab.id;
+        // Explicit split:start with no tabId while already split: open picker (or new tab) in the non-focused pane
+        const focusedTab = split.focusedPane === 'right' ? vis.rightTab : vis.leftTab;
+        const replacedTabId = split.focusedPane === 'right' ? split.leftTabId : split.rightTabId;
+        const nextPane = split.focusedPane === 'right' ? 'left' : 'right';
+        const newTab = createCompanionSplitTab(
+          ctx,
+          focusedTab,
+          openPicker ? { url: 'nextgx://split-picker', isSplitPicker: true } : { url: 'nextgx://newtab' }
+        );
+        if (!newTab) return serializeTabs(ctx);
+        if (nextPane === 'left') {
+          split.leftTabId = newTab.id;
+        } else {
+          split.rightTabId = newTab.id;
+        }
+        split.focusedPane = nextPane;
+        ctx.activeTabId = newTab.id;
+        newlyFocusedTab = newTab;
+        if (replacedTabId && replacedTabId !== newTab.id) {
+          cleanupDetachedPickerTab(ctx, replacedTabId);
+        }
       }
     }
 
     wakeSplitTabsIfNeeded(ctx);
     syncWorkspaceLastActiveForSplit(ctx);
+    gxControlMod().onActiveTabChanged(ctx);
     layoutMod().updateActiveViewBounds(ctx);
+    if (newlyFocusedTab) {
+      focusTabWebContentsSafe(newlyFocusedTab);
+      notifyActiveWebUiTabShown(ctx);
+    }
     broadcastState(ctx);
     sessionMod().scheduleSessionSave(ctx);
     return serializeTabs(ctx);
   }
+
+  if (!requestedTabId && isTemporarySplitPickerTab(activeTab)) {
+    return serializeTabs(ctx);
+  }
+
+  const staleSplit = ensureSplitsMap(ctx).get(activeWsId) || null;
 
   // No active visible split: create a new split from activeTab + requestedTab (or a new Start Page tab)
   let leftTab = activeTab;
@@ -344,7 +402,16 @@ function startSplit(ctx, { tabId = null } = {}) {
 
   if (requestedTabId && requestedTabId !== activeTab.id) {
     rightTab = ctx.tabs.get(requestedTabId);
+    if (rightTab && !ctx.incognito && !rightTab.pinned && rightTab.workspaceId !== activeWsId) {
+      rightTab.workspaceId = activeWsId;
+    }
     initialFocusedPane = 'left';
+  } else if (openPicker) {
+    rightTab = createCompanionSplitTab(ctx, activeTab, {
+      url: 'nextgx://split-picker',
+      isSplitPicker: true
+    });
+    initialFocusedPane = 'right';
   } else {
     rightTab = createCompanionSplitTab(ctx, activeTab);
     initialFocusedPane = 'right';
@@ -361,13 +428,21 @@ function startSplit(ctx, { tabId = null } = {}) {
   leftTab.lastActiveAt = now;
   rightTab.lastActiveAt = now;
 
-  const activeWsId = getActiveWorkspaceId(ctx);
   setSplitForWorkspace(ctx, activeWsId, {
     leftTabId: leftTab.id,
     rightTabId: rightTab.id,
     ratio: SPLIT_DEFAULT_RATIO,
     focusedPane: initialFocusedPane
   });
+
+  if (staleSplit) {
+    if (staleSplit.leftTabId !== leftTab.id && staleSplit.leftTabId !== rightTab.id) {
+      cleanupDetachedPickerTab(ctx, staleSplit.leftTabId);
+    }
+    if (staleSplit.rightTabId !== leftTab.id && staleSplit.rightTabId !== rightTab.id) {
+      cleanupDetachedPickerTab(ctx, staleSplit.rightTabId);
+    }
+  }
 
   const focusedTab = initialFocusedPane === 'right' ? rightTab : leftTab;
   ctx.activeTabId = focusedTab.id;
@@ -385,22 +460,38 @@ function startSplit(ctx, { tabId = null } = {}) {
 function exitSplit(ctx) {
   const { serializeTabs, broadcastState, notifyActiveWebUiTabShown } = broadcastMod();
   if (!ctx) return null;
+  const activeWsId = getActiveWorkspaceId(ctx);
   const split = syncSplitFocusedPane(ctx);
   if (!split) return serializeTabs(ctx);
 
   const wasVisible = Boolean(getVisibleSplitTabs(ctx));
-  const focusedTabId = split.focusedPane === 'right' ? split.rightTabId : split.leftTabId;
-  const fallbackTabId = split.focusedPane === 'right' ? split.leftTabId : split.rightTabId;
+  const leftId = split.leftTabId;
+  const rightId = split.rightTabId;
+  const leftIsPicker = isTemporarySplitPickerTab(ctx.tabs.get(leftId));
+  const rightIsPicker = isTemporarySplitPickerTab(ctx.tabs.get(rightId));
+  const focusedTabId = split.focusedPane === 'right' ? rightId : leftId;
+  const fallbackTabId = split.focusedPane === 'right' ? leftId : rightId;
 
-  deleteSplitForWorkspace(ctx, getActiveWorkspaceId(ctx));
+  deleteSplitForWorkspace(ctx, activeWsId);
+  if (leftIsPicker) removeTemporaryPickerTab(ctx, leftId);
+  if (rightIsPicker && rightId !== leftId) removeTemporaryPickerTab(ctx, rightId);
 
-  if (wasVisible) {
-    const targetId =
+  if (wasVisible || !ctx.tabs.has(ctx.activeTabId)) {
+    const { isTabVisibleInWorkspace } = workspacesMod();
+    let targetId =
       focusedTabId && ctx.tabs.has(focusedTabId)
         ? focusedTabId
         : fallbackTabId && ctx.tabs.has(fallbackTabId)
         ? fallbackTabId
-        : ctx.activeTabId;
+        : ctx.activeTabId && ctx.tabs.has(ctx.activeTabId)
+        ? ctx.activeTabId
+        : null;
+    if (!targetId && Array.isArray(ctx.tabOrder)) {
+      targetId =
+        ctx.tabOrder.find((id) => isTabVisibleInWorkspace(ctx.tabs.get(id), activeWsId)) ||
+        ctx.tabOrder[0] ||
+        null;
+    }
     if (targetId && ctx.tabs.has(targetId)) {
       const prevActive = ctx.activeTabId;
       ctx.activeTabId = targetId;
@@ -408,6 +499,9 @@ function exitSplit(ctx) {
       if (targetTab) {
         if (targetTab.sleeping) tabsMod().wakeTab(ctx, targetTab);
         targetTab.lastActiveAt = Date.now();
+        if (!ctx.incognito && !targetTab.pinned && ctx.workspaceLastActiveTab instanceof Map) {
+          ctx.workspaceLastActiveTab.set(activeWsId, targetId);
+        }
       }
       if (prevActive !== targetId) {
         gxControlMod().onActiveTabChanged(ctx);
@@ -431,6 +525,311 @@ function toggleSplit(ctx) {
     return exitSplit(ctx);
   }
   return startSplit(ctx, { tabId: null });
+}
+
+function swapSplitPanes(ctx) {
+  const { serializeTabs, broadcastState, notifyActiveWebUiTabShown } = broadcastMod();
+  if (!ctx || !(ctx.tabs instanceof Map)) return null;
+  const vis = getVisibleSplitTabs(ctx);
+  const split = vis ? vis.split : syncSplitFocusedPane(ctx);
+  if (!split) return serializeTabs(ctx);
+
+  const prevLeft = split.leftTabId;
+  const prevRight = split.rightTabId;
+  split.leftTabId = prevRight;
+  split.rightTabId = prevLeft;
+  split.focusedPane = split.focusedPane === 'right' ? 'left' : 'right';
+  split.ratio = clampSplitRatio(1 - clampSplitRatio(split.ratio));
+
+  // If the two split tabs sit side-by-side in the tab bar and share pinned/group state, mirror the swap in tabOrder too.
+  if (Array.isArray(ctx.tabOrder)) {
+    const idxA = ctx.tabOrder.indexOf(prevLeft);
+    const idxB = ctx.tabOrder.indexOf(prevRight);
+    const tabA = ctx.tabs.get(prevLeft);
+    const tabB = ctx.tabs.get(prevRight);
+    const canSwapOrder =
+      Boolean(tabA?.pinned) === Boolean(tabB?.pinned) &&
+      (tabA?.groupId || null) === (tabB?.groupId || null);
+    if (idxA !== -1 && idxB !== -1 && Math.abs(idxA - idxB) === 1 && canSwapOrder) {
+      ctx.tabOrder[idxA] = prevRight;
+      ctx.tabOrder[idxB] = prevLeft;
+      if (typeof tabsMod().syncTabsMapOrder === 'function') {
+        tabsMod().syncTabsMapOrder(ctx);
+      }
+    }
+  }
+
+  if (vis) {
+    wakeSplitTabsIfNeeded(ctx);
+    syncWorkspaceLastActiveForSplit(ctx);
+    layoutMod().updateActiveViewBounds(ctx);
+    const focusedTab = ctx.tabs.get(split.focusedPane === 'right' ? split.rightTabId : split.leftTabId);
+    if (focusedTab) {
+      ctx.activeTabId = focusedTab.id;
+      focusTabWebContentsSafe(focusedTab);
+    }
+    notifyActiveWebUiTabShown(ctx);
+  }
+  broadcastState(ctx);
+  sessionMod().scheduleSessionSave(ctx);
+  return serializeTabs(ctx);
+}
+
+function mergeSplitTabs(ctx, { leftTabId = null, rightTabId = null, focusPane = 'right' } = {}) {
+  const { serializeTabs, broadcastState, notifyActiveWebUiTabShown } = broadcastMod();
+  if (!ctx || !(ctx.tabs instanceof Map)) return null;
+  const { wakeTab } = tabsMod();
+
+  const resolvedLeftId =
+    typeof leftTabId === 'string' && leftTabId.trim() ? leftTabId.trim() : ctx.activeTabId;
+  const resolvedRightId =
+    typeof rightTabId === 'string' && rightTabId.trim() ? rightTabId.trim() : null;
+
+  if (!resolvedLeftId || !resolvedRightId || resolvedLeftId === resolvedRightId) {
+    return serializeTabs(ctx);
+  }
+  const leftTab = ctx.tabs.get(resolvedLeftId);
+  const rightTab = ctx.tabs.get(resolvedRightId);
+  if (!leftTab || !rightTab) {
+    return serializeTabs(ctx);
+  }
+
+  const activeWsId = getActiveWorkspaceId(ctx);
+  const prevSplit = ensureSplitsMap(ctx).get(activeWsId) || null;
+  if (!ctx.incognito) {
+    if (!leftTab.pinned && leftTab.workspaceId !== activeWsId) leftTab.workspaceId = activeWsId;
+    if (!rightTab.pinned && rightTab.workspaceId !== activeWsId) rightTab.workspaceId = activeWsId;
+  }
+
+  if (leftTab.sleeping) wakeTab(ctx, leftTab);
+  if (rightTab.sleeping) wakeTab(ctx, rightTab);
+  const now = Date.now();
+  leftTab.lastActiveAt = now;
+  rightTab.lastActiveAt = now;
+
+  const initialFocusedPane = focusPane === 'left' ? 'left' : 'right';
+  setSplitForWorkspace(ctx, activeWsId, {
+    leftTabId: leftTab.id,
+    rightTabId: rightTab.id,
+    ratio: SPLIT_DEFAULT_RATIO,
+    focusedPane: initialFocusedPane
+  });
+
+  if (prevSplit) {
+    if (prevSplit.leftTabId !== leftTab.id && prevSplit.leftTabId !== rightTab.id) {
+      cleanupDetachedPickerTab(ctx, prevSplit.leftTabId);
+    }
+    if (prevSplit.rightTabId !== leftTab.id && prevSplit.rightTabId !== rightTab.id) {
+      cleanupDetachedPickerTab(ctx, prevSplit.rightTabId);
+    }
+  }
+
+  const focusedTab = initialFocusedPane === 'right' ? rightTab : leftTab;
+  ctx.activeTabId = focusedTab.id;
+
+  syncWorkspaceLastActiveForSplit(ctx);
+  gxControlMod().onActiveTabChanged(ctx);
+  layoutMod().updateActiveViewBounds(ctx);
+  focusTabWebContentsSafe(focusedTab);
+  notifyActiveWebUiTabShown(ctx);
+  broadcastState(ctx);
+  sessionMod().scheduleSessionSave(ctx);
+  return serializeTabs(ctx);
+}
+
+function removeTemporaryPickerTab(ctx, pickerTabId) {
+  if (!ctx || !pickerTabId || !(ctx.tabs instanceof Map)) return;
+  const pickerTab = ctx.tabs.get(pickerTabId);
+  if (!pickerTab) return;
+  if (pickerTab.view) {
+    try {
+      gxControlMod().onTabDetached(pickerTab);
+    } catch (_) {}
+    try {
+      if (ctx.win && !ctx.win.isDestroyed()) {
+        ctx.win.contentView.removeChildView(pickerTab.view);
+      }
+      if (pickerTab.view.webContents && !pickerTab.view.webContents.isDestroyed()) {
+        pickerTab.view.webContents.close();
+      }
+    } catch (_) {}
+    pickerTab.view = null;
+  }
+  ctx.tabs.delete(pickerTabId);
+  if (Array.isArray(ctx.tabOrder)) {
+    const idx = ctx.tabOrder.indexOf(pickerTabId);
+    if (idx !== -1) ctx.tabOrder.splice(idx, 1);
+  }
+}
+
+function findPickerPaneInSplit(ctx) {
+  const { isSplitPickerUrl } = require('./utils');
+  const vis = getVisibleSplitTabs(ctx);
+  if (!vis) return null;
+  const { split, leftTab, rightTab } = vis;
+  if (rightTab && (rightTab.isSplitPicker || isSplitPickerUrl(rightTab.url))) {
+    return { split, side: 'right', pickerTab: rightTab, partnerTab: leftTab };
+  }
+  if (leftTab && (leftTab.isSplitPicker || isSplitPickerUrl(leftTab.url))) {
+    return { split, side: 'left', pickerTab: leftTab, partnerTab: rightTab };
+  }
+  return null;
+}
+
+function getSplitPickerData(ctx) {
+  if (!ctx || !(ctx.tabs instanceof Map)) return { openTabs: [], theme: 'gx-violet' };
+  const { isSplitPickerUrl } = require('./utils');
+  const { formatDisplayUrl } = require('./navigation');
+  const { isTabVisibleInWorkspace } = workspacesMod();
+  const activeWsId = getActiveWorkspaceId(ctx);
+  const found = findPickerPaneInSplit(ctx);
+  const excludeIds = new Set();
+  if (found) {
+    if (found.pickerTab) excludeIds.add(found.pickerTab.id);
+    if (found.partnerTab) excludeIds.add(found.partnerTab.id);
+  } else if (ctx.activeTabId) {
+    excludeIds.add(ctx.activeTabId);
+  }
+
+  const openTabs = [];
+  for (const id of ctx.tabOrder || []) {
+    if (excludeIds.has(id)) continue;
+    const t = ctx.tabs.get(id);
+    if (!t || t.isSplitPicker || isSplitPickerUrl(t.url)) continue;
+    if (!isTabVisibleInWorkspace(t, activeWsId)) continue;
+    openTabs.push({
+      id: t.id,
+      title: t.title || formatDisplayUrl(t.url) || 'Tab',
+      url: formatDisplayUrl(t.url),
+      favicon: t.favicon || '',
+      pinned: Boolean(t.pinned)
+    });
+  }
+
+  const theme = coreMod().state.storage?.getSettings?.(ctx.profileId)?.theme || 'gx-violet';
+  return { openTabs, theme };
+}
+
+function pickSplitPickerTab(ctx, { tabId = null } = {}) {
+  const { serializeTabs, broadcastState, notifyActiveWebUiTabShown } = broadcastMod();
+  if (!ctx || !(ctx.tabs instanceof Map)) return null;
+  const targetId = typeof tabId === 'string' && tabId.trim() ? tabId.trim() : null;
+  if (!targetId || !ctx.tabs.has(targetId)) return serializeTabs(ctx);
+
+  const found = findPickerPaneInSplit(ctx);
+  if (!found) {
+    return mergeSplitTabs(ctx, { rightTabId: targetId, focusPane: 'right' });
+  }
+
+  const { split, side, pickerTab, partnerTab } = found;
+  if (partnerTab && targetId === partnerTab.id) {
+    return serializeTabs(ctx);
+  }
+
+  const chosenTab = ctx.tabs.get(targetId);
+  if (!chosenTab) return serializeTabs(ctx);
+  if (chosenTab.sleeping) tabsMod().wakeTab(ctx, chosenTab);
+  chosenTab.lastActiveAt = Date.now();
+
+  if (side === 'right') {
+    split.rightTabId = chosenTab.id;
+    split.focusedPane = 'right';
+  } else {
+    split.leftTabId = chosenTab.id;
+    split.focusedPane = 'left';
+  }
+
+  const pickerTabId = pickerTab ? pickerTab.id : null;
+  ctx.activeTabId = chosenTab.id;
+  if (pickerTabId && pickerTabId !== chosenTab.id) {
+    removeTemporaryPickerTab(ctx, pickerTabId);
+  }
+
+  wakeSplitTabsIfNeeded(ctx);
+  syncWorkspaceLastActiveForSplit(ctx);
+  gxControlMod().onActiveTabChanged(ctx);
+  layoutMod().updateActiveViewBounds(ctx);
+  focusTabWebContentsSafe(chosenTab);
+  notifyActiveWebUiTabShown(ctx);
+  broadcastState(ctx);
+  sessionMod().scheduleSessionSave(ctx);
+  return serializeTabs(ctx);
+}
+
+function openNewTabInSplitPicker(ctx) {
+  const { serializeTabs, broadcastState, notifyActiveWebUiTabShown } = broadcastMod();
+  if (!ctx) return null;
+  const { appendInternalUrlParams } = require('./utils');
+  const { NEW_TAB_FILE_URL } = coreMod();
+  const found = findPickerPaneInSplit(ctx);
+  const tab = found?.pickerTab || (ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null);
+  if (!tab) return serializeTabs(ctx);
+
+  tab.isSplitPicker = false;
+  const targetUrl = appendInternalUrlParams(NEW_TAB_FILE_URL, ctx);
+  tab.url = targetUrl;
+  tab.title = ctx.incognito ? 'Private Start' : 'Start Page';
+  if (tab.view && tab.view.webContents && !tab.view.webContents.isDestroyed()) {
+    tab.view.webContents.loadURL(targetUrl).catch(() => {});
+  }
+  ctx.activeTabId = tab.id;
+  focusTabWebContentsSafe(tab);
+  notifyActiveWebUiTabShown(ctx);
+  broadcastState(ctx);
+  sessionMod().scheduleSessionSave(ctx);
+  return serializeTabs(ctx);
+}
+
+function navigateSplitPicker(ctx, { url = '' } = {}) {
+  const { serializeTabs, broadcastState } = broadcastMod();
+  if (!ctx) return null;
+  const trimmed = String(url || '').trim();
+  if (!trimmed) return serializeTabs(ctx);
+  const { appendInternalUrlParams } = require('./utils');
+  const { resolveNavigateInput } = require('./navigation');
+  const found = findPickerPaneInSplit(ctx);
+  const tab = found?.pickerTab || (ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null);
+  if (!tab) return serializeTabs(ctx);
+
+  tab.isSplitPicker = false;
+  const targetUrl = appendInternalUrlParams(resolveNavigateInput(trimmed), ctx);
+  tab.url = targetUrl;
+  tab.navSeq = (tab.navSeq || 0) + 1;
+  tab.explicitNavSeq = (tab.explicitNavSeq || 0) + 1;
+  if (tab.view && tab.view.webContents && !tab.view.webContents.isDestroyed()) {
+    tab.view.webContents.loadURL(targetUrl).catch(() => {});
+  }
+  ctx.activeTabId = tab.id;
+  focusTabWebContentsSafe(tab);
+  broadcastState(ctx);
+  sessionMod().scheduleSessionSave(ctx);
+  return serializeTabs(ctx);
+}
+
+function cancelSplitPicker(ctx) {
+  const { serializeTabs, broadcastState, notifyActiveWebUiTabShown } = broadcastMod();
+  if (!ctx) return null;
+  const found = findPickerPaneInSplit(ctx);
+  if (!found) return exitSplit(ctx);
+
+  const { pickerTab, partnerTab } = found;
+  deleteSplitForWorkspace(ctx, getActiveWorkspaceId(ctx));
+  if (partnerTab && ctx.tabs.has(partnerTab.id)) {
+    ctx.activeTabId = partnerTab.id;
+    if (partnerTab.sleeping) tabsMod().wakeTab(ctx, partnerTab);
+    partnerTab.lastActiveAt = Date.now();
+  }
+  if (pickerTab) {
+    removeTemporaryPickerTab(ctx, pickerTab.id);
+  }
+
+  gxControlMod().onActiveTabChanged(ctx);
+  layoutMod().updateActiveViewBounds(ctx);
+  popoversMod().restoreFocusToActiveTab(ctx);
+  notifyActiveWebUiTabShown(ctx);
+  broadcastState(ctx);
+  sessionMod().scheduleSessionSave(ctx);
+  return serializeTabs(ctx);
 }
 
 function setSplitRatio(ctx, rawRatio, { persist = true } = {}) {
@@ -606,16 +1005,21 @@ function onTabClosing(ctx, tabId) {
     if (!split) continue;
     if (split.leftTabId !== tabId && split.rightTabId !== tabId) continue;
 
+    const partnerTabId = split.leftTabId === tabId ? split.rightTabId : split.leftTabId;
+    const wasVisible = wsId === activeWsId ? Boolean(getVisibleSplitTabs(ctx)) : false;
+    deleteSplitForWorkspace(ctx, wsId);
+
+    if (partnerTabId && partnerTabId !== tabId) {
+      cleanupDetachedPickerTab(ctx, partnerTabId);
+    }
+
     if (wsId === activeWsId) {
-      const wasVisible = Boolean(getVisibleSplitTabs(ctx));
-      const partnerTabId = split.leftTabId === tabId ? split.rightTabId : split.leftTabId;
       result = {
         wasInSplit: true,
         wasVisible,
         partnerTabId: partnerTabId && ctx.tabs.has(partnerTabId) ? partnerTabId : null
       };
     }
-    deleteSplitForWorkspace(ctx, wsId);
   }
 
   return result;
@@ -632,7 +1036,11 @@ function onTabsClosed(ctx, closedIds) {
     const split = map.get(wsId);
     if (!split) continue;
     if (closedIds instanceof Set && (closedIds.has(split.leftTabId) || closedIds.has(split.rightTabId))) {
+      const survivingId = closedIds.has(split.leftTabId) ? split.rightTabId : split.leftTabId;
       deleteSplitForWorkspace(ctx, wsId);
+      if (survivingId && !closedIds.has(survivingId)) {
+        cleanupDetachedPickerTab(ctx, survivingId);
+      }
       clearedAny = true;
       continue;
     }
@@ -694,6 +1102,32 @@ function registerSplitIpcHandlers(handleInternal) {
 
   handleInternal('split:exit', (e) => exitSplit(getCtxFromSender(e.sender)));
 
+  handleInternal('split:swap', (e) => swapSplitPanes(getCtxFromSender(e.sender)));
+
+  handleInternal('split:merge', (e, payload) => {
+    const ctx = getCtxFromSender(e.sender);
+    const opts = payload && typeof payload === 'object' ? payload : {};
+    return mergeSplitTabs(ctx, opts);
+  });
+
+  handleInternal('split:picker-data', (e) => getSplitPickerData(getCtxFromSender(e.sender)));
+
+  handleInternal('split:picker-choose', (e, payload) => {
+    const ctx = getCtxFromSender(e.sender);
+    const opts = payload && typeof payload === 'object' ? payload : {};
+    return pickSplitPickerTab(ctx, opts);
+  });
+
+  handleInternal('split:picker-new-tab', (e) => openNewTabInSplitPicker(getCtxFromSender(e.sender)));
+
+  handleInternal('split:picker-navigate', (e, payload) => {
+    const ctx = getCtxFromSender(e.sender);
+    const opts = payload && typeof payload === 'object' ? payload : {};
+    return navigateSplitPicker(ctx, opts);
+  });
+
+  handleInternal('split:picker-cancel', (e) => cancelSplitPicker(getCtxFromSender(e.sender)));
+
   handleInternal('split:set-ratio', (e, payload) => {
     const ctx = getCtxFromSender(e.sender);
     if (typeof payload === 'number') {
@@ -737,6 +1171,13 @@ module.exports = {
   startSplit,
   exitSplit,
   toggleSplit,
+  swapSplitPanes,
+  mergeSplitTabs,
+  getSplitPickerData,
+  pickSplitPickerTab,
+  openNewTabInSplitPicker,
+  navigateSplitPicker,
+  cancelSplitPicker,
   setSplitRatio,
   focusSplitPane,
   restoreSplitState,

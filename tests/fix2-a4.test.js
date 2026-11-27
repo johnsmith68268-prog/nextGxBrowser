@@ -17,7 +17,10 @@ test('A4: internal pages reflow below 720px — nav collapses to icons, ext grid
 });
 
 test('A4: newtab Speed Dial delete keeps its undo bar (confirm-by-undo, #24)', () => {
-  const newtab = fs.readFileSync(path.join(__dirname, '..', 'src', 'ui', 'newtab.html'), 'utf8');
+  const newtab =
+    fs.readFileSync(path.join(__dirname, '..', 'src', 'ui', 'newtab.html'), 'utf8') +
+    '\n' +
+    fs.readFileSync(path.join(__dirname, '..', 'src', 'ui', 'newtab.js'), 'utf8');
   assert.ok(newtab.includes('showDialUndo'), 'undo bar exists for Speed Dial delete');
   // requestSpeedDialDelete lives in chrome-webui.js (WebUI page context) and
   // is not callable from newtab.html — undo is the delete safety net there.

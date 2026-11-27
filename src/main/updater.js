@@ -5,7 +5,7 @@ const https = require('https');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { windowContexts, state } = require('./core');
-const { isWebUiUrl } = require('./utils');
+const { isWebUiUrl, isPathInsideDir } = require('./utils');
 
 const REPO_OWNER = 'johnsmith68268-prog';
 const REPO_NAME = 'nextGxBrowser';
@@ -54,24 +54,45 @@ const updaterState = {
 };
 
 function parseSemverParts(raw) {
-  const cleaned = String(raw || '')
+  const noBuild = String(raw || '')
     .trim()
     .replace(/^v/i, '')
-    .split('-')[0];
-  const parts = cleaned.split('.').map((n) => {
+    .split('+')[0];
+  const dashIdx = noBuild.indexOf('-');
+  const core = dashIdx === -1 ? noBuild : noBuild.slice(0, dashIdx);
+  const prerelease = dashIdx === -1 ? '' : noBuild.slice(dashIdx + 1).trim();
+  const parts = core.split('.').map((n) => {
     const parsed = parseInt(n, 10);
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
   });
   while (parts.length < 3) parts.push(0);
-  return parts.slice(0, 3);
+  return { core: parts.slice(0, 3), prerelease };
 }
 
 function compareSemver(a, b) {
   const pa = parseSemverParts(a);
   const pb = parseSemverParts(b);
   for (let i = 0; i < 3; i++) {
-    if (pa[i] > pb[i]) return 1;
-    if (pa[i] < pb[i]) return -1;
+    if (pa.core[i] > pb.core[i]) return 1;
+    if (pa.core[i] < pb.core[i]) return -1;
+  }
+  if (!pa.prerelease && !pb.prerelease) return 0;
+  if (!pa.prerelease && pb.prerelease) return 1;
+  if (pa.prerelease && !pb.prerelease) return -1;
+  const preA = pa.prerelease.split('.');
+  const preB = pb.prerelease.split('.');
+  const len = Math.max(preA.length, preB.length);
+  for (let i = 0; i < len; i++) {
+    if (i >= preA.length) return -1;
+    if (i >= preB.length) return 1;
+    const idA = preA[i];
+    const idB = preB[i];
+    if (idA === idB) continue;
+    const numA = /^\d+$/.test(idA);
+    const numB = /^\d+$/.test(idB);
+    if (numA && numB) return Number(idA) > Number(idB) ? 1 : -1;
+    if (numA !== numB) return numA ? -1 : 1;
+    return idA > idB ? 1 : -1;
   }
   return 0;
 }
@@ -92,16 +113,45 @@ function isTrustedUpdateDownloadUrl(rawUrl) {
   }
 }
 
+function normalizeAssetLookupKey(name) {
+  return path.posix
+    .basename(String(name || '').trim().replace(/\\/g, '/'))
+    .toLowerCase()
+    .replace(/[\s._-]+/g, '-');
+}
+
 function parseSha256Sums(text) {
   const map = new Map();
   const lines = String(text || '').split(/\r?\n/);
   for (const line of lines) {
     const m = /^\s*([a-f0-9]{64})\s+\*?(.+?)\s*$/i.exec(line);
     if (m) {
-      map.set(path.basename(m[2].trim()), m[1].toLowerCase());
+      const base = path.posix.basename(m[2].trim().replace(/\\/g, '/'));
+      const digest = m[1].toLowerCase();
+      if (!base) continue;
+      if (map.has(base) && map.get(base) !== digest) {
+        throw new Error(`Conflicting SHA256 checksum entries for "${base}".`);
+      }
+      map.set(base, digest);
     }
   }
   return map;
+}
+
+function lookupExpectedSha256(sumsMap, fileName) {
+  if (!(sumsMap instanceof Map) || !fileName) return '';
+  const safeBase = path.posix.basename(String(fileName).trim().replace(/\\/g, '/'));
+  if (sumsMap.has(safeBase)) return sumsMap.get(safeBase) || '';
+  const targetKey = normalizeAssetLookupKey(safeBase);
+  if (!targetKey) return '';
+  let matched = '';
+  for (const [k, v] of sumsMap.entries()) {
+    if (normalizeAssetLookupKey(k) === targetKey) {
+      if (matched && matched !== v) return '';
+      matched = v;
+    }
+  }
+  return matched;
 }
 
 function selectReleaseAsset(assets, { platform = process.platform, isPortable = Boolean(process.env.PORTABLE_EXECUTABLE_FILE), isAppImage = Boolean(process.env.APPIMAGE) } = {}) {
@@ -185,7 +235,13 @@ function fetchHttpsText(url, redirectDepth = 0) {
         const code = res.statusCode || 0;
         if (code >= 300 && code < 400 && res.headers.location) {
           res.resume();
-          const nextUrl = new URL(res.headers.location, url).toString();
+          let nextUrl;
+          try {
+            nextUrl = new URL(res.headers.location, url).toString();
+          } catch (_) {
+            reject(new Error('Invalid redirect URL'));
+            return;
+          }
           fetchHttpsText(nextUrl, redirectDepth + 1).then(resolve, reject);
           return;
         }
@@ -245,7 +301,13 @@ function downloadHttpsFile(url, destPath, onProgress, redirectDepth = 0) {
         const code = res.statusCode || 0;
         if (code >= 300 && code < 400 && res.headers.location) {
           res.resume();
-          const nextUrl = new URL(res.headers.location, url).toString();
+          let nextUrl;
+          try {
+            nextUrl = new URL(res.headers.location, url).toString();
+          } catch (_) {
+            reject(new Error('Invalid redirect URL'));
+            return;
+          }
           downloadHttpsFile(nextUrl, destPath, onProgress, redirectDepth + 1).then(resolve, reject);
           return;
         }
@@ -259,9 +321,28 @@ function downloadHttpsFile(url, destPath, onProgress, redirectDepth = 0) {
         let lastBytes = 0;
         let lastTime = Date.now();
         let lastEmit = 0;
+        let settled = false;
 
         fs.mkdirSync(path.dirname(destPath), { recursive: true });
         const out = fs.createWriteStream(destPath);
+        const fail = (err) => {
+          if (settled) return;
+          settled = true;
+          const cleanupAndReject = () => {
+            try { if (fs.existsSync(destPath)) fs.unlinkSync(destPath); } catch (_) { }
+            reject(err);
+          };
+          try {
+            out.close(() => {
+              try { out.destroy(); } catch (_) { }
+              cleanupAndReject();
+            });
+          } catch (_) {
+            try { out.destroy(); } catch (__) { }
+            cleanupAndReject();
+          }
+        };
+
         res.on('data', (chunk) => {
           receivedBytes += chunk.length;
           const now = Date.now();
@@ -276,20 +357,25 @@ function downloadHttpsFile(url, destPath, onProgress, redirectDepth = 0) {
             }
           }
         });
+        res.on('aborted', () => fail(new Error('Download aborted before completion.')));
         res.pipe(out);
         out.on('finish', () => {
+          if (settled) return;
           out.close(() => {
+            if (settled) return;
+            if (!res.complete || (totalBytes > 0 && receivedBytes !== totalBytes)) {
+              settled = true;
+              try { if (fs.existsSync(destPath)) fs.unlinkSync(destPath); } catch (_) { }
+              reject(new Error('Incomplete download (connection closed early).'));
+              return;
+            }
+            settled = true;
             if (typeof onProgress === 'function') {
               onProgress({ receivedBytes, totalBytes: totalBytes || receivedBytes, speedBytesPerSec: 0 });
             }
             resolve({ receivedBytes, totalBytes: totalBytes || receivedBytes });
           });
         });
-        const fail = (err) => {
-          try { out.destroy(); } catch (_) { }
-          try { if (fs.existsSync(destPath)) fs.unlinkSync(destPath); } catch (_) { }
-          reject(err);
-        };
         res.on('error', fail);
         out.on('error', fail);
       }
@@ -345,28 +431,39 @@ async function checkForUpdates({ manual = false } = {}) {
 
     if (!latestVersion || compareSemver(latestVersion, currentVersion) <= 0) {
       updaterState.status = 'up-to-date';
+      updaterState.downloadedPath = '';
+      updaterState.verifiedSha256 = '';
       updaterState.error = '';
       broadcastUpdaterState();
       return getUpdaterState();
     }
 
     const { asset, shaAsset, canSilentInstall } = selectReleaseAsset(release.assets || []);
-    updaterState.assetName = asset?.name || '';
+    const nextAssetName = asset?.name || '';
+    updaterState.assetName = nextAssetName;
     updaterState.assetUrl = asset?.browser_download_url || '';
     updaterState.assetSize = Number(asset?.size) || 0;
     updaterState.sha256Url = shaAsset?.browser_download_url || '';
     updaterState.canSilentInstall = Boolean(canSilentInstall);
 
-    // Reuse an already-downloaded verified installer for the same version
+    // Reuse an already-downloaded verified installer ONLY if it matches the current target asset
     if (updaterState.assetName) {
-      const existingPath = path.join(getUpdatesDir(), path.basename(updaterState.assetName));
-      if (fs.existsSync(existingPath) && updaterState.verifiedSha256 && updaterState.downloadedPath === existingPath) {
+      const safeName = path.posix.basename(updaterState.assetName.replace(/\\/g, '/'));
+      const existingPath = path.join(getUpdatesDir(), safeName);
+      if (
+        isPathInsideDir(getUpdatesDir(), existingPath) &&
+        fs.existsSync(existingPath) &&
+        updaterState.verifiedSha256 &&
+        updaterState.downloadedPath === existingPath
+      ) {
         updaterState.status = 'downloaded';
         updaterState.progressPercent = 100;
         broadcastUpdaterState();
         return getUpdaterState();
       }
     }
+    updaterState.downloadedPath = '';
+    updaterState.verifiedSha256 = '';
 
     updaterState.status = 'available';
     broadcastUpdaterState();
@@ -374,7 +471,7 @@ async function checkForUpdates({ manual = false } = {}) {
     const settings = state.storage ? state.storage.getSettings() : {};
     if (settings.autoDownloadUpdates !== false && updaterState.assetUrl) {
       // Automatically download in background so updating is instant when the user clicks Restart & Update (or quits)
-      downloadUpdate().catch(() => { });
+      downloadUpdate({ background: true }).catch(() => { });
     }
     return getUpdaterState();
   } catch (err) {
@@ -393,7 +490,7 @@ async function checkForUpdates({ manual = false } = {}) {
   }
 }
 
-async function downloadUpdate() {
+async function downloadUpdate({ background = false } = {}) {
   if (updaterState.status === 'downloading') return getUpdaterState();
   if (!updaterState.assetUrl || !updaterState.assetName) {
     return { ...getUpdaterState(), error: 'No matching installer asset found for this platform.' };
@@ -404,10 +501,22 @@ async function downloadUpdate() {
     broadcastUpdaterState();
     return getUpdaterState();
   }
+  if (!updaterState.sha256Url || !isTrustedUpdateDownloadUrl(updaterState.sha256Url)) {
+    updaterState.status = 'error';
+    updaterState.error = 'Release is missing a trusted SHA256SUMS.txt checksum manifest.';
+    broadcastUpdaterState();
+    return getUpdaterState();
+  }
 
-  const safeName = path.basename(updaterState.assetName);
+  const safeName = path.posix.basename(updaterState.assetName.replace(/\\/g, '/'));
   const updatesDir = getUpdatesDir();
   const finalPath = path.join(updatesDir, safeName);
+  if (!safeName || !isPathInsideDir(updatesDir, finalPath)) {
+    updaterState.status = 'error';
+    updaterState.error = 'Invalid update asset filename.';
+    broadcastUpdaterState();
+    return getUpdaterState();
+  }
   const partPath = `${finalPath}.part`;
 
   updaterState.status = 'downloading';
@@ -418,7 +527,16 @@ async function downloadUpdate() {
   updaterState.speedBytesPerSec = 0;
   broadcastUpdaterState();
 
+  let integrityFailure = false;
   try {
+    const sumsText = await fetchHttpsText(updaterState.sha256Url);
+    const sumsMap = parseSha256Sums(sumsText);
+    const expectedHash = lookupExpectedSha256(sumsMap, safeName);
+    if (!expectedHash) {
+      integrityFailure = true;
+      throw new Error(`No SHA256 checksum entry found for "${safeName}".`);
+    }
+
     await downloadHttpsFile(updaterState.assetUrl, partPath, ({ receivedBytes, totalBytes, speedBytesPerSec }) => {
       updaterState.receivedBytes = receivedBytes;
       updaterState.totalBytes = totalBytes || updaterState.assetSize || 0;
@@ -428,29 +546,23 @@ async function downloadUpdate() {
       broadcastUpdaterState();
     });
 
-    // Verify integrity via SHA256SUMS.txt whenever published with the release
-    let verifiedHash = '';
-    if (updaterState.sha256Url && isTrustedUpdateDownloadUrl(updaterState.sha256Url)) {
-      const sumsText = await fetchHttpsText(updaterState.sha256Url);
-      const sumsMap = parseSha256Sums(sumsText);
-      const expectedHash = sumsMap.get(safeName);
-      if (expectedHash) {
-        const actualHash = await computeFileSha256(partPath);
-        if (actualHash !== expectedHash) {
-          try { fs.unlinkSync(partPath); } catch (_) { }
-          throw new Error('SHA256 integrity verification failed — update file discarded.');
-        }
-        verifiedHash = actualHash;
-      }
+    const actualHash = await computeFileSha256(partPath);
+    if (actualHash !== expectedHash) {
+      integrityFailure = true;
+      try { fs.unlinkSync(partPath); } catch (_) { }
+      throw new Error('SHA256 integrity verification failed — update file discarded.');
     }
 
     if (fs.existsSync(finalPath)) {
       try { fs.unlinkSync(finalPath); } catch (_) { }
     }
     fs.renameSync(partPath, finalPath);
+    if (process.platform === 'linux' && /\.appimage$/i.test(finalPath)) {
+      try { fs.chmodSync(finalPath, 0o755); } catch (_) { }
+    }
 
     updaterState.downloadedPath = finalPath;
-    updaterState.verifiedSha256 = verifiedHash || (await computeFileSha256(finalPath));
+    updaterState.verifiedSha256 = actualHash;
     updaterState.progressPercent = 100;
     updaterState.speedBytesPerSec = 0;
     updaterState.status = 'downloaded';
@@ -460,9 +572,16 @@ async function downloadUpdate() {
     return getUpdaterState();
   } catch (err) {
     try { if (fs.existsSync(partPath)) fs.unlinkSync(partPath); } catch (_) { }
-    updaterState.status = 'error';
-    updaterState.error = err?.message || 'Update download failed.';
+    updaterState.downloadedPath = '';
+    updaterState.verifiedSha256 = '';
     updaterState.speedBytesPerSec = 0;
+    if (background && !integrityFailure) {
+      updaterState.status = 'available';
+      updaterState.error = '';
+    } else {
+      updaterState.status = 'error';
+      updaterState.error = err?.message || 'Update download failed.';
+    }
     broadcastUpdaterState();
     return getUpdaterState();
   } finally {
@@ -472,25 +591,45 @@ async function downloadUpdate() {
 
 function installDownloadedUpdate({ relaunch = true } = {}) {
   const filePath = updaterState.downloadedPath;
-  if (!filePath || !fs.existsSync(filePath)) {
+  const updatesDir = getUpdatesDir();
+  if (!filePath || !isPathInsideDir(updatesDir, filePath) || !fs.existsSync(filePath)) {
     return { ok: false, error: 'Downloaded update file not found.' };
+  }
+  if (!updaterState.verifiedSha256) {
+    return { ok: false, error: 'Update file has not passed SHA256 verification.' };
   }
 
   if (process.platform === 'win32' && updaterState.canSilentInstall) {
     try {
       quitInstallTriggered = true;
-      // NSIS silent update: --force-run tells electron-builder's NSIS installer to relaunch nextGx after updating
-      const args = relaunch ? ['/S', '--force-run'] : ['/S'];
-      const child = spawn(filePath, args, {
-        detached: true,
-        stdio: 'ignore',
-        windowsHide: false
-      });
+      // Wait for this Electron process to exit and release file/singleton locks before NSIS runs
+      const psScript = [
+        '$p = [int]$env:NX_UPD_PID',
+        'if ($p -gt 0) { try { Wait-Process -Id $p -Timeout 25 -ErrorAction SilentlyContinue } catch {} }',
+        'Start-Sleep -Milliseconds 350',
+        'if ($env:NX_UPD_RELAUNCH -eq "1") { Start-Process -FilePath $env:NX_UPD_EXE -ArgumentList @("/S", "--force-run") }',
+        'else { Start-Process -FilePath $env:NX_UPD_EXE -ArgumentList @("/S") }'
+      ].join('; ');
+      const child = spawn(
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', psScript],
+        {
+          detached: true,
+          stdio: 'ignore',
+          windowsHide: true,
+          env: {
+            ...process.env,
+            NX_UPD_PID: String(process.pid),
+            NX_UPD_EXE: filePath,
+            NX_UPD_RELAUNCH: relaunch ? '1' : '0'
+          }
+        }
+      );
       child.unref();
       if (relaunch) {
-        setTimeout(() => {
+        setImmediate(() => {
           try { app.quit(); } catch (_) { }
-        }, 250);
+        });
       }
       return { ok: true, mode: 'silent-nsis' };
     } catch (err) {
@@ -509,12 +648,17 @@ function installDownloadedUpdate({ relaunch = true } = {}) {
 }
 
 function handleAppBeforeQuitAutoUpdate() {
+  if (activeDownloadRequest) {
+    try { activeDownloadRequest.destroy(new Error('App quitting')); } catch (_) { }
+    activeDownloadRequest = null;
+  }
   if (quitInstallTriggered) return;
   const settings = state.storage ? state.storage.getSettings() : {};
   if (
     settings.autoDownloadUpdates !== false &&
     updaterState.status === 'downloaded' &&
     updaterState.canSilentInstall &&
+    updaterState.verifiedSha256 &&
     updaterState.downloadedPath &&
     fs.existsSync(updaterState.downloadedPath)
   ) {
@@ -562,7 +706,7 @@ function stopUpdaterBackgroundChecks() {
     periodicTimer = null;
   }
   if (activeDownloadRequest) {
-    try { activeDownloadRequest.destroy(); } catch (_) { }
+    try { activeDownloadRequest.destroy(new Error('Download aborted')); } catch (_) { }
     activeDownloadRequest = null;
   }
 }
@@ -571,6 +715,7 @@ module.exports = {
   compareSemver,
   isTrustedUpdateDownloadUrl,
   parseSha256Sums,
+  lookupExpectedSha256,
   selectReleaseAsset,
   computeFileSha256,
   getUpdaterState,

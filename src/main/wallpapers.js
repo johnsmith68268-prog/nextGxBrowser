@@ -188,11 +188,17 @@ function deleteWallpaperFileBestEffort(filename, context = 'previous') {
 }
 
 function isManagedWallpaperFilename(filename) {
-  if (typeof filename !== 'string' || !filename.startsWith('wallpaper-')) return false;
+  if (typeof filename !== 'string') return false;
+  const prefix = filename.startsWith('wallpaper-')
+    ? 'wallpaper-'
+    : filename.startsWith('gxmod-')
+    ? 'gxmod-'
+    : '';
+  if (!prefix) return false;
   if (!resolveSafeWallpaperPath(filename)) return false;
   const ext = path.extname(filename).toLowerCase();
   if (!Object.prototype.hasOwnProperty.call(WALLPAPER_EXT_TO_MIME, ext)) return false;
-  return filename.length > 'wallpaper-'.length + ext.length;
+  return filename.length > prefix.length + ext.length;
 }
 
 function cleanupOrphanedWallpapers() {

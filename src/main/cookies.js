@@ -28,12 +28,36 @@ function broadcastCookiesUpdate({ immediate = false, profileId = null } = {}) {
 
 function resolveCookieSessionForSender(sender) {
   const ctx = getCtxFromSender(sender);
-  if (ctx && !ctx.incognito && ctx.session) {
-    return { ses: ctx.session, profileId: ctx.profileId || 'default' };
+  if (ctx && ctx.session) {
+    return {
+      ses: ctx.session,
+      profileId: ctx.profileId || 'default',
+      incognito: Boolean(ctx.incognito),
+      ctx
+    };
   }
   const pid = ctx?.profileId || state.storage?.getActiveProfileId?.() || 'default';
   const ses = profilesMod().getSessionForProfile(pid) || session.defaultSession;
-  return { ses, profileId: pid };
+  return { ses, profileId: pid, incognito: false, ctx: null };
+}
+
+function notifySenderCookieChange({ incognito, profileId, ctx }) {
+  if (incognito) {
+    if (ctx && ctx.tabs instanceof Map) {
+      const { isWebUiUrl } = require('./utils');
+      for (const tab of ctx.tabs.values()) {
+        const wc = tab?.view?.webContents;
+        if (!wc || wc.isDestroyed()) continue;
+        try {
+          if (isWebUiUrl(tab.url) || isWebUiUrl(wc.getURL())) {
+            wc.send('cookies:update');
+          }
+        } catch (_) {}
+      }
+    }
+    return;
+  }
+  broadcastCookiesUpdate({ immediate: true, profileId });
 }
 
 // Cookies Management (defaultSession)
@@ -96,7 +120,8 @@ function registerCookieIpcHandlers(handleInternal) {
   });
 
   handleInternal('cookies:remove', async (e, arg1, arg2) => {
-    const { ses, profileId } = resolveCookieSessionForSender(e.sender);
+    const resolved = resolveCookieSessionForSender(e.sender);
+    const { ses } = resolved;
     let url = '';
     let name = '';
     if (arg1 && typeof arg1 === 'object') {
@@ -109,12 +134,13 @@ function registerCookieIpcHandlers(handleInternal) {
     if (!url || !name || !/^https?:\/\//i.test(url)) return { ok: false };
     await ses.cookies.remove(url, name);
     await ses.cookies.flushStore().catch(() => {});
-    broadcastCookiesUpdate({ immediate: true, profileId });
+    notifySenderCookieChange(resolved);
     return { ok: true };
   });
 
   handleInternal('cookies:clear-site', async (e, originOrDomain) => {
-    const { ses, profileId } = resolveCookieSessionForSender(e.sender);
+    const resolved = resolveCookieSessionForSender(e.sender);
+    const { ses } = resolved;
     const raw =
       typeof originOrDomain === 'object' && originOrDomain !== null
         ? originOrDomain.origin || originOrDomain.url || originOrDomain.domain || ''
@@ -132,12 +158,13 @@ function registerCookieIpcHandlers(handleInternal) {
       }
     }
     await ses.cookies.flushStore().catch(() => {});
-    broadcastCookiesUpdate({ immediate: true, profileId });
+    notifySenderCookieChange(resolved);
     return { ok: true, removed };
   });
 
   handleInternal('cookies:clear-all', async (e) => {
-    const { ses, profileId } = resolveCookieSessionForSender(e.sender);
+    const resolved = resolveCookieSessionForSender(e.sender);
+    const { ses } = resolved;
     const all = await ses.cookies.get({});
     let removed = 0;
     for (const c of all || []) {
@@ -149,7 +176,7 @@ function registerCookieIpcHandlers(handleInternal) {
     }
     await ses.clearStorageData({ storages: ['cookies'] }).catch(() => {});
     await ses.cookies.flushStore().catch(() => {});
-    broadcastCookiesUpdate({ immediate: true, profileId });
+    notifySenderCookieChange(resolved);
     return { ok: true, removed };
   });
 }

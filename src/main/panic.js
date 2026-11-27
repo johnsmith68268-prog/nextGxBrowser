@@ -34,14 +34,20 @@ function isRestorableUrl(url) {
 
 function snapshotWindowTabs(ctx) {
   let getPersistableTabUrl = null;
+  let isSplitPickerUrl = null;
   try {
     getPersistableTabUrl = require('./session').getPersistableTabUrl;
+  } catch (_) {}
+  try {
+    isSplitPickerUrl = require('./utils').isSplitPickerUrl;
   } catch (_) {}
   const tabs = [];
   let activeIndex = 0;
   for (const id of ctx.tabOrder || []) {
     const tab = ctx.tabs ? ctx.tabs.get(id) : null;
-    if (!tab) continue;
+    if (!tab || tab.isSplitPicker || (typeof isSplitPickerUrl === 'function' && isSplitPickerUrl(tab.url))) {
+      continue;
+    }
     const url =
       typeof getPersistableTabUrl === 'function'
         ? getPersistableTabUrl(tab) || tab.url
@@ -56,7 +62,14 @@ function snapshotWindowTabs(ctx) {
       workspaceId: tab.workspaceId || 'default'
     });
   }
-  return { tabs, activeIndex, savedAt: Date.now() };
+  let groups = [];
+  if (!ctx.incognito) {
+    try {
+      const { getGroupsForCtx } = require('./workspaces');
+      groups = (getGroupsForCtx(ctx) || []).map((g) => ({ ...g }));
+    } catch (_) {}
+  }
+  return { tabs, groups, activeIndex, savedAt: Date.now() };
 }
 
 function getStoredSnapshot(ctx = null) {
@@ -95,6 +108,9 @@ function triggerPanic(ctx) {
   }
   try {
     if (ctx.popoverOpenKind) popoversMod().closePopover(ctx, { restoreFocus: false });
+  } catch (_) {}
+  try {
+    require('./drawer-overlay').closeShellDrawer(ctx);
   } catch (_) {}
   try {
     const sb = sidebarMod();
@@ -147,6 +163,17 @@ function restorePanic(ctx) {
         skipRecentlyClosed: true,
         skipAutoNewTab: true
       });
+    } catch (_) {}
+  }
+  if (!ctx.incognito && Array.isArray(snapshot.groups) && snapshot.groups.length > 0) {
+    try {
+      const { getGroupsForCtx, saveGroupsForCtx } = require('./workspaces');
+      const existing = getGroupsForCtx(ctx) || [];
+      const existingIds = new Set(existing.map((g) => g && g.id).filter(Boolean));
+      const missing = snapshot.groups.filter((g) => g && g.id && !existingIds.has(g.id));
+      if (missing.length > 0) {
+        saveGroupsForCtx(ctx, [...existing, ...missing]);
+      }
     } catch (_) {}
   }
   let firstRestoredId = null;

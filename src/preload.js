@@ -1,5 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+if (window === window.top && window.location.protocol === 'file:') {
 contextBridge.exposeInMainWorld('gxAPI', {
   // Tab Management
   createTab: (options) => ipcRenderer.invoke('tabs:create', options),
@@ -26,6 +27,8 @@ contextBridge.exposeInMainWorld('gxAPI', {
         : {}
     ),
   exitSplit: () => ipcRenderer.invoke('split:exit'),
+  swapSplitPanes: () => ipcRenderer.invoke('split:swap'),
+  mergeSplitTabs: (opts) => ipcRenderer.invoke('split:merge', opts && typeof opts === 'object' ? opts : {}),
   setSplitRatio: (ratioOrOpts, opts) =>
     ipcRenderer.invoke(
       'split:set-ratio',
@@ -336,3 +339,4 @@ contextBridge.exposeInMainWorld('gxAPI', {
   onPlayerUpdate: (cb) => ipcRenderer.on('player:update', (_e, data) => cb(data)),
   onToast: (cb) => ipcRenderer.on('ui:toast', (_e, msg) => cb(msg))
 });
+}

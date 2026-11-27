@@ -126,6 +126,7 @@ function normalizeInternalPageUrl(rawUrl) {
 
 function getPersistableTabUrl(tab) {
   if (!tab || tab.incognito) return '';
+  if (tab.isSplitPicker || require('./utils').isSplitPickerUrl(tab.url)) return '';
   const rawUrl = typeof tab.url === 'string' ? tab.url.trim() : '';
   if (!rawUrl || rawUrl === 'about:blank') return 'nextgx://newtab';
 
@@ -190,6 +191,7 @@ function sanitizeRestorableTabUrl(rawUrl) {
   if (trimmed.startsWith('chrome-error://')) return '';
 
   if (resolveInternalUiFile(trimmed)) {
+    if (require('./utils').isSplitPickerUrl(trimmed)) return '';
     if (isNewTabUrl(trimmed)) return 'nextgx://newtab';
     if (isCornerUrl(trimmed)) return 'nextgx://corner';
     if (isWebUiUrl(trimmed)) {
@@ -236,7 +238,7 @@ function serializeWindowForSession(ctx) {
 
   for (const id of ctx.tabOrder) {
     const tab = ctx.tabs.get(id);
-    if (!tab || tab.incognito) continue;
+    if (!tab || tab.incognito || tab.isSplitPicker || require('./utils').isSplitPickerUrl(tab.url)) continue;
     const url = getPersistableTabUrl(tab);
     if (!url) continue;
     const idx = tabs.length;

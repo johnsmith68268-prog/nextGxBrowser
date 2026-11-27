@@ -43,6 +43,7 @@ function applyZoomAction(ctx, action, { notifyToast = false } = {}) {
 function attachKeyboardShortcuts(ctx, webContents) {
   webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
+    if (!ctx || !ctx.win || ctx.win.isDestroyed() || ctx.shellModalOpen) return;
     const ctrl = input.control || input.meta;
     const shift = input.shift;
     const alt = input.alt;
@@ -52,10 +53,10 @@ function attachKeyboardShortcuts(ctx, webContents) {
     // [TABS-W2] Gap 8.1 — tab search (Ctrl+Shift+A). Gap 5.1 — Ctrl+Tab:
     // MRU switch when the setting is on (Chrome default: off, plain cycle),
     // otherwise cycle in strip order. Gap 9.6 — reading mode (Alt+Shift+R).
-    if (ctrl && shift && key === 'a') {
+    if (ctrl && !alt && shift && key === 'a') {
       event.preventDefault();
       sendChromeInputShortcut(ctx, 'open-tab-search');
-    } else if (ctrl && input.key === 'Tab') {
+    } else if (ctrl && !alt && input.key === 'Tab') {
       event.preventDefault();
       let mruOn = false;
       try {
@@ -63,53 +64,55 @@ function attachKeyboardShortcuts(ctx, webContents) {
       } catch (_) {}
       if (mruOn) tabsMod().switchToMruTab(ctx);
       else tabsMod().cycleTab(ctx, shift ? -1 : 1);
-    } else if (alt && shift && key === 'r') {
+    } else if (!ctrl && alt && shift && key === 'r') {
       event.preventDefault();
       sendChromeInputShortcut(ctx, 'toggle-reader-mode');
-    } else if (ctrl && !shift && key === 't') {
+    } else if (ctrl && !alt && !shift && key === 't') {
       event.preventDefault();
       shortcutDeps.createTab(ctx, { url: 'nextgx://newtab', active: true });
-    } else if (ctrl && shift && key === 't') {
+    } else if (ctrl && !alt && shift && key === 't') {
       event.preventDefault();
       shortcutDeps.reopenLastClosedTab(ctx);
-    } else if (ctrl && shift && key === 'p') {
+    } else if (ctrl && !alt && shift && key === 'p') {
       // [Fix2 Panic] One action hides everything (snapshot + neutral Start
       // page); pressing it again restores the previous session. Local only.
       event.preventDefault();
       try {
         require('./panic').togglePanic(ctx);
       } catch (_) {}
-    } else if (ctrl && !shift && key === 'n') {
+    } else if (ctrl && !alt && !shift && key === 'n') {
       event.preventDefault();
-      shortcutDeps.createBrowserWindow({ incognito: false });
-    } else if (ctrl && shift && key === 'n') {
+      shortcutDeps.createBrowserWindow({ incognito: false, profileId: ctx.profileId });
+    } else if (ctrl && !alt && shift && key === 'n') {
       event.preventDefault();
       shortcutDeps.createBrowserWindow({ incognito: true });
-    } else if (ctrl && !shift && key === 'w') {
+    } else if (ctrl && !alt && !shift && key === 'w') {
       event.preventDefault();
       if (ctx.activeTabId) shortcutDeps.closeTab(ctx, ctx.activeTabId);
-    } else if ((ctrl && key === 'r') || input.key === 'F5') {
+    } else if ((ctrl && !alt && key === 'r') || input.key === 'F5') {
       event.preventDefault();
       shortcutDeps.reloadActiveTab(ctx);
-    } else if (ctrl && !shift && key === 'l') {
+    } else if (ctrl && !alt && !shift && key === 'l') {
       event.preventDefault();
       sendChromeInputShortcut(ctx, 'focus-address-bar');
-    } else if (ctrl && !shift && key === 'd') {
+    } else if (ctrl && !alt && !shift && key === 'd') {
       event.preventDefault();
-      ctx.win?.webContents.send('shortcut:action', 'toggle-bookmark');
-    } else if (ctrl && !shift && key === 'h') {
+      if (!ctx.win.webContents.isDestroyed()) {
+        ctx.win.webContents.send('shortcut:action', 'toggle-bookmark');
+      }
+    } else if (ctrl && !alt && !shift && key === 'h') {
       event.preventDefault();
       shortcutDeps.createTab(ctx, { url: 'nextgx://history', active: true });
-    } else if (ctrl && !shift && key === 'j') {
+    } else if (ctrl && !alt && !shift && key === 'j') {
       event.preventDefault();
       shortcutDeps.createTab(ctx, { url: 'nextgx://downloads', active: true });
-    } else if (ctrl && !shift && key === 'f') {
+    } else if (ctrl && !alt && !shift && key === 'f') {
       event.preventDefault();
       sendChromeInputShortcut(ctx, 'open-find');
-    } else if (ctrl && !shift && key === 'p') {
+    } else if (ctrl && !alt && !shift && key === 'p') {
       event.preventDefault();
       const tab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
-      if (tab?.view) tab.view.webContents.print();
+      if (tab?.view && !tab.view.webContents.isDestroyed()) tab.view.webContents.print();
     } else if (ctrl && !alt && (key === '0' || (!shift && code === 'Digit0'))) {
       event.preventDefault();
       applyZoomAction(ctx, 'reset', { notifyToast: true });

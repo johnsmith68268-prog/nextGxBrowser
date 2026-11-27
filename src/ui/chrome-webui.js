@@ -3,6 +3,43 @@ const pageHeaderTitle = document.getElementById('pageHeaderTitle');
 const globalSearchInput = document.getElementById('globalSearchInput');
 const topRightActions = document.getElementById('topRightActions');
 
+const webuiHeaderEmblem = document.getElementById('webuiHeaderEmblem');
+if (webuiHeaderEmblem) {
+  webuiHeaderEmblem.addEventListener('error', () => {
+    webuiHeaderEmblem.style.display = 'none';
+  });
+}
+if (mainContainer) {
+  mainContainer.addEventListener(
+    'error',
+    (e) => {
+      const t = e.target;
+      if (t && t.tagName === 'IMG' && t.classList && t.classList.contains('webui-row-favicon')) {
+        t.style.display = 'none';
+      }
+    },
+    true
+  );
+}
+
+const SAFE_DATA_FAVICON_RE =
+  /^data:image\/(?:png|jpeg|jpg|webp|gif|x-icon|vnd\.microsoft\.icon);base64,[a-z0-9+/=]+$/i;
+function sanitizeUiFaviconUrl(rawUrl) {
+  if (typeof rawUrl !== 'string') return '';
+  const trimmed = rawUrl.trim();
+  if (!trimmed || /[\u0000-\u001f\u007f]/.test(trimmed)) return '';
+  if (/^data:/i.test(trimmed)) {
+    if (trimmed.length > 32768) return '';
+    return SAFE_DATA_FAVICON_RE.test(trimmed) ? trimmed : '';
+  }
+  if (trimmed.length > 2048) return '';
+  try {
+    const u = new URL(trimmed);
+    if (u.protocol === 'https:' || u.protocol === 'http:') return u.toString();
+  } catch (_) {}
+  return '';
+}
+
 let currentPage = 'history';
 const VALID_SETTINGS_TABS = new Set([
   'appearance',
@@ -258,8 +295,9 @@ function histRegistrableDomain(rawUrl) {
 }
 
 function histRowHtml(item, timeStr) {
-  const favHtml = item.favicon
-    ? `<img src="${escapeHtml(item.favicon)}" width="16" height="16" style="border-radius:3px;flex-shrink:0;" onerror="this.style.display='none'" />`
+  const safeFav = sanitizeUiFaviconUrl(item.favicon);
+  const favHtml = safeFav
+    ? `<img class="webui-row-favicon" src="${escapeHtml(safeFav)}" width="16" height="16" style="border-radius:3px;flex-shrink:0;" alt="" />`
     : SVG_GLOBE;
   const visitCount = Math.max(1, Number(item.visitCount) || 1);
   const visitLabel = `${visitCount} ${visitCount === 1 ? 'visit' : 'visits'}`;
@@ -437,8 +475,9 @@ async function renderHistoryPage({ force = true } = {}) {
     const timeStr = item.closedAt
       ? new Date(item.closedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       : '';
-    const favHtml = item.favicon
-      ? `<img src="${escapeHtml(item.favicon)}" width="16" height="16" style="border-radius:3px;flex-shrink:0;" onerror="this.style.display='none'" />`
+    const safeClosedFav = sanitizeUiFaviconUrl(item.favicon);
+    const favHtml = safeClosedFav
+      ? `<img class="webui-row-favicon" src="${escapeHtml(safeClosedFav)}" width="16" height="16" style="border-radius:3px;flex-shrink:0;" alt="" />`
       : SVG_GLOBE;
     closedRowsHtml += `
       <div class="card-row closed-tab-row" data-id="${escapeHtml(item.id)}" data-url="${escapeHtml(item.url)}">
@@ -477,11 +516,16 @@ async function renderHistoryPage({ force = true } = {}) {
   let historyHtml = '';
   if (!filtered.length) {
     // UX phase: illustrated empty state with an action, not a bare sentence.
+    const isFilteredSearch = Boolean(searchQuery && (list || []).length > 0);
     historyHtml = `<div class="section-card"><div class="nx-empty-state">
       <div class="nx-empty-art" aria-hidden="true">◷</div>
-      <div class="nx-empty-title">No history yet</div>
-      <div class="nx-empty-copy">Pages you visit will appear here, grouped by date. Start browsing and your history will fill in.</div>
-      <button type="button" class="btn primary" id="btnEmptyHistoryBrowse">Browse the web</button>
+      <div class="nx-empty-title">${isFilteredSearch ? 'No history matches your search' : 'No history yet'}</div>
+      <div class="nx-empty-copy">${
+        isFilteredSearch
+          ? `Nothing in your history matches "${escapeHtml(searchQuery)}".`
+          : 'Pages you visit will appear here, grouped by date. Start browsing and your history will fill in.'
+      }</div>
+      ${isFilteredSearch ? '' : '<button type="button" class="btn primary" id="btnEmptyHistoryBrowse">Browse the web</button>'}
     </div></div>`;
   } else {
     const startOfToday = new Date();
@@ -886,8 +930,8 @@ let bookmarksIoBanner = null;
 
 function getBookmarkFaviconUrl(bm) {
   if (bm && typeof bm.favicon === 'string') {
-    const fav = bm.favicon.trim();
-    if (/^(https?:\/\/|data:image\/)/i.test(fav)) return fav;
+    const fav = sanitizeUiFaviconUrl(bm.favicon);
+    if (fav) return fav;
   }
   if (bm && typeof bm.url === 'string') {
     try {
@@ -4728,7 +4772,7 @@ async function renderSettingsPage() {
     ['gxControl', 'GX Control'],
     ['gxCleaner', 'GX Cleaner'],
     ['youtube', 'YouTube'],
-    ['ytMusic', 'YT Music'],
+    ['youtubeMusic', 'YT Music'],
     ['spotify', 'Spotify'],
     ['twitch', 'Twitch'],
     ['discord', 'Discord'],
@@ -6354,6 +6398,7 @@ async function renderSettingsPage() {
       actionBtn.disabled = false;
     }
   };
+  window._nxRenderAboutUpdater = renderAboutUpdater;
 
   document.getElementById('btnAboutUpdateAction')?.addEventListener('click', async () => {
     const stateName = liveUpdaterState?.status;
@@ -6376,7 +6421,9 @@ async function renderSettingsPage() {
   if (!window._nxAboutUpdaterListenerAttached && window.gxChromePagesAPI?.onUpdaterState) {
     window._nxAboutUpdaterListenerAttached = true;
     window.gxChromePagesAPI.onUpdaterState((st) => {
-      if (currentPage === 'settings') renderAboutUpdater(st);
+      if (currentPage === 'settings' && typeof window._nxRenderAboutUpdater === 'function') {
+        window._nxRenderAboutUpdater(st);
+      }
     });
   }
 
@@ -6384,7 +6431,8 @@ async function renderSettingsPage() {
     await window.gxChromePagesAPI.updateSettings({ defaultPageZoom: Number(e.target.value) || 100 });
   });
   document.getElementById('setWallpaperEnabledChk')?.addEventListener('change', async (e) => {
-    const cur = s.wallpaper || { type: 'preset', preset: 'obsidian-wave', file: '' };
+    const fresh = (await window.gxChromePagesAPI.getSettings?.()) || s;
+    const cur = fresh.wallpaper || { type: 'preset', preset: 'obsidian-wave', file: '' };
     await window.gxChromePagesAPI.updateSettings({
       wallpaper: e.target.checked
         ? { ...cur, type: cur.file ? 'custom' : 'preset', preset: cur.preset || 'obsidian-wave' }
@@ -6397,7 +6445,8 @@ async function renderSettingsPage() {
       mainContainer.querySelectorAll('[data-set-wp]').forEach((b) => b.classList.toggle('active', b === btn));
       const chk = document.getElementById('setWallpaperEnabledChk');
       if (chk) chk.checked = true;
-      const cur = s.wallpaper || { type: 'preset', preset: '', file: '' };
+      const fresh = (await window.gxChromePagesAPI.getSettings?.()) || s;
+      const cur = fresh.wallpaper || { type: 'preset', preset: '', file: '' };
       await window.gxChromePagesAPI.updateSettings({ wallpaper: { ...cur, type: 'preset', preset } });
     });
   });
@@ -6439,6 +6488,20 @@ async function renderSettingsPage() {
   });
 }
 
+function hasUnsavedPasswordFormDraft() {
+  const site = document.getElementById('inpSite');
+  const user = document.getElementById('inpUser');
+  const pass = document.getElementById('inpPass');
+  return Boolean(
+    (site && site.value.trim()) ||
+      (user && user.value.trim()) ||
+      (pass && pass.value) ||
+      document.activeElement === site ||
+      document.activeElement === user ||
+      document.activeElement === pass
+  );
+}
+
 function refreshVisiblePage() {
   if (!window.gxChromePagesAPI) return;
   if (currentPage === 'history') {
@@ -6450,7 +6513,7 @@ function refreshVisiblePage() {
   } else if (currentPage === 'downloads') {
     renderDownloadsPage({ force: false });
   } else if (currentPage === 'passwords') {
-    if (!editingPasswordId && !addrFormOpen && !cardFormOpen) {
+    if (!editingPasswordId && !addrFormOpen && !cardFormOpen && !hasUnsavedPasswordFormDraft()) {
       renderPasswordsPage();
     }
   } else if (currentPage === 'extensions') {
@@ -6590,6 +6653,60 @@ function initThemeSync() {
       syncToggle('setBackgroundMusicChk', 'backgroundMusicEnabled');
       syncToggle('setGxRamLimiterChk', 'gxRamLimiterEnabled');
       syncToggle('setGxCpuLimiterChk', 'gxCpuLimiterEnabled');
+      syncToggle('setSpClockChk', 'startPageShowClock');
+      syncToggle('setSpNamesChk', 'startPageShowNames');
+      syncToggle('setSpBiggerChk', 'startPageBiggerTiles');
+      syncToggle('setSpSuggestionsChk', 'startPageShowSuggestions');
+      syncToggle('setShowSidebarChk', 'showSidebar');
+      syncToggle('setColorizeSidebarChk', 'colorizeSidebarIcons');
+      syncToggle('setReduceAnimationsChk', 'reduceAnimations');
+      syncToggle('setAddressSuggestChk', 'addressBarSuggestions');
+      syncToggle('setRunOnStartupChk', 'runOnStartup');
+      syncToggle('setDnsOverHttpsChk', 'dnsOverHttps');
+      syncToggle('setVideoPopOutChk', 'videoPopOutEnabled');
+      syncToggle('setCopiedToastChk', 'copiedToastEnabled');
+      syncToggle('setAutoCheckUpdatesChk', 'autoCheckUpdates');
+      syncToggle('setAutoDownloadUpdatesChk', 'autoDownloadUpdates');
+      const syncInverted = (id, key) => {
+        const el = document.getElementById(id);
+        if (el && s && typeof s[key] === 'boolean') el.checked = !s[key];
+      };
+      syncInverted('setSpHideSearchChk', 'startPageShowSearch');
+      syncInverted('setSpHideDialChk', 'startPageShowSpeedDial');
+      syncInverted('setSpHideAddChk', 'startPageShowAddButton');
+      if (s && s.sidebarItems && typeof s.sidebarItems === 'object') {
+        document.querySelectorAll('.sidebar-dock-chk').forEach((chk) => {
+          const key = chk.dataset.sidebarKey;
+          if (key && typeof s.sidebarItems[key] === 'boolean') {
+            chk.checked = s.sidebarItems[key];
+          }
+        });
+      }
+      if (s && typeof s.gxRamLimitMB === 'number') {
+        const ramRange = document.getElementById('setGxRamLimitRange');
+        const ramVal = document.getElementById('setGxRamLimitVal');
+        if (ramRange && document.activeElement !== ramRange) ramRange.value = String(s.gxRamLimitMB);
+        if (ramVal) ramVal.textContent = `${s.gxRamLimitMB} MB`;
+      }
+      if (s && typeof s.gxCpuLimitPercent === 'number') {
+        const cpuRange = document.getElementById('setGxCpuLimitRange');
+        const cpuVal = document.getElementById('setGxCpuLimitVal');
+        if (cpuRange && document.activeElement !== cpuRange) cpuRange.value = String(s.gxCpuLimitPercent);
+        if (cpuVal) cpuVal.textContent = `${s.gxCpuLimitPercent}%`;
+      }
+      if (s && typeof s.webrtcPolicy === 'string') {
+        document.querySelectorAll('input[name="webrtcPolicy"]').forEach((rad) => {
+          rad.checked = rad.value === s.webrtcPolicy;
+        });
+      }
+      if (s && s.wallpaper && typeof s.wallpaper === 'object') {
+        const wpChk = document.getElementById('setWallpaperEnabledChk');
+        if (wpChk) wpChk.checked = s.wallpaper.type !== 'none';
+        const activeWp = s.wallpaper.type === 'preset' ? s.wallpaper.preset || 'obsidian-wave' : '';
+        document.querySelectorAll('[data-set-wp]').forEach((btn) => {
+          btn.classList.toggle('active', s.wallpaper.type === 'preset' && btn.dataset.setWp === activeWp);
+        });
+      }
       const shaderSel = document.getElementById('setShaderPreset');
       if (shaderSel && s && typeof s.shaderPreset === 'string') shaderSel.value = s.shaderPreset;
       const vidSel = document.getElementById('setVideoEnhancePreset');
@@ -6675,7 +6792,7 @@ function initThemeSync() {
   if (window.gxChromePagesAPI?.onPasswordsUpdate) {
     window.gxChromePagesAPI.onPasswordsUpdate(() => {
       if (currentPage === 'passwords') {
-        if (!editingPasswordId && !addrFormOpen && !cardFormOpen) {
+        if (!editingPasswordId && !addrFormOpen && !cardFormOpen && !hasUnsavedPasswordFormDraft()) {
           renderPasswordsPage();
         }
       } else if (currentPage === 'privacy') {
@@ -6720,8 +6837,23 @@ function initThemeSync() {
 initThemeSync();
 
 window.addEventListener('hashchange', () => {
-  const hash = window.location.hash.replace('#', '');
-  if (hash && hash !== currentPage) switchPage(hash);
+  const raw = window.location.hash.replace('#', '').trim().toLowerCase();
+  if (!raw) return;
+  if (raw.startsWith('settings/') && currentPage === 'settings') {
+    const rawSub = raw.slice('settings/'.length);
+    const mapped = SETTINGS_TAB_ALIASES[rawSub] || rawSub;
+    if (VALID_SETTINGS_TABS.has(mapped) && mapped !== settingsSubTab) {
+      settingsSubTab = mapped;
+      mainContainer.querySelectorAll('.settings-tab-pill').forEach((p) => {
+        const on = p.dataset.settingsTab === settingsSubTab;
+        p.classList.toggle('active', on);
+        p.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      applySettingsCategoryAndSearch();
+    }
+    return;
+  }
+  if (raw !== currentPage) switchPage(raw);
 });
 
 const initialHash = window.location.hash.replace('#', '') || 'history';

@@ -71,10 +71,18 @@ async function loadBundledGxExtension({ sessions = null } = {}) {
       return getLoadState();
     }
     const targets = [];
-    if (Array.isArray(sessions)) {
-      for (const s of sessions) if (s) targets.push(s);
+    const seenSessions = new Set();
+    if (Array.isArray(sessions) && sessions.length > 0) {
+      for (const s of sessions) {
+        if (s && !seenSessions.has(s)) {
+          seenSessions.add(s);
+          targets.push(s);
+        }
+      }
+    } else if (session.defaultSession) {
+      seenSessions.add(session.defaultSession);
+      targets.push(session.defaultSession);
     }
-    if (session.defaultSession) targets.push(session.defaultSession);
     if (!targets.length) {
       loadState.error = 'No Electron session available to load the GX extension into.';
       return getLoadState();
@@ -85,6 +93,20 @@ async function loadBundledGxExtension({ sessions = null } = {}) {
         const api = ses.extensions || ses;
         if (!api || typeof api.loadExtension !== 'function') {
           lastError = 'session.extensions.loadExtension is unavailable in this runtime.';
+          continue;
+        }
+        if (loadState.id && typeof api.getExtension === 'function' && api.getExtension(loadState.id)) {
+          loadState.loaded = true;
+          continue;
+        }
+        const existingAll = typeof api.getAllExtensions === 'function' ? api.getAllExtensions() : [];
+        const normDir = path.resolve(extensionDir).toLowerCase();
+        const alreadyLoaded = Array.isArray(existingAll)
+          ? existingAll.find((e) => e && e.path && path.resolve(e.path).toLowerCase() === normDir)
+          : null;
+        if (alreadyLoaded && alreadyLoaded.id) {
+          loadState.loaded = true;
+          loadState.id = alreadyLoaded.id;
           continue;
         }
         const ext = await api.loadExtension(extensionDir, { allowFileAccess: false });

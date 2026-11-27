@@ -170,7 +170,7 @@ test('item 7: split-view shortcut chip is un-cramped (two separate rows, padded 
 });
 
 test('item 8: tab-search rows have a real favicon slot and no spilling tooltip', () => {
-  const popover = read('src/ui/popover.html');
+  const popover = read('src/ui/popover.html') + '\n' + read('src/ui/popover.js');
   // Favicon img lives inside the .rl-icon wrapper, so the 16px slot sizing
   // applies; a dead icon is replaced by the globe inside the same slot.
   assert.match(popover, /iconWrap\.appendChild\(img\);/, 'favicon is not wrapped in the .rl-icon slot');
@@ -190,7 +190,7 @@ test('item 8: tab-search rows have a real favicon slot and no spilling tooltip',
 });
 
 test('item 9: rail context menu offers Open panel, Pin/Unpin, Customize Dock, Hide', () => {
-  const popover = read('src/ui/popover.html');
+  const popover = read('src/ui/popover.html') + '\n' + read('src/ui/popover.js');
   assert.match(popover, /data-rail-act="open"/, 'rail menu has no Open action');
   assert.match(popover, /data-rail-act="pin"/, 'rail menu has no Pin/Unpin action');
   assert.match(popover, /data-rail-act="hide"/, 'rail menu has no Hide action');

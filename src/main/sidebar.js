@@ -404,7 +404,7 @@ function ensureSidebarPanelFrameView(ctx) {
   attachKeyboardShortcuts(ctx, wc);
 
   wc.on('focus', () => {
-    if (ctx.popoverOpenKind) closePopover(ctx);
+    if (ctx.popoverOpenKind) closePopover(ctx, { restoreFocus: false });
   });
 
   wc.on('did-finish-load', () => {
@@ -413,7 +413,7 @@ function ensureSidebarPanelFrameView(ctx) {
   });
 
   wc.loadFile(SIDEBAR_PANEL_CHROME_FILE, {
-    query: getInternalUiQuery(ctx.incognito)
+    query: getInternalUiQuery(ctx.incognito, ctx.profileId)
   });
 
   ctx.win.contentView.addChildView(view);
@@ -457,7 +457,7 @@ function buildWebContentsViewForSidebarService(ctx, service) {
 
   wc.on('focus', () => {
     meta.lastActiveAt = Date.now();
-    if (ctx.popoverOpenKind) closePopover(ctx);
+    if (ctx.popoverOpenKind) closePopover(ctx, { restoreFocus: false });
   });
 
   wc.setWindowOpenHandler(({ url }) => {
@@ -478,7 +478,7 @@ function buildWebContentsViewForSidebarService(ctx, service) {
     meta.isLoading = false;
     clearSidebarLoadError(meta);
     state.adBlocker.injectCosmeticFilters(wc);
-    const s = state.storage.getSettings();
+    const s = state.storage.getSettings(ctx.profileId);
     if (s.forceDarkWeb && /^https?:/i.test(meta.url)) {
       wc.insertCSS(
         `html { filter: invert(0.92) hue-rotate(180deg) !important; background: #0d0e12 !important; } img, video, iframe, canvas { filter: invert(1) hue-rotate(180deg) !important; }`
@@ -494,6 +494,8 @@ function buildWebContentsViewForSidebarService(ctx, service) {
       meta.failedUrl = getFailedUrlFromErrorPage(url) || meta.failedUrl;
     } else {
       meta.failedUrl = '';
+      meta.failedErrorCode = 0;
+      meta.failedErrorDesc = '';
     }
     broadcastSidebarState(ctx);
   };
@@ -518,6 +520,8 @@ function buildWebContentsViewForSidebarService(ctx, service) {
     const canLoadErrorPage = !wc.isDestroyed();
     meta.isLoading = canLoadErrorPage;
     meta.failedUrl = failedUrl;
+    meta.failedErrorCode = errorCode;
+    meta.failedErrorDesc = errorDescription || '';
     // [Fix2 Discord] Record the failure for the panel chrome so a service
     // that can never load (e.g. Discord behind this VM's MITM proxy) shows
     // an error + retry instead of a blank panel. The error page itself is
@@ -608,7 +612,7 @@ function buildWebContentsViewForSidebarService(ctx, service) {
   }
   view.setBounds({ x: -5000, y: -5000, width: 1, height: 1 });
   if (service.internal && service.key === 'player') {
-    wc.loadFile(PLAYER_PANEL_FILE, { query: getInternalUiQuery(ctx.incognito) }).catch(() => {});
+    wc.loadFile(PLAYER_PANEL_FILE, { query: getInternalUiQuery(ctx.incognito, ctx.profileId) }).catch(() => {});
   } else {
     wc.loadURL(initialUrl).catch(() => {});
   }
@@ -643,13 +647,13 @@ function syncSidebarLayoutLeft(ctx) {
 }
 
 function openSidebarPanel(ctx, keyOrOpts) {
-  if (!ctx || !ctx.win || ctx.win.isDestroyed()) return serializeSidebarState(ctx);
+  if (!ctx || !ctx.win || ctx.win.isDestroyed() || ctx.shellModalOpen) return serializeSidebarState(ctx);
   const panel = ensureSidebarPanelState(ctx);
   const service = resolveSidebarService(keyOrOpts || panel.activeKey);
   if (!service) return serializeSidebarState(ctx);
 
   if (ctx.popoverOpenKind) {
-    closePopover(ctx);
+    closePopover(ctx, { restoreFocus: false });
   }
 
   ensureSidebarPanelFrameView(ctx);
@@ -736,6 +740,11 @@ function suspendSidebarServiceView(ctx, serviceKey) {
   clearSidebarAudioHoldTimer(meta);
   clearSidebarLoadTimer(meta);
   const wc = view.webContents;
+  if (ctx.fullscreen && ctx.fullscreen.active && (ctx.fullscreen.view === view || ctx.fullscreen.webContents === wc)) {
+    try {
+      require('./fullscreen').exitFullscreen(ctx);
+    } catch (_) {}
+  }
   if (wc) {
     webContentsToWinId.delete(wc.id);
     playerMod().onWebContentsDestroyed(wc.id);
@@ -834,8 +843,8 @@ function setSidebarPinned(ctx, pinnedArg) {
 
   panel.pinned = Boolean(nextPinned);
   if (state.storage) {
-    const s = state.storage.updateSettings({ sidebarPanelPinned: panel.pinned });
-    broadcastSettingsUpdate(s);
+    const s = state.storage.updateSettings({ sidebarPanelPinned: panel.pinned }, ctx.profileId);
+    broadcastSettingsUpdate(s, { profileId: ctx.profileId });
   }
   let updatedCallingCtx = false;
   for (const winCtx of windowContexts.values()) {
@@ -872,8 +881,8 @@ function setSidebarWidth(ctx, rawWidth, { persist = true } = {}) {
 
   if (persist) {
     if (state.storage) {
-      const s = state.storage.updateSettings({ sidebarPanelWidth: clamped });
-      broadcastSettingsUpdate(s);
+      const s = state.storage.updateSettings({ sidebarPanelWidth: clamped }, ctx.profileId);
+      broadcastSettingsUpdate(s, { profileId: ctx.profileId });
     }
     let updatedCallingCtx = false;
     for (const winCtx of windowContexts.values()) {

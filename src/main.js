@@ -25,6 +25,7 @@ nativeTheme.themeSource = 'system';
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
+  return;
 }
 
 const isRunningAsRoot =
@@ -92,10 +93,23 @@ configureShortcuts({
 // Without this handler Chromium would show its own interstitial; with it,
 // a denied cert still fails the navigation, which the app turns into the
 // custom error page (with the Proceed-anyway option) via did-fail-load.
-const { isCertExceptionAllowed, clearCertExceptions } = require('./main/cert-exceptions');
-app.on('certificate-error', (event, _webContents, url, _error, _certificate, callback) => {
+const {
+  isCertExceptionAllowed,
+  recordObservedCertError,
+  clearCertExceptions
+} = require('./main/cert-exceptions');
+const { getCtxFromSender } = require('./main/broadcast');
+app.on('certificate-error', (event, webContents, url, _error, certificate, callback) => {
   event.preventDefault();
-  callback(isCertExceptionAllowed(url));
+  const ctx = getCtxFromSender(webContents);
+  const sessionKey = ctx
+    ? ctx.incognito
+      ? `incog:${ctx.win?.id || 0}`
+      : `prof:${ctx.profileId || 'default'}`
+    : 'global';
+  const fingerprint = certificate && typeof certificate.fingerprint === 'string' ? certificate.fingerprint : '';
+  recordObservedCertError(url, { sessionKey, fingerprint });
+  callback(isCertExceptionAllowed(url, { sessionKey, fingerprint }));
 });
 
 app.on('second-instance', (_event, argv) => {
@@ -126,6 +140,9 @@ if (gotSingleInstanceLock) {
         broadcastAdblockUpdate(stats, { throttled: true });
       }
     });
+    if (state.storage && typeof state.storage.initEncryption === 'function') {
+      await state.storage.initEncryption();
+    }
 
     ensureProfileSessionInitialized('default', { setupPermissionsForSession });
     const activeProfileId = state.storage.getActiveProfileId();

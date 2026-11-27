@@ -161,11 +161,16 @@ function stripYouTubePlayerResponseText(text) {
     text.indexOf('playerAds') === -1 &&
     text.indexOf('adSlots') === -1 &&
     text.indexOf('adSlotRenderer') === -1 &&
+    text.indexOf('adSlotLoggingData') === -1 &&
     text.indexOf('adBreak') === -1 &&
     text.indexOf('mastheadAdRenderer') === -1 &&
     text.indexOf('instreamVideoAdRenderer') === -1 &&
     text.indexOf('linearAdSequenceRenderer') === -1 &&
-    text.indexOf('adInfoRenderer') === -1
+    text.indexOf('inFeedAdLayoutRenderer') === -1 &&
+    text.indexOf('promotedSparklesWebRenderer') === -1 &&
+    text.indexOf('compactPromotedVideoRenderer') === -1 &&
+    text.indexOf('adTrackingParams') === -1 &&
+    text.indexOf('adInfo') === -1
   ) {
     return { text, stripped: 0 };
   }

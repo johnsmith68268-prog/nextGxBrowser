@@ -3,7 +3,11 @@ const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { state } = require('./core');
-const { loadUnpackedExtensionFromPath, listManagedExtensions } = require('./extensions');
+const {
+  loadUnpackedExtensionFromPath,
+  listManagedExtensions,
+  removeManagedExtension
+} = require('./extensions');
 
 const ADGUARD_BUNDLE_VERSION = '5.6.1.7';
 const DEV_ADGUARD_ZIP = path.resolve(__dirname, '..', '..', 'build', 'adguard-mv3.zip');
@@ -97,27 +101,45 @@ async function ensureBundledAdguardExtension() {
       }
     } catch (_) {}
 
-    // Check if AdGuard is already registered in managed extensions (restored by restorePersistedExtensions)
+    // Check if bundled AdGuard is already registered in managed extensions (explicitly tagged, never loose name regex)
     const stored = state.storage ? state.storage.getExtensions() : [];
     const existingAdguard = stored.find(
       (ext) =>
         ext &&
-        ((typeof ext.name === 'string' && /adguard/i.test(ext.name)) ||
+        (ext.isBundledAdguard === true ||
+          (marker && marker.extensionId && ext.id === marker.extensionId) ||
           (typeof ext.path === 'string' && ext.path.includes('bundled-adguard-')))
     );
 
     if (existingAdguard) {
-      if (!existingAdguard.enabled) {
+      if (!existingAdguard.enabled && !existingAdguard.lastError) {
         // Respect explicit user choice to disable bundled AdGuard
         provisionState.id = existingAdguard.id || '';
         return getBundledAdguardState();
       }
-      const liveList = listManagedExtensions();
-      const liveMatch = liveList.find((e) => e.id === existingAdguard.id && e.loaded);
-      if (liveMatch) {
-        provisionState.loaded = true;
-        provisionState.id = liveMatch.id;
-        return getBundledAdguardState();
+      const isCurrentBundleVersion =
+        existingAdguard.bundledVersion === ADGUARD_BUNDLE_VERSION ||
+        (typeof existingAdguard.path === 'string' &&
+          existingAdguard.path.includes(`bundled-adguard-${ADGUARD_BUNDLE_VERSION}`));
+      if (isCurrentBundleVersion) {
+        const liveList = listManagedExtensions();
+        const liveMatch = liveList.find((e) => e.id === existingAdguard.id && e.loaded);
+        if (liveMatch) {
+          if (state.storage && !existingAdguard.isBundledAdguard) {
+            state.storage.updateExtension(existingAdguard.id, {
+              isBundledAdguard: true,
+              bundledVersion: ADGUARD_BUNDLE_VERSION
+            });
+          }
+          provisionState.loaded = true;
+          provisionState.id = liveMatch.id;
+          return getBundledAdguardState();
+        }
+      } else if (existingAdguard.id) {
+        // Outdated bundled AdGuard version: replace cleanly with the current bundle
+        try {
+          removeManagedExtension(existingAdguard.id);
+        } catch (_) {}
       }
     } else if (marker && marker.provisionedVersion === ADGUARD_BUNDLE_VERSION) {
       // User explicitly removed the bundled AdGuard extension previously; do not force-reinstall
@@ -134,7 +156,13 @@ async function ensureBundledAdguardExtension() {
       await extractZipAsync(zipPath, unpackDir);
     }
 
-    const res = await loadUnpackedExtensionFromPath(unpackDir, { persist: true });
+    const res = await loadUnpackedExtensionFromPath(unpackDir, {
+      persist: true,
+      extraRecord: {
+        isBundledAdguard: true,
+        bundledVersion: ADGUARD_BUNDLE_VERSION
+      }
+    });
     if (res && res.ok && res.extension) {
       provisionState.loaded = true;
       provisionState.id = res.extension.id || '';

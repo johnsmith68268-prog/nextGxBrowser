@@ -10,12 +10,15 @@ const playerMod = () => require('./player');
 const splitViewMod = () => require('./splitview');
 
 function getCtxFromSender(sender) {
-  if (sender && webContentsToWinId.has(sender.id)) {
-    const winId = webContentsToWinId.get(sender.id);
-    if (windowContexts.has(winId)) return windowContexts.get(winId);
+  if (sender) {
+    if (webContentsToWinId.has(sender.id)) {
+      const winId = webContentsToWinId.get(sender.id);
+      if (windowContexts.has(winId)) return windowContexts.get(winId);
+    }
+    const bw = BrowserWindow.fromWebContents(sender);
+    if (bw && windowContexts.has(bw.id)) return windowContexts.get(bw.id);
+    return null;
   }
-  const bw = sender ? BrowserWindow.fromWebContents(sender) : null;
-  if (bw && windowContexts.has(bw.id)) return windowContexts.get(bw.id);
   const focused = BrowserWindow.getFocusedWindow();
   if (focused && windowContexts.has(focused.id)) return windowContexts.get(focused.id);
   return Array.from(windowContexts.values())[0] || null;
@@ -38,6 +41,7 @@ function serializeTabs(ctx) {
 
   const { isErrorPageUrl } = require('./utils');
   const { isCertExceptionAllowed } = require('./cert-exceptions');
+  const certSessionKey = ctx.incognito ? `incog:${ctx.win?.id || 0}` : `prof:${ctx.profileId || 'default'}`;
   const ordered = ctx.tabOrder
     .map((id) => ctx.tabs.get(id))
     .filter(Boolean)
@@ -47,7 +51,7 @@ function serializeTabs(ctx) {
       const pinned = Boolean(t.pinned);
       const videoState = playerMod().getTabVideoState(t);
       const isErrPage = isErrorPageUrl(t.url);
-      const hasCertBypass = Boolean(origin && isCertExceptionAllowed(origin));
+      const hasCertBypass = Boolean(origin && isCertExceptionAllowed(origin, { sessionKey: certSessionKey }));
       const isInternal =
         displayUrl.startsWith('nextgx://') ||
         t.url.startsWith('file://') ||

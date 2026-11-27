@@ -104,11 +104,16 @@ function stripYouTubePlayerResponseText(text) {
     text.indexOf('playerAds') === -1 &&
     text.indexOf('adSlots') === -1 &&
     text.indexOf('adSlotRenderer') === -1 &&
+    text.indexOf('adSlotLoggingData') === -1 &&
     text.indexOf('adBreak') === -1 &&
     text.indexOf('mastheadAdRenderer') === -1 &&
     text.indexOf('instreamVideoAdRenderer') === -1 &&
     text.indexOf('linearAdSequenceRenderer') === -1 &&
-    text.indexOf('adInfoRenderer') === -1
+    text.indexOf('inFeedAdLayoutRenderer') === -1 &&
+    text.indexOf('promotedSparklesWebRenderer') === -1 &&
+    text.indexOf('compactPromotedVideoRenderer') === -1 &&
+    text.indexOf('adTrackingParams') === -1 &&
+    text.indexOf('adInfo') === -1
   ) {
     return { text, stripped: 0 };
   }
@@ -137,6 +142,9 @@ function normalizeHost(raw) {
     if (!host || host.startsWith('.') || host.includes('..')) return '';
     if (/^www\.[^.]+\./.test(host)) {
       host = host.slice(4);
+    }
+    if (u.port && (host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1')) {
+      return `${host}:${u.port}`;
     }
     return host;
   } catch (_) {
@@ -176,6 +184,17 @@ if (internalPageKind === 'onboarding') {
     saveCustomWallpaper: (payload) => ipcRenderer.invoke('newtab:save-wallpaper', payload),
     getWallpaperImage: () => ipcRenderer.invoke('newtab:get-wallpaper-image'),
     navigate: (url) => ipcRenderer.invoke('tabs:navigate', url)
+  });
+}
+
+if (internalPageKind === 'split-picker') {
+  contextBridge.exposeInMainWorld('gxSplitPickerAPI', {
+    getSplitPickerData: () => ipcRenderer.invoke('split:picker-data'),
+    pickTab: (tabId) => ipcRenderer.invoke('split:picker-choose', { tabId }),
+    openNewTab: () => ipcRenderer.invoke('split:picker-new-tab'),
+    navigateUrl: (url) => ipcRenderer.invoke('split:picker-navigate', { url }),
+    cancelSplit: () => ipcRenderer.invoke('split:picker-cancel'),
+    swapSplitPanes: () => ipcRenderer.invoke('split:swap')
   });
 }
 
@@ -1234,6 +1253,25 @@ if (internalPageKind === 'player') {
     return docs;
   }
 
+  function collectMediaRoots(root, out, depth = 0) {
+    if (!root || depth > 6 || out.length >= 48) return;
+    if (!out.includes(root)) out.push(root);
+    try {
+      const ownerDoc = root.nodeType === 9 ? root : root.ownerDocument;
+      if (!ownerDoc || typeof ownerDoc.createTreeWalker !== 'function') return;
+      const walker = ownerDoc.createTreeWalker(root, 1);
+      let visited = 0;
+      let cur = walker.nextNode();
+      while (cur && visited < 1500 && out.length < 48) {
+        visited += 1;
+        if (cur.shadowRoot) {
+          collectMediaRoots(cur.shadowRoot, out, depth + 1);
+        }
+        cur = walker.nextNode();
+      }
+    } catch (_) {}
+  }
+
   function collectAllMediaElements() {
     for (const el of Array.from(trackedMedia)) {
       if (!el) {
@@ -1245,10 +1283,13 @@ if (internalPageKind === 'player') {
         trackedMedia.delete(el);
       }
     }
-    // Fast native tag-name bloom-filter query (never walk querySelectorAll('*') across 20k DOM nodes!)
+    const roots = [];
     for (const doc of getMediaDocs()) {
+      collectMediaRoots(doc, roots, 0);
+    }
+    for (const root of roots) {
       try {
-        const found = doc.querySelectorAll('video, audio');
+        const found = root.querySelectorAll('video, audio');
         for (let i = 0; i < Math.min(found.length, 64); i++) {
           trackedMedia.add(found[i]);
         }
@@ -2036,10 +2077,33 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (window.top !== window) return;
   const proto = window.location.protocol;
   const rawHost = (window.location.hostname || '').toLowerCase();
-  const isLocalDev = rawHost === 'localhost' || rawHost === '127.0.0.1';
+  const isLocalDev = rawHost === 'localhost' || rawHost === '127.0.0.1' || rawHost === '[::1]' || rawHost === '::1';
   if (proto !== 'https:' && !(proto === 'http:' && isLocalDev)) return;
-  const host = normalizeHost(rawHost);
+  const host = normalizeHost(isLocalDev && window.location.port ? `${rawHost}:${window.location.port}` : rawHost);
   if (!host) return;
+
+  const isPasswordFieldVisible = (el) => {
+    if (!el || !el.isConnected || el.disabled || el.readOnly) return false;
+    try {
+      const style = window.getComputedStyle(el);
+      if (
+        !style ||
+        style.display === 'none' ||
+        style.visibility === 'hidden' ||
+        style.visibility === 'collapse' ||
+        Number(style.opacity) < 0.1
+      ) {
+        return false;
+      }
+      const rect = el.getBoundingClientRect();
+      if (rect.width < 8 || rect.height < 8) return false;
+      if (rect.right <= 0 || rect.bottom <= 0) return false;
+      if (rect.left >= window.innerWidth || rect.top >= window.innerHeight) return false;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
 
   let cachedCredentials = null;
   let fetchingCredentials = null;
@@ -2096,16 +2160,18 @@ window.addEventListener('DOMContentLoaded', async () => {
         let filledOnce = false;
         const triggerAutofillOnGesture = async (ev) => {
           if (filledOnce || !ev || !ev.isTrusted) return;
+          if (!isPasswordFieldVisible(pwInput)) return;
           const matched = await loadCredentials();
           if (!matched.length) return;
+          if (!isPasswordFieldVisible(pwInput)) return;
           filledOnce = true;
           const cred = matched[0];
-          if (userInput && !userInput.value) {
+          if (userInput && !userInput.value && isPasswordFieldVisible(userInput)) {
             setNativeInputValue(userInput, cred.username);
             userInput.dispatchEvent(new Event('input', { bubbles: true }));
             userInput.dispatchEvent(new Event('change', { bubbles: true }));
           }
-          if (!pwInput.value) {
+          if (!pwInput.value && isPasswordFieldVisible(pwInput)) {
             setNativeInputValue(pwInput, cred.password);
             pwInput.dispatchEvent(new Event('input', { bubbles: true }));
             pwInput.dispatchEvent(new Event('change', { bubbles: true }));
@@ -2268,12 +2334,19 @@ window.addEventListener('DOMContentLoaded', async () => {
     if (!el || !el.isConnected) return false;
     try {
       const style = window.getComputedStyle(el);
-      if (!style || style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) {
+      if (
+        !style ||
+        style.display === 'none' ||
+        style.visibility === 'hidden' ||
+        style.visibility === 'collapse' ||
+        Number(style.opacity) < 0.1
+      ) {
         return false;
       }
       const rect = el.getBoundingClientRect();
-      if (rect.width < 2 || rect.height < 2) return false;
-      if (rect.right < 0 || rect.bottom < 0) return false;
+      if (rect.width < 8 || rect.height < 8) return false;
+      if (rect.right <= 0 || rect.bottom <= 0) return false;
+      if (rect.left >= window.innerWidth || rect.top >= window.innerHeight) return false;
       return true;
     } catch (_) {
       return false;
@@ -2304,7 +2377,13 @@ window.addEventListener('DOMContentLoaded', async () => {
     if (has('cc-number', 'cardnumber', 'card-number', 'ccnumber', 'cardnum')) return 'cardNumber';
     if (has('cc-exp-month', 'expmonth', 'exp-month', 'expirymonth', 'expiry-month')) return 'cardExpMonth';
     if (has('cc-exp-year', 'expyear', 'exp-year', 'expiryyear', 'expiry-year')) return 'cardExpYear';
-    if (has('cc-exp', 'expdate', 'exp-date', 'expirydate', 'expiry-date', 'expiry', 'expiration')) return 'cardExp';
+    if (
+      has('cc-exp', 'cardexp', 'card-exp', 'ccexp', 'cardexpiry', 'card-expiry', 'ccexpiry', 'cc-expiration') ||
+      (has('expdate', 'exp-date', 'expirydate', 'expiry-date', 'expirationdate', 'expiration-date') &&
+        !has('token', 'session', 'auth', 'otp', 'cookie', 'cache', 'key', 'license', 'pass'))
+    ) {
+      return 'cardExp';
+    }
     if (has('cc-name', 'cardholder', 'cardholdername', 'cardholder-name', 'name-on-card', 'card-name', 'cardname')) return 'cardName';
     if (has('email', 'e-mail')) return 'email';
     if (has('given-name', 'firstname', 'first-name') || toks.has('fname')) return 'givenName';
@@ -2497,8 +2576,9 @@ window.addEventListener('DOMContentLoaded', async () => {
 // ---------------------------------------------------------------------------
 (function gxMediaCaptureSetup() {
   try {
-    // Internal UI pages (file://) never call page media APIs.
-    if (window.location.protocol === 'file:') return;
+    // Top-level web pages only: never expose media/permission bridge to internal UI or third-party iframes.
+    if (window !== window.top || internalPageKind) return;
+    if (window.location.protocol !== 'http:' && window.location.protocol !== 'https:') return;
     if (!webFrame || typeof webFrame.executeJavaScript !== 'function') return;
     if (typeof contextBridge === 'undefined') return;
 
@@ -2517,6 +2597,9 @@ window.addEventListener('DOMContentLoaded', async () => {
     const GX_MEDIA_BRIDGE = `__nx_media_bridge_${GX_MEDIA_TOKEN}`;
     const GX_MEDIA_SYM = `__nx_media_${GX_MEDIA_TOKEN}`;
 
+    let deviceChoiceHandler = null;
+    let ipcDeviceChoiceBound = false;
+
     try {
       contextBridge.exposeInMainWorld(GX_MEDIA_BRIDGE, {
         getPreferredDevice: (origin) =>
@@ -2524,11 +2607,16 @@ window.addEventListener('DOMContentLoaded', async () => {
         queryPermissionState: (origin, name) =>
           ipcRenderer.invoke('permissions:query-state', { origin, name }),
         onDeviceChoice: (cb) => {
-          ipcRenderer.on('gx-media-device-choice', (_e, payload) => {
-            try {
-              cb(payload);
-            } catch (_) {}
-          });
+          if (typeof cb !== 'function') return;
+          deviceChoiceHandler = cb;
+          if (!ipcDeviceChoiceBound) {
+            ipcDeviceChoiceBound = true;
+            ipcRenderer.on('gx-media-device-choice', (_e, payload) => {
+              try {
+                if (typeof deviceChoiceHandler === 'function') deviceChoiceHandler(payload);
+              } catch (_) {}
+            });
+          }
         }
       });
     } catch (_) {

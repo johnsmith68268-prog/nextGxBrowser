@@ -6,16 +6,31 @@ const { detectFileCategory, resolveSafeDownloadPath } = require('./utils');
 const { getCtxFromSender, broadcastDownloadsUpdate } = require('./broadcast');
 
 const inFlightSavePaths = new Set();
+const activeDownloadMeta = new Map();
 // s-13: incognito downloads used to live in ONE shared array, so window A's
 // private downloads showed up in window B. Each private window gets its own
 // session partition (see windows.js), so the session object is the natural
 // per-window key: Map<session, download list>.
 const incognitoDownloadsBySession = new Map();
 const DOWNLOAD_PROGRESS_BROADCAST_MS = 250;
+const WIN_RESERVED_BASENAME_RE = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+
+function sanitizeDownloadBaseName(rawFileName) {
+  const baseName = path
+    .basename(String(rawFileName || 'download'))
+    .replace(/[\u0000-\u001f\u007f<>:"/\\|?*]+/g, '_')
+    .replace(/[. ]+$/g, '');
+  if (!baseName || baseName === '.' || baseName === '..') return 'download';
+  const ext = path.extname(baseName);
+  const stem = ext ? baseName.slice(0, -ext.length) : baseName;
+  if (WIN_RESERVED_BASENAME_RE.test(stem)) {
+    return `_${stem}${ext}`;
+  }
+  return baseName;
+}
 
 function getUniqueDownloadPath(downloadsDir, rawFileName) {
-  const baseName = path.basename(rawFileName || 'download');
-  const safeName = !baseName || baseName === '.' || baseName === '..' ? 'download' : baseName;
+  const safeName = sanitizeDownloadBaseName(rawFileName);
   const ext = path.extname(safeName);
   const stem = ext ? safeName.slice(0, -ext.length) : safeName;
 
@@ -114,7 +129,10 @@ function setupDownloadListener(ses, profileId = 'default', { incognito = false }
       const settings = state.storage ? state.storage.getSettings(profileId) : null;
       if (settings) {
         if (typeof settings.downloadPath === 'string' && settings.downloadPath.trim()) {
-          downloadsDir = settings.downloadPath.trim();
+          const candidateDir = settings.downloadPath.trim();
+          if (path.isAbsolute(candidateDir) && fs.existsSync(candidateDir) && fs.statSync(candidateDir).isDirectory()) {
+            downloadsDir = candidateDir;
+          }
         }
         askWhere = settings.downloadAskWhere === true;
       }
@@ -143,6 +161,7 @@ function setupDownloadListener(ses, profileId = 'default', { incognito = false }
     }
 
     activeDownloadItems.set(id, item);
+    activeDownloadMeta.set(id, { session: ses, profileId: profileId || 'default', incognito: Boolean(incognito) });
 
     let lastBytes = 0;
     let lastTime = Date.now();
@@ -236,6 +255,7 @@ function setupDownloadListener(ses, profileId = 'default', { incognito = false }
     item.once('done', (_e, downloadState) => {
       syncItemSavePath();
       activeDownloadItems.delete(id);
+      activeDownloadMeta.delete(id);
       if (trackedNormKey) inFlightSavePaths.delete(trackedNormKey);
       record.receivedBytes = item.getReceivedBytes();
       record.totalBytes = item.getTotalBytes();
@@ -275,22 +295,32 @@ function registerDownloadIpcHandlers(handleInternal) {
   // s-13: an incognito caller sees only its own window's (session's) list.
   const getIncogList = (e) => snapshotIncognitoDownloads(getCtx(e)?.session);
 
+  const canControlDownload = (e, id) => {
+    const meta = activeDownloadMeta.get(id);
+    if (!meta) return true; // Backwards-compatible when tests populate activeDownloadItems directly
+    if (isIncog(e)) {
+      return Boolean(meta.incognito && meta.session === getCtx(e)?.session);
+    }
+    return Boolean(!meta.incognito && meta.profileId === (getPid(e) || 'default'));
+  };
+
   handleInternal('downloads:get', (e) => (isIncog(e) ? getIncogList(e) : state.storage.getDownloads(getPid(e))));
   handleInternal('downloads:pause', (e, id) => {
-    const item = activeDownloadItems.get(id);
+    const item = canControlDownload(e, id) ? activeDownloadItems.get(id) : null;
     if (item && !item.isPaused()) item.pause();
     return isIncog(e) ? getIncogList(e) : state.storage.getDownloads(getPid(e));
   });
   handleInternal('downloads:resume', (e, id) => {
-    const item = activeDownloadItems.get(id);
+    const item = canControlDownload(e, id) ? activeDownloadItems.get(id) : null;
     if (item && item.isPaused()) item.resume();
     return isIncog(e) ? getIncogList(e) : state.storage.getDownloads(getPid(e));
   });
   handleInternal('downloads:cancel', (e, id) => {
-    const item = activeDownloadItems.get(id);
+    const item = canControlDownload(e, id) ? activeDownloadItems.get(id) : null;
     if (item) {
       item.cancel();
       activeDownloadItems.delete(id);
+      activeDownloadMeta.delete(id);
     }
     return isIncog(e) ? getIncogList(e) : state.storage.getDownloads(getPid(e));
   });

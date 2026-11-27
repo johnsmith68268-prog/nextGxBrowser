@@ -67,12 +67,12 @@ test.after(() => {
   } catch (_) {}
 });
 
-// ---- QR encoder (extracted from popover.html) ---------------------------
+// ---- QR encoder (extracted from popover.js) -----------------------------
 function loadQrFromPopover() {
-  const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'ui', 'popover.html'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'ui', 'popover.js'), 'utf8');
   const start = html.indexOf('const QR_M_ECC_PER_BLOCK');
   const end = html.indexOf('function renderQrCodeView');
-  assert.ok(start !== -1 && end > start, 'QR encoder block not found in popover.html');
+  assert.ok(start !== -1 && end > start, 'QR encoder block not found in popover.js');
   const src = html.slice(start, end);
   return new Function(
     `${src}; return { qrEncodeMatrix, qrRsDivisor, qrRsRemainder, qrNumDataCodewords, qrAlignmentPositions };`

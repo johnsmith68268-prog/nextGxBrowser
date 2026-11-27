@@ -409,16 +409,29 @@ class StorageManager {
     this.cache = {};
     this._pendingWrites = new Map();
     this._asyncWriteChains = new Map();
+    this._writeGen = new Map();
     this._memoRootSettings = null;
     this._memoBookmarkUrlSet = null;
     this._compactKeys = new Set(['history', 'downloads', 'session']);
     this._encryptionWarned = false;
+    this._useAsyncSafeStorage = Boolean(
+      safeStorage &&
+        typeof safeStorage.isAsyncEncryptionAvailable === 'function' &&
+        typeof safeStorage.encryptStringAsync === 'function' &&
+        typeof safeStorage.decryptStringAsync === 'function'
+    );
+    this._asyncEncChecked = false;
+    this._asyncEncAvailable = false;
+    this._decryptedSecrets = new Map();
     this._initAll();
     if (!this.isProfileChild) {
       this._ensureProfilesStore();
       this._ensureDefaultWorkspace();
     }
-    this._migratePasswords();
+    if (!this._useAsyncSafeStorage) {
+      this._migratePasswords();
+      this._migratePaymentMethods();
+    }
   }
 
   _cloneDefault(key) {
@@ -426,20 +439,28 @@ class StorageManager {
   }
 
   _serializeKey(key, data) {
+    const replacer =
+      key === 'passwords' || key === 'paymentMethods'
+        ? (k, v) => (k === '_ephemeralPlain' ? undefined : v)
+        : undefined;
     return this._compactKeys && this._compactKeys.has(key)
-      ? JSON.stringify(data)
-      : JSON.stringify(data, null, 2);
+      ? JSON.stringify(data, replacer)
+      : JSON.stringify(data, replacer, 2);
   }
 
-  _atomicWriteFile(filePath, content) {
+  _atomicWriteFile(filePath, content, { skipBackup = false, removeBackup = false } = {}) {
     if (!fs.existsSync(this.dataDir)) {
       fs.mkdirSync(this.dataDir, { recursive: true });
     }
-    const tmpPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+    const tmpPath = `${filePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const bakPath = `${filePath}.bak`;
     fs.writeFileSync(tmpPath, content, 'utf-8');
-    // Keep last known-good file as .bak before replacing live file
-    if (fs.existsSync(filePath)) {
+    if (removeBackup) {
+      try {
+        if (fs.existsSync(bakPath)) fs.unlinkSync(bakPath);
+      } catch (_) {}
+    } else if (!skipBackup && fs.existsSync(filePath)) {
+      // Keep last known-good file as .bak before replacing live file
       try {
         fs.copyFileSync(filePath, bakPath);
       } catch (_) {}
@@ -478,6 +499,22 @@ class StorageManager {
           const raw = fs.readFileSync(filePath, 'utf-8');
           this.cache[key] = JSON.parse(raw);
         } catch (parseErr) {
+          const errCode = parseErr && parseErr.code ? String(parseErr.code) : '';
+          if (errCode === 'EBUSY' || errCode === 'EPERM' || errCode === 'EACCES') {
+            console.warn(`[Storage] Transient file lock (${errCode}) reading ${key}; keeping file intact on disk.`);
+            const bakPath = `${filePath}.bak`;
+            let fallbackLoaded = false;
+            if (fs.existsSync(bakPath)) {
+              try {
+                this.cache[key] = JSON.parse(fs.readFileSync(bakPath, 'utf-8'));
+                fallbackLoaded = true;
+              } catch (_) {}
+            }
+            if (!fallbackLoaded) {
+              this.cache[key] = this._cloneDefault(key);
+            }
+            continue;
+          }
           // Quarantine corrupted file instead of silently destroying user data
           try {
             const corruptPath = `${filePath}.corrupt-${Date.now()}`;
@@ -490,28 +527,34 @@ class StorageManager {
           if (fs.existsSync(bakPath)) {
             try {
               const bakData = JSON.parse(fs.readFileSync(bakPath, 'utf-8'));
-              this._write(key, bakData);
+              this._write(key, bakData, { skipBackup: true });
               recovered = true;
               console.warn(`[Storage] Recovered corrupted ${key} from .bak backup.`);
             } catch (_) {}
           }
           if (!recovered) {
-            this._write(key, this._cloneDefault(key));
+            this._write(key, this._cloneDefault(key), { skipBackup: true });
           }
         }
       }
     }
   }
 
-  async _atomicWriteFileAsync(filePath, content) {
+  async _atomicWriteFileAsync(filePath, content, { skipBackup = false, removeBackup = false } = {}) {
     const fsp = fs.promises;
     await fsp.mkdir(this.dataDir, { recursive: true });
     const tmpPath = `${filePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const bakPath = `${filePath}.bak`;
     await fsp.writeFile(tmpPath, content, 'utf-8');
-    try {
-      await fsp.copyFile(filePath, bakPath);
-    } catch (_) {}
+    if (removeBackup) {
+      try {
+        await fsp.unlink(bakPath);
+      } catch (_) {}
+    } else if (!skipBackup) {
+      try {
+        await fsp.copyFile(filePath, bakPath);
+      } catch (_) {}
+    }
     try {
       await fsp.rename(tmpPath, filePath);
     } catch (_) {
@@ -530,16 +573,23 @@ class StorageManager {
     else if (key === 'bookmarks') this._memoBookmarkUrlSet = null;
   }
 
-  _write(key, data) {
+  _nextWriteGen(key) {
+    const next = (this._writeGen.get(key) || 0) + 1;
+    this._writeGen.set(key, next);
+    return next;
+  }
+
+  _write(key, data, opts = {}) {
     this.cache[key] = data;
     this._invalidateDerivedCaches(key);
+    this._nextWriteGen(key);
     const pendingTimer = this._pendingWrites?.get(key);
     if (pendingTimer) {
       clearTimeout(pendingTimer);
       this._pendingWrites.delete(key);
     }
     try {
-      this._atomicWriteFile(this.files[key], this._serializeKey(key, data));
+      this._atomicWriteFile(this.files[key], this._serializeKey(key, data), opts);
     } catch (err) {
       console.error(`[Storage] Failed writing ${key}:`, err.message);
     }
@@ -549,18 +599,23 @@ class StorageManager {
   _scheduleWrite(key, data, delayMs = 600) {
     this.cache[key] = data;
     this._invalidateDerivedCaches(key);
+    const gen = this._nextWriteGen(key);
     if (!this._pendingWrites) this._pendingWrites = new Map();
     const existing = this._pendingWrites.get(key);
     if (existing) clearTimeout(existing);
     const timer = setTimeout(() => {
       this._pendingWrites.delete(key);
+      if (this._writeGen.get(key) !== gen) return;
       if (!Object.prototype.hasOwnProperty.call(this.cache, key)) return;
       const filePath = this.files[key];
       const serialized = this._serializeKey(key, this.cache[key]);
       const prev = this._asyncWriteChains?.get(filePath) || Promise.resolve();
       const next = prev
         .catch(() => {})
-        .then(() => this._atomicWriteFileAsync(filePath, serialized))
+        .then(() => {
+          if (this._writeGen.get(key) !== gen) return;
+          return this._atomicWriteFileAsync(filePath, serialized);
+        })
         .catch((err) => {
           console.error(`[Storage] Failed deferred writing ${key}:`, err.message);
         });
@@ -576,6 +631,7 @@ class StorageManager {
       for (const [key, timer] of Array.from(this._pendingWrites.entries())) {
         clearTimeout(timer);
         this._pendingWrites.delete(key);
+        this._nextWriteGen(key);
         if (Object.prototype.hasOwnProperty.call(this.cache, key)) {
           try {
             this._atomicWriteFile(this.files[key], this._serializeKey(key, this.cache[key]));
@@ -727,6 +783,11 @@ class StorageManager {
         profileId: pid,
         isProfileChild: true
       });
+      if (this._useAsyncSafeStorage && this._asyncEncChecked) {
+        child._asyncEncChecked = true;
+        child._asyncEncAvailable = this._asyncEncAvailable;
+        child.initEncryption().catch(() => {});
+      }
       this._profileStorages.set(pid, child);
     }
     return child;
@@ -2035,7 +2096,18 @@ class StorageManager {
   _normalizeBookmarkFavicon(favicon) {
     if (typeof favicon !== 'string') return '';
     const trimmed = favicon.trim();
-    if (/^(https?:\/\/|data:image\/)/i.test(trimmed)) return trimmed;
+    if (!trimmed || /[\u0000-\u001f\u007f]/.test(trimmed)) return '';
+    if (/^data:/i.test(trimmed)) {
+      if (trimmed.length > 32 * 1024) return '';
+      return /^data:image\/(?:png|jpeg|jpg|webp|gif|x-icon|vnd\.microsoft\.icon);base64,[a-z0-9+/=]+$/i.test(trimmed)
+        ? trimmed
+        : '';
+    }
+    if (trimmed.length > 2048) return '';
+    try {
+      const u = new URL(trimmed);
+      if (u.protocol === 'https:' || u.protocol === 'http:') return u.toString();
+    } catch (_) {}
     return '';
   }
 
@@ -2413,7 +2485,7 @@ class StorageManager {
     const target = this._targetFor(profileId);
     if (target !== this) return target.clearHistory(range);
     if (range === 'all') {
-      return this._write('history', []);
+      return this._write('history', [], { skipBackup: true, removeBackup: true });
     }
     const now = Date.now();
     const cutoffs = {
@@ -2425,14 +2497,14 @@ class StorageManager {
     };
     const cutoff = cutoffs[range] || 0;
     const list = this._readOwnHistory().filter(h => (h.visitedAt || 0) < cutoff);
-    return this._write('history', list);
+    return this._write('history', list, { skipBackup: true, removeBackup: true });
   }
 
   removeHistoryItem(id, profileId) {
     const target = this._targetFor(profileId);
     if (target !== this) return target.removeHistoryItem(id);
     const list = this._readOwnHistory().filter(h => h.id !== id);
-    return this._write('history', list);
+    return this._write('history', list, { skipBackup: true, removeBackup: true });
   }
 
   // Recently Closed Tabs
@@ -2476,13 +2548,13 @@ class StorageManager {
     const target = this._targetFor(profileId);
     if (target !== this) return target.removeClosedTab(id);
     const list = this._readOwnClosedTabs().filter((t) => t && t.id !== id);
-    return this._write('closedTabs', list);
+    return this._write('closedTabs', list, { skipBackup: true, removeBackup: true });
   }
 
   clearClosedTabs(profileId) {
     const target = this._targetFor(profileId);
     if (target !== this) return target.clearClosedTabs();
-    return this._write('closedTabs', []);
+    return this._write('closedTabs', [], { skipBackup: true, removeBackup: true });
   }
 
   // Downloads
@@ -2522,17 +2594,20 @@ class StorageManager {
     const target = this._targetFor(profileId);
     if (target !== this) return target.removeDownload(id);
     const list = this._readOwnDownloads().filter(d => d.id !== id);
-    return this._write('downloads', list);
+    return this._write('downloads', list, { skipBackup: true, removeBackup: true });
   }
 
   clearDownloads(profileId) {
     const target = this._targetFor(profileId);
     if (target !== this) return target.clearDownloads();
-    return this._write('downloads', []);
+    return this._write('downloads', [], { skipBackup: true, removeBackup: true });
   }
 
   // Passwords & Autofill
   _isEncryptionAvailable() {
+    if (this._useAsyncSafeStorage) {
+      return Boolean(this._asyncEncAvailable);
+    }
     try {
       return Boolean(
         safeStorage &&
@@ -2542,6 +2617,115 @@ class StorageManager {
     } catch (_) {
       return false;
     }
+  }
+
+  async initEncryption() {
+    if (!this._useAsyncSafeStorage) return this._isEncryptionAvailable();
+    try {
+      this._asyncEncAvailable = Boolean(await safeStorage.isAsyncEncryptionAvailable());
+    } catch (_) {
+      this._asyncEncAvailable = false;
+    }
+    this._asyncEncChecked = true;
+    if (!this._asyncEncAvailable) {
+      this._warnEncryptionUnavailableOnce();
+      return false;
+    }
+
+    // Hydrate & migrate passwords via async safeStorage APIs (zero deprecated sync calls)
+    const rawPw = Array.isArray(this.cache.passwords) ? [...this.cache.passwords] : [];
+    let pwChanged = false;
+    for (let i = 0; i < rawPw.length; i++) {
+      const entry = rawPw[i];
+      if (!entry || typeof entry !== 'object') continue;
+      if (typeof entry.encryptedPassword === 'string') {
+        if (!this._decryptedSecrets.has(entry.encryptedPassword)) {
+          try {
+            const plain = await safeStorage.decryptStringAsync(Buffer.from(entry.encryptedPassword, 'base64'));
+            this._decryptedSecrets.set(entry.encryptedPassword, plain);
+          } catch (err) {
+            console.warn('[Storage] Failed to decrypt a stored password entry:', err.message);
+          }
+        }
+      } else if (typeof entry.password === 'string') {
+        try {
+          const b64 = (await safeStorage.encryptStringAsync(entry.password)).toString('base64');
+          this._decryptedSecrets.set(b64, entry.password);
+          const { password: _pw, _ephemeralPlain: _ep, ...rest } = entry;
+          rawPw[i] = { ...rest, encryptedPassword: b64 };
+          pwChanged = true;
+        } catch (err) {
+          console.warn('[Storage] Failed to migrate password entry:', err.message);
+        }
+      }
+    }
+    if (pwChanged) {
+      this._write('passwords', rawPw, { skipBackup: true, removeBackup: true });
+    }
+
+    // Hydrate & migrate payment methods via async safeStorage APIs
+    const rawCards = Array.isArray(this.cache.paymentMethods) ? [...this.cache.paymentMethods] : [];
+    let cardsChanged = false;
+    for (let i = 0; i < rawCards.length; i++) {
+      const card = rawCards[i];
+      if (!card || typeof card !== 'object') continue;
+      if (typeof card.encryptedNumber === 'string') {
+        if (!this._decryptedSecrets.has(card.encryptedNumber)) {
+          try {
+            const plain = await safeStorage.decryptStringAsync(Buffer.from(card.encryptedNumber, 'base64'));
+            this._decryptedSecrets.set(card.encryptedNumber, plain);
+          } catch (err) {
+            console.warn('[Storage] Failed to decrypt payment secret:', err.message);
+          }
+        }
+      } else if (typeof card.number === 'string' && card.number) {
+        try {
+          const b64 = (await safeStorage.encryptStringAsync(card.number)).toString('base64');
+          this._decryptedSecrets.set(b64, card.number);
+          const { number: _num, _ephemeralPlain: _ep, ...rest } = card;
+          rawCards[i] = { ...rest, encryptedNumber: b64 };
+          cardsChanged = true;
+        } catch (err) {
+          console.warn('[Storage] Failed to migrate payment card:', err.message);
+        }
+      }
+    }
+    if (cardsChanged) {
+      this._write('paymentMethods', rawCards, { skipBackup: true, removeBackup: true });
+    }
+
+    if (!this.isProfileChild && this._profileStorages instanceof Map) {
+      for (const child of this._profileStorages.values()) {
+        if (child && typeof child.initEncryption === 'function') {
+          await child.initEncryption();
+        }
+      }
+    }
+    return true;
+  }
+
+  _queueAsyncFieldEncryption(storeKey, recordId, encryptedField, plainSecret) {
+    if (!this._useAsyncSafeStorage || !this._asyncEncAvailable) return;
+    safeStorage
+      .encryptStringAsync(plainSecret)
+      .then((buf) => {
+        const b64 = buf.toString('base64');
+        this._decryptedSecrets.set(b64, plainSecret);
+        const list = Array.isArray(this.cache[storeKey]) ? [...this.cache[storeKey]] : [];
+        const idx = list.findIndex((item) => item && item.id === recordId);
+        if (idx === -1) return;
+        const cur = list[idx];
+        if (cur._ephemeralPlain !== undefined && cur._ephemeralPlain !== plainSecret) return;
+        const next = { ...cur, [encryptedField]: b64 };
+        delete next._ephemeralPlain;
+        delete next.password;
+        delete next.number;
+        list[idx] = next;
+        this._write(storeKey, list, { skipBackup: true, removeBackup: true });
+      })
+      .catch((err) => {
+        console.warn(`[Storage] Async encryption failed for ${storeKey}:`, err.message);
+      });
   }
 
   _warnEncryptionUnavailableOnce() {
@@ -2554,7 +2738,21 @@ class StorageManager {
     const cleanEntry = { ...entry };
     delete cleanEntry.password;
     delete cleanEntry.encryptedPassword;
+    delete cleanEntry._ephemeralPlain;
     const secret = String(plainPassword ?? '');
+
+    if (this._useAsyncSafeStorage) {
+      if (this._asyncEncAvailable) {
+        cleanEntry._ephemeralPlain = secret;
+        if (cleanEntry.id) {
+          this._queueAsyncFieldEncryption('passwords', cleanEntry.id, 'encryptedPassword', secret);
+        }
+        return cleanEntry;
+      }
+      this._warnEncryptionUnavailableOnce();
+      cleanEntry.password = secret;
+      return cleanEntry;
+    }
 
     if (this._isEncryptionAvailable()) {
       try {
@@ -2574,10 +2772,17 @@ class StorageManager {
 
   _decodePasswordRecord(entry) {
     if (!entry || typeof entry !== 'object') return null;
-    const { encryptedPassword, password, ...rest } = entry;
+    const { encryptedPassword, password, _ephemeralPlain, ...rest } = entry;
+
+    if (typeof _ephemeralPlain === 'string') {
+      return { ...rest, password: _ephemeralPlain };
+    }
 
     if (typeof encryptedPassword === 'string') {
-      if (this._isEncryptionAvailable()) {
+      if (this._decryptedSecrets.has(encryptedPassword)) {
+        return { ...rest, password: this._decryptedSecrets.get(encryptedPassword) };
+      }
+      if (!this._useAsyncSafeStorage && this._isEncryptionAvailable()) {
         try {
           const decrypted = safeStorage.decryptString(Buffer.from(encryptedPassword, 'base64'));
           return { ...rest, password: decrypted };
@@ -2596,7 +2801,7 @@ class StorageManager {
   _migratePasswords() {
     const rawList = this.cache.passwords;
     if (!Array.isArray(rawList)) {
-      this._write('passwords', []);
+      this._write('passwords', [], { skipBackup: true, removeBackup: true });
       return;
     }
 
@@ -2619,7 +2824,34 @@ class StorageManager {
     });
 
     if (migrated) {
-      this._write('passwords', updated);
+      this._write('passwords', updated, { skipBackup: true, removeBackup: true });
+    }
+  }
+
+  _migratePaymentMethods() {
+    const rawList = this.cache.paymentMethods;
+    if (!Array.isArray(rawList)) {
+      this._write('paymentMethods', [], { skipBackup: true, removeBackup: true });
+      return;
+    }
+    if (!this._isEncryptionAvailable()) return;
+
+    let migrated = false;
+    const updated = rawList.map((entry) => {
+      if (!entry || typeof entry !== 'object') return entry;
+      if (typeof entry.number === 'string' && entry.number) {
+        const enc = this._encryptSecretString(entry.number);
+        if (typeof enc.encryptedSecret === 'string') {
+          const { number: _num, ...rest } = entry;
+          migrated = true;
+          return { ...rest, encryptedNumber: enc.encryptedSecret };
+        }
+      }
+      return entry;
+    });
+
+    if (migrated) {
+      this._write('paymentMethods', updated, { skipBackup: true, removeBackup: true });
     }
   }
 
@@ -2672,13 +2904,20 @@ class StorageManager {
       return { ok: false, error: 'Password cannot be empty.', passwords: this._readOwnPasswords() };
     }
     const rawList = Array.isArray(this.get('passwords')) ? [...this.get('passwords')] : [];
-    const existingIdx = rawList.findIndex((p) => p && p.site === cleanSite && p.username === cleanUser);
+    const normSite = cleanSite.toLowerCase();
+    const existingIdx = rawList.findIndex(
+      (p) => p && String(p.site || '').trim().toLowerCase() === normSite && p.username === cleanUser
+    );
     if (existingIdx !== -1) {
       rawList[existingIdx] = this._encodePasswordRecord(
-        { ...rawList[existingIdx], updatedAt: Date.now() },
+        { ...rawList[existingIdx], site: cleanSite, updatedAt: Date.now() },
         password
       );
-      this._write('passwords', rawList);
+      if (!this._useAsyncSafeStorage || !this._asyncEncAvailable) {
+        this._write('passwords', rawList);
+      } else {
+        this.cache.passwords = rawList;
+      }
       return this._readOwnPasswords();
     }
 
@@ -2689,7 +2928,11 @@ class StorageManager {
       createdAt: Date.now()
     };
     rawList.unshift(this._encodePasswordRecord(baseRecord, password));
-    this._write('passwords', rawList);
+    if (!this._useAsyncSafeStorage || !this._asyncEncAvailable) {
+      this._write('passwords', rawList);
+    } else {
+      this.cache.passwords = rawList;
+    }
     return this._readOwnPasswords();
   }
 
@@ -2749,7 +2992,11 @@ class StorageManager {
       updatedAt: Date.now()
     };
     rawList[idx] = this._encodePasswordRecord(updatedBase, nextPass);
-    this._write('passwords', rawList);
+    if (!this._useAsyncSafeStorage || !this._asyncEncAvailable) {
+      this._write('passwords', rawList);
+    } else {
+      this.cache.passwords = rawList;
+    }
     const passwords = this._readOwnPasswords();
     return {
       ok: true,
@@ -2763,7 +3010,7 @@ class StorageManager {
     if (target !== this) return target.removePassword(id);
     const rawList = Array.isArray(this.get('passwords')) ? this.get('passwords') : [];
     const list = rawList.filter((p) => p && p.id !== id);
-    this._write('passwords', list);
+    this._write('passwords', list, { skipBackup: true, removeBackup: true });
     return this._readOwnPasswords();
   }
 
@@ -2771,7 +3018,7 @@ class StorageManager {
   clearPasswords(profileId) {
     const target = this._targetFor(profileId);
     if (target !== this) return target.clearPasswords();
-    this._write('passwords', []);
+    this._write('passwords', [], { skipBackup: true, removeBackup: true });
     return [];
   }
 
@@ -2779,7 +3026,7 @@ class StorageManager {
   clearAllSitePermissions(profileId) {
     const target = this._targetFor(profileId);
     if (target !== this) return target.clearAllSitePermissions();
-    this._write('sitePermissions', {});
+    this._write('sitePermissions', {}, { skipBackup: true, removeBackup: true });
     return { ok: true, sitePermissions: {} };
   }
 
@@ -2866,14 +3113,14 @@ class StorageManager {
     const target = this._targetFor(profileId);
     if (target !== this) return target.removeAddress(id);
     const list = this._readOwnAddresses().filter((a) => a && a.id !== id);
-    this._write('addresses', list);
+    this._write('addresses', list, { skipBackup: true, removeBackup: true });
     return this._readOwnAddresses();
   }
 
   clearAddresses(profileId) {
     const target = this._targetFor(profileId);
     if (target !== this) return target.clearAddresses();
-    this._write('addresses', []);
+    this._write('addresses', [], { skipBackup: true, removeBackup: true });
     return [];
   }
 
@@ -2883,8 +3130,18 @@ class StorageManager {
   // masked entries; the full number is only returned by
   // getPaymentMethodsForAutofill (used by the page fill engine, same trust
   // level as passwords:get).
-  _encryptSecretString(secret) {
+  _encryptSecretString(secret, recordId = '') {
     const value = String(secret ?? '');
+    if (this._useAsyncSafeStorage) {
+      if (this._asyncEncAvailable) {
+        if (recordId) {
+          this._queueAsyncFieldEncryption('paymentMethods', recordId, 'encryptedNumber', value);
+        }
+        return { ephemeralPlain: value };
+      }
+      this._warnEncryptionUnavailableOnce();
+      return { secret: value };
+    }
     if (this._isEncryptionAvailable()) {
       try {
         return { encryptedSecret: safeStorage.encryptString(value).toString('base64') };
@@ -2899,8 +3156,12 @@ class StorageManager {
 
   _decryptSecretString(record) {
     if (!record || typeof record !== 'object') return '';
+    if (typeof record.ephemeralPlain === 'string') return record.ephemeralPlain;
     if (typeof record.encryptedSecret === 'string') {
-      if (this._isEncryptionAvailable()) {
+      if (this._decryptedSecrets.has(record.encryptedSecret)) {
+        return this._decryptedSecrets.get(record.encryptedSecret);
+      }
+      if (!this._useAsyncSafeStorage && this._isEncryptionAvailable()) {
         try {
           return safeStorage.decryptString(Buffer.from(record.encryptedSecret, 'base64'));
         } catch (err) {
@@ -2945,14 +3206,21 @@ class StorageManager {
 
   _maskPaymentMethod(raw) {
     if (!raw || typeof raw !== 'object') return null;
-    const { encryptedNumber, number, ...rest } = raw;
+    const { encryptedNumber, number, _ephemeralPlain, ...rest } = raw;
     return { ...rest, number: '', last4: raw.last4 || '' };
   }
 
   _decodePaymentMethod(raw) {
     if (!raw || typeof raw !== 'object') return null;
-    const { encryptedNumber, number, ...rest } = raw;
-    return { ...rest, number: this._decryptSecretString({ encryptedSecret: encryptedNumber, secret: number }) };
+    const { encryptedNumber, number, _ephemeralPlain, ...rest } = raw;
+    return {
+      ...rest,
+      number: this._decryptSecretString({
+        encryptedSecret: encryptedNumber,
+        secret: number,
+        ephemeralPlain: _ephemeralPlain
+      })
+    };
   }
 
   getPaymentMethods(profileId) {
@@ -2984,10 +3252,11 @@ class StorageManager {
     if (!name) {
       return { ok: false, error: 'Cardholder name cannot be empty.', paymentMethods: this.getPaymentMethods() };
     }
-    const enc = this._encryptSecretString(digits);
+    const recordId = 'card-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+    const enc = this._encryptSecretString(digits, recordId);
     const list = [...this._readOwnPaymentMethods()];
     const record = {
-      id: 'card-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      id: recordId,
       label: typeof entry.label === 'string' ? entry.label.trim().slice(0, 60) : '',
       cardholderName: name,
       brand: this._detectCardBrand(digits),
@@ -2996,10 +3265,18 @@ class StorageManager {
       expiryYear: year,
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      ...(enc.encryptedSecret ? { encryptedNumber: enc.encryptedSecret } : { number: enc.secret })
+      ...(enc.encryptedSecret
+        ? { encryptedNumber: enc.encryptedSecret }
+        : enc.ephemeralPlain !== undefined
+        ? { _ephemeralPlain: enc.ephemeralPlain }
+        : { number: enc.secret })
     };
     list.unshift(record);
-    this._write('paymentMethods', list);
+    if (!this._useAsyncSafeStorage || !this._asyncEncAvailable) {
+      this._write('paymentMethods', list);
+    } else {
+      this.cache.paymentMethods = list;
+    }
     return { ok: true, paymentMethods: this.getPaymentMethods() };
   }
 
@@ -3032,17 +3309,23 @@ class StorageManager {
       if (!this._luhnValid(digits)) {
         return { ok: false, error: 'Enter a valid card number.', paymentMethods: this.getPaymentMethods() };
       }
-      const enc = this._encryptSecretString(digits);
+      const enc = this._encryptSecretString(digits, current.id);
       delete next.number;
       delete next.encryptedNumber;
+      delete next._ephemeralPlain;
       if (enc.encryptedSecret) next.encryptedNumber = enc.encryptedSecret;
+      else if (enc.ephemeralPlain !== undefined) next._ephemeralPlain = enc.ephemeralPlain;
       else next.number = enc.secret;
       next.brand = this._detectCardBrand(digits);
       next.last4 = digits.slice(-4);
     }
     next.updatedAt = Date.now();
     list[idx] = next;
-    this._write('paymentMethods', list);
+    if (!this._useAsyncSafeStorage || !this._asyncEncAvailable) {
+      this._write('paymentMethods', list);
+    } else {
+      this.cache.paymentMethods = list;
+    }
     return { ok: true, paymentMethods: this.getPaymentMethods() };
   }
 
@@ -3050,14 +3333,14 @@ class StorageManager {
     const target = this._targetFor(profileId);
     if (target !== this) return target.removePaymentMethod(id);
     const list = this._readOwnPaymentMethods().filter((m) => m && m.id !== id);
-    this._write('paymentMethods', list);
+    this._write('paymentMethods', list, { skipBackup: true, removeBackup: true });
     return this.getPaymentMethods();
   }
 
   clearPaymentMethods(profileId) {
     const target = this._targetFor(profileId);
     if (target !== this) return target.clearPaymentMethods();
-    this._write('paymentMethods', []);
+    this._write('paymentMethods', [], { skipBackup: true, removeBackup: true });
     return [];
   }
 
@@ -3107,7 +3390,11 @@ class StorageManager {
     }
 
     if (added > 0) {
-      this._write('passwords', rawList);
+      if (!this._useAsyncSafeStorage || !this._asyncEncAvailable) {
+        this._write('passwords', rawList);
+      } else {
+        this.cache.passwords = rawList;
+      }
     }
     return {
       ok: true,
@@ -3148,12 +3435,13 @@ class StorageManager {
     const target = this._targetFor(profileId);
     if (target !== this) return target.addSpeedDial({ title, url });
     const list = [...this._readOwnSpeedDial()];
-    const formattedUrl = normalizeSavedUrl(url || '');
+    const formattedUrl = this._normalizeBookmarkUrl(url || '');
+    if (!formattedUrl) return list;
     let domain = '';
     try {
       domain = new URL(formattedUrl).hostname.replace(/^www\./, '');
     } catch (_) {}
-    const cleanTitle = title || domain || formattedUrl;
+    const cleanTitle = (typeof title === 'string' ? title.trim() : '') || domain || formattedUrl;
     const item = {
       id: 'sd-' + Date.now(),
       title: cleanTitle,
@@ -3178,7 +3466,8 @@ class StorageManager {
     const list = [...this._readOwnSpeedDial()];
     const idx = list.findIndex((s) => s && s.id === id);
     if (idx === -1) return list;
-    const formattedUrl = normalizeSavedUrl(url || '');
+    const formattedUrl = this._normalizeBookmarkUrl(url || '');
+    if (!formattedUrl) return list;
     let domain = '';
     try {
       domain = new URL(formattedUrl).hostname.replace(/^www\./, '');
@@ -3497,7 +3786,7 @@ class StorageManager {
 
   clearPanicSnapshot(profileId) {
     const target = this._targetFor(profileId);
-    return target._write('panicSnapshot', null);
+    return target._write('panicSnapshot', null, { skipBackup: true, removeBackup: true });
   }
 }
 

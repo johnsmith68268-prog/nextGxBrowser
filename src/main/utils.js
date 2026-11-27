@@ -4,10 +4,18 @@ const path = require('path');
 const { fileURLToPath } = require('url');
 const {
   UI_DIR,
+  NEW_TAB_FILE,
+  CORNER_FILE,
+  WEBUI_FILE,
+  ONBOARDING_FILE,
+  SPLIT_PICKER_FILE,
+  ERROR_PAGE_FILE,
+  PLAYER_PANEL_FILE,
   NEW_TAB_FILE_URL,
   CORNER_FILE_URL,
   WEBUI_FILE_URL,
   ONBOARDING_FILE_URL,
+  SPLIT_PICKER_FILE_URL,
   ERROR_PAGE_FILE_URL,
   PLAYER_PANEL_FILE_URL,
   state
@@ -60,7 +68,7 @@ function resolveSafeDownloadPath(targetPath) {
       if (err && err.code === 'ENOENT') {
         try {
           if (fs.lstatSync(resolved).isSymbolicLink()) return null;
-        } catch (_) {}
+        } catch (_) { }
         try {
           const realParent = fs.realpathSync(path.dirname(resolved));
           if (
@@ -69,7 +77,7 @@ function resolveSafeDownloadPath(targetPath) {
           ) {
             return null;
           }
-        } catch (_) {}
+        } catch (_) { }
         return resolved;
       }
       return null;
@@ -89,6 +97,9 @@ function normalizeAutofillHost(raw) {
     if (!host || host.startsWith('.') || host.includes('..')) return '';
     if (/^www\.[^.]+\./.test(host)) {
       host = host.slice(4);
+    }
+    if (u.port && (host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1')) {
+      return `${host}:${u.port}`;
     }
     return host;
   } catch (_) {
@@ -126,7 +137,7 @@ function sanitizeFaviconUrl(rawUrl) {
     if (u.protocol === 'https:' || u.protocol === 'http:') {
       return u.toString();
     }
-  } catch (_) {}
+  } catch (_) { }
   return '';
 }
 
@@ -136,12 +147,27 @@ function attachInternalNavigationGuard(wc) {
   wc._nxInternalGuardAttached = true;
   try {
     wc.setWindowOpenHandler(() => ({ action: 'deny' }));
-  } catch (_) {}
+  } catch (_) { }
   wc.on('will-navigate', (event, targetUrl) => {
     if (!resolveInternalUiFile(targetUrl)) {
       event.preventDefault();
     }
   });
+}
+
+function matchesInternalUiPage(urlStr, targetFile, mockPathname) {
+  if (typeof urlStr !== 'string' || !urlStr.startsWith('file:')) return false;
+  const resolved = resolveInternalUiFile(urlStr);
+  if (resolved) {
+    return normalizePathForCompare(resolved) === normalizePathForCompare(targetFile);
+  }
+  try {
+    const u = new URL(urlStr);
+    if (u.protocol === 'file:' && !u.hostname && u.pathname === mockPathname) {
+      return true;
+    }
+  } catch (_) {}
+  return false;
 }
 
 function isNewTabUrl(urlStr) {
@@ -151,8 +177,7 @@ function isNewTabUrl(urlStr) {
     urlStr === 'nextgx://newtab' ||
     urlStr === 'gx://newtab' ||
     urlStr === 'chrome://newtab' ||
-    urlStr.startsWith(NEW_TAB_FILE_URL) ||
-    (urlStr.startsWith('file:') && urlStr.includes('/src/ui/newtab.html'))
+    matchesInternalUiPage(urlStr, NEW_TAB_FILE, '/src/ui/newtab.html')
   );
 }
 
@@ -165,17 +190,13 @@ function isCornerUrl(urlStr) {
     urlStr === 'nextgx://corner/' ||
     urlStr === 'gx://corner/' ||
     urlStr === 'chrome://corner/' ||
-    urlStr.startsWith(CORNER_FILE_URL) ||
-    (urlStr.startsWith('file:') && urlStr.includes('/src/ui/corner.html'))
+    matchesInternalUiPage(urlStr, CORNER_FILE, '/src/ui/corner.html')
   );
 }
 
 function isWebUiUrl(urlStr) {
   if (!urlStr || typeof urlStr !== 'string') return false;
-  return (
-    urlStr.startsWith(WEBUI_FILE_URL) ||
-    (urlStr.startsWith('file:') && urlStr.includes('/src/ui/chrome-webui.html'))
-  );
+  return matchesInternalUiPage(urlStr, WEBUI_FILE, '/src/ui/chrome-webui.html');
 }
 
 function isOnboardingUrl(urlStr) {
@@ -184,25 +205,27 @@ function isOnboardingUrl(urlStr) {
     urlStr === 'nextgx://welcome' ||
     urlStr === 'nextgx://setup' ||
     urlStr === 'nextgx://onboarding' ||
-    urlStr.startsWith(ONBOARDING_FILE_URL) ||
-    (urlStr.startsWith('file:') && urlStr.includes('/src/ui/onboarding.html'))
+    matchesInternalUiPage(urlStr, ONBOARDING_FILE, '/src/ui/onboarding.html')
+  );
+}
+
+function isSplitPickerUrl(urlStr) {
+  if (!urlStr || typeof urlStr !== 'string') return false;
+  return (
+    urlStr === 'nextgx://split-picker' ||
+    urlStr === 'nextgx://split' ||
+    matchesInternalUiPage(urlStr, SPLIT_PICKER_FILE, '/src/ui/split-picker.html')
   );
 }
 
 function isErrorPageUrl(urlStr) {
   if (!urlStr || typeof urlStr !== 'string') return false;
-  return (
-    urlStr.startsWith(ERROR_PAGE_FILE_URL) ||
-    (urlStr.startsWith('file:') && urlStr.includes('/src/ui/error.html'))
-  );
+  return matchesInternalUiPage(urlStr, ERROR_PAGE_FILE, '/src/ui/error.html');
 }
 
 function isPlayerPanelUrl(urlStr) {
   if (!urlStr || typeof urlStr !== 'string') return false;
-  return (
-    urlStr.startsWith(PLAYER_PANEL_FILE_URL) ||
-    (urlStr.startsWith('file:') && urlStr.includes('/src/ui/player.html'))
-  );
+  return matchesInternalUiPage(urlStr, PLAYER_PANEL_FILE, '/src/ui/player.html');
 }
 
 function getInternalUiQuery(incognito = false, profileId) {
@@ -213,7 +236,7 @@ function getInternalUiQuery(incognito = false, profileId) {
 }
 
 function appendInternalUrlParams(rawUrl, ctx) {
-  if (!isNewTabUrl(rawUrl) && !isCornerUrl(rawUrl) && !isWebUiUrl(rawUrl) && !isOnboardingUrl(rawUrl) && !isErrorPageUrl(rawUrl)) return rawUrl;
+  if (!isNewTabUrl(rawUrl) && !isCornerUrl(rawUrl) && !isWebUiUrl(rawUrl) && !isOnboardingUrl(rawUrl) && !isSplitPickerUrl(rawUrl) && !isErrorPageUrl(rawUrl)) return rawUrl;
   try {
     const u = new URL(rawUrl);
     if (u.protocol !== 'file:') return rawUrl;
@@ -234,7 +257,7 @@ function getOriginForUrl(rawUrl) {
   try {
     const u = new URL(rawUrl);
     if (u.protocol === 'http:' || u.protocol === 'https:') return u.origin;
-  } catch (_) {}
+  } catch (_) { }
   return '';
 }
 
@@ -260,6 +283,7 @@ module.exports = {
   isCornerUrl,
   isWebUiUrl,
   isOnboardingUrl,
+  isSplitPickerUrl,
   isErrorPageUrl,
   isPlayerPanelUrl,
   getInternalUiQuery,

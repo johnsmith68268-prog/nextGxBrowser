@@ -13,10 +13,22 @@ const path = require('node:path');
 const ROOT = path.join(__dirname, '..');
 const webuiJs = fs.readFileSync(path.join(ROOT, 'src', 'ui', 'chrome-webui.js'), 'utf8');
 const webuiHtml = fs.readFileSync(path.join(ROOT, 'src', 'ui', 'chrome-webui.html'), 'utf8');
-const errorHtml = fs.readFileSync(path.join(ROOT, 'src', 'ui', 'error.html'), 'utf8');
-const sidebarHtml = fs.readFileSync(path.join(ROOT, 'src', 'ui', 'sidebar-panel-chrome.html'), 'utf8');
-const popoverHtml = fs.readFileSync(path.join(ROOT, 'src', 'ui', 'popover.html'), 'utf8');
-const newtabHtml = fs.readFileSync(path.join(ROOT, 'src', 'ui', 'newtab.html'), 'utf8');
+const errorHtml =
+  fs.readFileSync(path.join(ROOT, 'src', 'ui', 'error.html'), 'utf8') +
+  '\n' +
+  fs.readFileSync(path.join(ROOT, 'src', 'ui', 'error.js'), 'utf8');
+const sidebarHtml =
+  fs.readFileSync(path.join(ROOT, 'src', 'ui', 'sidebar-panel-chrome.html'), 'utf8') +
+  '\n' +
+  fs.readFileSync(path.join(ROOT, 'src', 'ui', 'sidebar-panel-chrome.js'), 'utf8');
+const popoverHtml =
+  fs.readFileSync(path.join(ROOT, 'src', 'ui', 'popover.html'), 'utf8') +
+  '\n' +
+  fs.readFileSync(path.join(ROOT, 'src', 'ui', 'popover.js'), 'utf8');
+const newtabHtml =
+  fs.readFileSync(path.join(ROOT, 'src', 'ui', 'newtab.html'), 'utf8') +
+  '\n' +
+  fs.readFileSync(path.join(ROOT, 'src', 'ui', 'newtab.js'), 'utf8');
 const indexHtml = fs.readFileSync(path.join(ROOT, 'src', 'ui', 'index.html'), 'utf8');
 
 // 1. A3 — History ⋮ menu dismisses after every action, including Remove.

@@ -10,6 +10,8 @@ const {
   isNewTabUrl,
   isCornerUrl,
   isWebUiUrl,
+  isOnboardingUrl,
+  isSplitPickerUrl,
   isErrorPageUrl,
   appendInternalUrlParams,
   sanitizeFaviconUrl,
@@ -166,7 +168,7 @@ function buildWebContentsViewForTab(ctx, tab) {
 
   wc.on('focus', () => {
     splitView.onTabWebContentsFocused(ctx, tab.id);
-    if (ctx.popoverOpenKind) closePopover(ctx);
+    if (ctx.popoverOpenKind) closePopover(ctx, { restoreFocus: false });
     drawerOverlayMod().closeShellDrawer(ctx);
     sidebarMod().closeSidebarIfUnpinned(ctx, { restoreFocus: false });
   });
@@ -179,7 +181,9 @@ function buildWebContentsViewForTab(ctx, tab) {
         url,
         incognito: ctx.incognito,
         active: !openInBg,
-        insertIndex: parentIdx >= 0 ? parentIdx + 1 : undefined
+        insertIndex: parentIdx >= 0 ? parentIdx + 1 : undefined,
+        workspaceId: !tab.pinned ? tab.workspaceId : undefined,
+        groupId: !tab.pinned ? tab.groupId : null
       });
     }
     return { action: 'deny' };
@@ -217,6 +221,8 @@ function buildWebContentsViewForTab(ctx, tab) {
     isNewTabUrl(url) ||
     isCornerUrl(url) ||
     isWebUiUrl(url) ||
+    isOnboardingUrl(url) ||
+    isSplitPickerUrl(url) ||
     isErrorPageUrl(url) ||
     url.startsWith('chrome-error://');
 
@@ -264,11 +270,19 @@ function buildWebContentsViewForTab(ctx, tab) {
 
   const handleUrlChange = (url) => {
     if (url && url.startsWith('chrome-error://')) return;
-    const prevOrigin = getOriginForUrl(tab.url);
+    if (!isSplitPickerUrl(url)) {
+      tab.isSplitPicker = false;
+    }
+    const prevOrigin = tab._committedOrigin || getOriginForUrl(tab.url);
     if (url && url !== tab.url) {
       tab.navSeq = (tab.navSeq || 0) + 1;
     }
     tab.url = url;
+    if (!isErrorPageUrl(url)) {
+      tab._committedOrigin = getOriginForUrl(url);
+      tab.failedErrorCode = 0;
+      tab.failedErrorDesc = '';
+    }
     // [TABS-W2] Mute follows the site: navigating a muted tab to another
     // origin unmutes it, navigating onto a muted origin mutes it.
     try {
@@ -349,7 +363,14 @@ function buildWebContentsViewForTab(ctx, tab) {
 
   wc.on('did-fail-load', (_e, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (!isMainFrame) return;
-    if (!errorCode || errorCode === -3 || errorDescription === 'ERR_ABORTED') return;
+    if (!errorCode || errorCode === -3 || errorDescription === 'ERR_ABORTED') {
+      if (tab._preRedirectUrl && tab.url !== tab._preRedirectUrl) {
+        tab.url = tab._preRedirectUrl;
+        tab._preRedirectUrl = '';
+        broadcastState(ctx);
+      }
+      return;
+    }
 
     const failedUrl = validatedURL || tab.url || '';
     if (
@@ -366,8 +387,11 @@ function buildWebContentsViewForTab(ctx, tab) {
 
     const errorPageUrl = buildErrorPageUrl({ failedUrl, errorCode, errorDescription }, ctx);
     const canLoadErrorPage = !wc.isDestroyed();
+    tab._preRedirectUrl = '';
     tab.isLoading = canLoadErrorPage;
     tab.failedUrl = failedUrl;
+    tab.failedErrorCode = errorCode;
+    tab.failedErrorDesc = errorDescription || '';
     tab.title = formatFailedTabTitle(failedUrl);
     tab.favicon = '';
     tab.url = errorPageUrl;
@@ -383,12 +407,15 @@ function buildWebContentsViewForTab(ctx, tab) {
   wc.on('did-redirect-navigation', (_e, url, _isInPlace, isMainFrame) => {
     if (!isMainFrame || !url || url.startsWith('chrome-error://')) return;
     if (url !== tab.url) {
+      if (!tab._preRedirectUrl) tab._preRedirectUrl = tab.url;
+      if (!tab._committedOrigin) tab._committedOrigin = getOriginForUrl(tab.url);
       tab.url = url;
       tab.navSeq = (tab.navSeq || 0) + 1;
       broadcastState(ctx);
     }
   });
   wc.on('did-navigate', (_e, url) => {
+    tab._preRedirectUrl = '';
     clearTabAudioHoldTimer(tab);
     tab.readerMode = false;
     tab._forceDarkCssKey = null;
@@ -548,6 +575,8 @@ function createTabInternal(
       : 'Start Page'
     : isCornerUrl(resolvedUrl)
     ? 'GX Corner'
+    : isSplitPickerUrl(resolvedUrl)
+    ? 'Split View'
     : typeof title === 'string' && title.trim()
     ? title.trim().slice(0, 300)
     : 'Loading...';
@@ -683,6 +712,11 @@ function wakeTab(ctx, tab) {
   tab.lastActiveAt = Date.now();
   tab.view = buildWebContentsViewForTab(ctx, tab);
   const wc = tab.view.webContents;
+  if (tab.muted && !wc.isDestroyed()) {
+    try {
+      wc.setAudioMuted(true);
+    } catch (_) {}
+  }
   const applyTabZoom = () => {
     if (!wc.isDestroyed()) {
       wc.setZoomFactor(tab.zoomFactor || 1);
@@ -785,6 +819,7 @@ function sleepTab(ctx, tabId) {
   tab.audible = false;
   updateActiveViewBounds(ctx);
   broadcastState(ctx);
+  pumpQueuedBackgroundTabs(ctx);
   return serializeTabs(ctx);
 }
 
@@ -859,6 +894,7 @@ function closeTab(ctx, tabId, opts = {}) {
   }
 
   const prunedGroup = prevGroupId ? pruneGroupIfEmpty(ctx, prevGroupId, { broadcast: false }) : false;
+  pumpQueuedBackgroundTabs(ctx);
 
   if (ctx.tabOrder.length === 0) {
     if (skipAutoNewTab) {
@@ -866,7 +902,7 @@ function closeTab(ctx, tabId, opts = {}) {
       if (prunedGroup) broadcastGroupsChange(ctx);
       return serializeTabs(ctx);
     }
-    const s = state.storage.getSettings();
+    const s = state.storage.getSettings(ctx.profileId);
     if (!skipSessionClose && s.closeWindowOnLastTab) {
       if (prunedGroup) broadcastGroupsChange(ctx);
       ctx.win?.close();
@@ -969,6 +1005,7 @@ function closeOtherTabs(ctx, keepTabId) {
   ctx.tabOrder = ctx.tabOrder.filter((id) => ctx.tabs.has(id));
   syncTabsMapOrder(ctx);
   splitView.onTabsClosed(ctx, closedIds);
+  pumpQueuedBackgroundTabs(ctx);
 
   if (ctx.workspaceLastActiveTab instanceof Map && closedIds.size > 0) {
     for (const [wsId, lastId] of ctx.workspaceLastActiveTab.entries()) {
@@ -1118,6 +1155,7 @@ function closeTabsToRight(ctx, tabId) {
   ctx.tabOrder = ctx.tabOrder.filter((id) => ctx.tabs.has(id));
   syncTabsMapOrder(ctx);
   splitView.onTabsClosed(ctx, closedIds);
+  pumpQueuedBackgroundTabs(ctx);
   if (ctx.workspaceLastActiveTab instanceof Map && closedIds.size > 0) {
     for (const [wsId, lastId] of ctx.workspaceLastActiveTab.entries()) {
       if (closedIds.has(lastId)) ctx.workspaceLastActiveTab.delete(wsId);
@@ -1745,7 +1783,11 @@ function togglePinTab(ctx, tabId) {
   } else {
     if (ctx.incognito) {
       tab.workspaceId = DEFAULT_WORKSPACE_ID;
-    } else if (!tab.workspaceId || !hasWorkspace(tab.workspaceId)) {
+    } else if (
+      !tab.workspaceId ||
+      !hasWorkspace(tab.workspaceId) ||
+      splitView.isTabInSplit(ctx, tab.id)
+    ) {
       tab.workspaceId = ctx.activeWorkspaceId || DEFAULT_WORKSPACE_ID;
     }
     if (!ctx.incognito && tab.id === ctx.activeTabId && tab.workspaceId !== ctx.activeWorkspaceId) {
@@ -1790,7 +1832,11 @@ function navigateActiveTab(ctx, input) {
   if (!tab) return;
   if (tab.sleeping) wakeTab(ctx, tab);
   const resolvedUrl = appendInternalUrlParams(resolveNavigateInput(input), ctx);
+  tab.isSplitPicker = false;
+  tab._preRedirectUrl = '';
   tab.failedUrl = '';
+  tab.failedErrorCode = 0;
+  tab.failedErrorDesc = '';
   tab.url = resolvedUrl;
   tab.navSeq = (tab.navSeq || 0) + 1;
   tab.explicitNavSeq = (tab.explicitNavSeq || 0) + 1;

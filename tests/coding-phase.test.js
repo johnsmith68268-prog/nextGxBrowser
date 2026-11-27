@@ -62,11 +62,16 @@ test('GX-2: WebUI emblem file exists and the header no longer shows a broken ima
   assert.deepEqual(Array.from(buf.subarray(0, 8)), [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
   assert.ok(buf.length > 50000, `emblem should be a real raster icon, got ${buf.length} bytes`);
   const html = fs.readFileSync(path.join(ROOT, 'src', 'ui', 'chrome-webui.html'), 'utf8');
-  assert.match(html, /onerror="this\.style\.display='none'"/, 'header emblem hides itself if the file ever goes missing again');
+  const js = fs.readFileSync(path.join(ROOT, 'src', 'ui', 'chrome-webui.js'), 'utf8');
+  assert.match(html, /id="webuiHeaderEmblem"/, 'header emblem element has a hook id without inline onerror');
+  assert.match(js, /webuiHeaderEmblem[\s\S]*?addEventListener\('error'/, 'header emblem hides itself if the file ever goes missing again');
 });
 
 test('GX-3: cert error page offers a two-step Proceed-anyway path', () => {
-  const html = fs.readFileSync(path.join(ROOT, 'src', 'ui', 'error.html'), 'utf8');
+  const html =
+    fs.readFileSync(path.join(ROOT, 'src', 'ui', 'error.html'), 'utf8') +
+    '\n' +
+    fs.readFileSync(path.join(ROOT, 'src', 'ui', 'error.js'), 'utf8');
   assert.match(html, /id="btnProceed"/);
   assert.match(html, /Proceed anyway/);
   assert.match(html, /proceedAnyway/);

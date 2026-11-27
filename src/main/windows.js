@@ -261,6 +261,16 @@ function createBrowserWindow({ incognito = false, restoreTabs = null, profileId 
       const { closeExtensionPopup } = require('./extension-popup');
       if (typeof closeExtensionPopup === 'function') closeExtensionPopup(ctx);
     } catch (_) { }
+    if (ctx.drawerOverlayView) {
+      try {
+        const wc = ctx.drawerOverlayView.webContents;
+        if (wc) {
+          webContentsToWinId.delete(wc.id);
+          if (typeof wc.isDestroyed === 'function' && !wc.isDestroyed()) wc.close();
+        }
+      } catch (_) { }
+      ctx.drawerOverlayView = null;
+    }
     if (ctx.screenshotView) {
       try {
         const wc = ctx.screenshotView.webContents;
@@ -302,6 +312,9 @@ function createBrowserWindow({ incognito = false, restoreTabs = null, profileId 
     player.onWindowClosed(ctx);
     windowContexts.delete(win.id);
     if (ctx.incognito) {
+      try {
+        require('./cert-exceptions').clearCertExceptions(`incog:${win.id}`);
+      } catch (_) { }
       const hasRemainingIncognito = Array.from(windowContexts.values()).some((c) => c && c.incognito);
       if (!hasRemainingIncognito) {
         clearIncognitoDownloads();

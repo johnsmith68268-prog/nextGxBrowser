@@ -1,10 +1,13 @@
+const dns = require('dns');
 const fs = require('fs');
 const http = require('http');
 const https = require('https');
+const net = require('net');
 const path = require('path');
 const electron = require('electron');
 const {
   SRC_DIR,
+  CORNER_FILE_URL,
   CORNER_PRELOAD_FILE,
   windowContexts,
   state
@@ -485,28 +488,82 @@ function parseFeedXml(xmlText, feedMeta = {}) {
 
 function isPrivateOrReservedIp(ip) {
   if (!ip || typeof ip !== 'string') return true;
-  const clean = ip.trim().toLowerCase().replace(/^\[|\]$/g, '');
+  const clean = ip.trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/\.+$/, '');
   if (!clean) return true;
   if (clean === 'localhost' || clean.endsWith('.localhost') || clean.endsWith('.local')) return true;
-  // IPv4-mapped IPv6 (e.g. ::ffff:127.0.0.1)
-  const v4Mapped = clean.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/);
-  const v4 = v4Mapped ? v4Mapped[1] : clean;
+
+  // Hex IPv4-mapped IPv6 (e.g. ::ffff:7f00:1 or 0:0:0:0:0:ffff:7f00:0001)
+  const hexMapped = clean.match(/^(?:::ffff:|0{1,4}(?::0{1,4}){4}:ffff:)([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  let v4 = clean;
+  if (hexMapped) {
+    const hi = parseInt(hexMapped[1], 16);
+    const lo = parseInt(hexMapped[2], 16);
+    v4 = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+  } else {
+    // Dotted IPv4-mapped IPv6 (e.g. ::ffff:127.0.0.1)
+    const v4Mapped = clean.match(/^(?:::ffff:|0{1,4}(?::0{1,4}){4}:ffff:)(\d{1,3}(?:\.\d{1,3}){3})$/);
+    if (v4Mapped) v4 = v4Mapped[1];
+  }
+
   const parts = v4.split('.');
   if (parts.length === 4 && parts.every((p) => /^\d+$/.test(p))) {
-    const [a, b] = parts.map((n) => parseInt(n, 10));
+    const nums = parts.map((n) => parseInt(n, 10));
+    if (nums.some((n) => n < 0 || n > 255)) return true;
+    const [a, b] = nums;
     if (a === 0 || a === 10 || a === 127) return true;
     if (a === 169 && b === 254) return true;
     if (a === 172 && b >= 16 && b <= 31) return true;
     if (a === 192 && b === 168) return true;
     if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
+    if (a === 198 && (b === 18 || b === 19)) return true; // benchmark
     if (a >= 224) return true; // multicast/reserved
     return false;
   }
   if (clean.includes(':')) {
-    if (clean === '::' || clean === '::1') return true;
-    if (clean.startsWith('fc') || clean.startsWith('fd') || clean.startsWith('fe80')) return true;
+    if (clean === '::' || clean === '::1' || /^0{1,4}(?::0{1,4}){6}:0{0,3}[01]$/.test(clean)) return true;
+    if (clean.startsWith('fc') || clean.startsWith('fd')) return true;
+    // Full fe80::/10 link-local range (fe80..febf)
+    if (/^fe[89ab][0-9a-f]?:/.test(clean) || /^fe[89ab]$/.test(clean)) return true;
+    if (clean.startsWith('ff')) return true; // multicast
   }
   return false;
+}
+
+function safeDnsLookup(hostname, options, callback) {
+  const cb = typeof options === 'function' ? options : callback;
+  const opts = typeof options === 'function' ? {} : options || {};
+  const cleanHost = String(hostname || '').trim().replace(/^\[|\]$/g, '');
+  if (isPrivateOrReservedIp(cleanHost)) {
+    const err = new Error('Blocked private or loopback feed host');
+    err.code = 'EACCES';
+    process.nextTick(() => cb(err));
+    return;
+  }
+  dns.lookup(cleanHost, opts, (err, address, family) => {
+    if (err) {
+      cb(err);
+      return;
+    }
+    if (Array.isArray(address)) {
+      for (const entry of address) {
+        if (!entry || isPrivateOrReservedIp(entry.address)) {
+          const blockErr = new Error('Blocked private or loopback feed host');
+          blockErr.code = 'EACCES';
+          cb(blockErr);
+          return;
+        }
+      }
+      cb(null, address);
+      return;
+    }
+    if (isPrivateOrReservedIp(address)) {
+      const blockErr = new Error('Blocked private or loopback feed host');
+      blockErr.code = 'EACCES';
+      cb(blockErr);
+      return;
+    }
+    cb(null, address, family);
+  });
 }
 
 function getCornerUserAgent() {
@@ -599,6 +656,7 @@ function fetchTextViaNodeHttp(
     const req = client.get(
       parsed,
       {
+        lookup: safeDnsLookup,
         headers: {
           'User-Agent': getCornerUserAgent(),
           Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.1'
@@ -781,29 +839,71 @@ async function fetchTextDefault(urlStr, { timeoutMs = PER_FEED_TIMEOUT_MS, signa
   }
 
   try {
-    const res = await netFetch(safeUrl, {
-      method: 'GET',
-      redirect: 'follow',
-      signal: controller.signal,
-      headers: {
-        'User-Agent': getCornerUserAgent(),
-        Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.1'
+    let currentUrl = safeUrl;
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      const hopParsed = new URL(currentUrl);
+      if (isPrivateOrReservedIp(hopParsed.hostname)) {
+        throw new Error(
+          hop === 0 ? 'Blocked private or loopback feed host' : 'Blocked redirect to private or loopback host'
+        );
       }
-    });
-    if (res && res.url) {
-      try {
-        const finalHost = new URL(res.url).hostname;
-        if (isPrivateOrReservedIp(finalHost)) {
-          throw new Error('Blocked redirect to private or loopback host');
+      if (!net.isIP(hopParsed.hostname.replace(/^\[|\]$/g, '')) && dns && typeof dns.promises?.lookup === 'function') {
+        const resolved = await dns.promises.lookup(hopParsed.hostname, { all: true }).catch(() => null);
+        if (Array.isArray(resolved) && resolved.length > 0) {
+          for (const entry of resolved) {
+            if (!entry || isPrivateOrReservedIp(entry.address)) {
+              throw new Error(
+                hop === 0 ? 'Blocked private or loopback feed host' : 'Blocked redirect to private or loopback host'
+              );
+            }
+          }
         }
-      } catch (err) {
-        if (err && /Blocked redirect/i.test(err.message)) throw err;
       }
+
+      const res = await netFetch(currentUrl, {
+        method: 'GET',
+        redirect: 'manual',
+        signal: controller.signal,
+        headers: {
+          'User-Agent': getCornerUserAgent(),
+          Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.1'
+        }
+      });
+
+      const status = res ? Number(res.status) || 0 : 0;
+      const location =
+        res && res.headers && typeof res.headers.get === 'function' ? res.headers.get('location') : '';
+      if (status >= 300 && status < 400 && location) {
+        if (hop >= MAX_REDIRECTS) {
+          throw new Error('Too many feed redirects');
+        }
+        let nextUrl = '';
+        try {
+          nextUrl = sanitizeHttpUrl(new URL(location, currentUrl).toString());
+        } catch (_) {
+          nextUrl = '';
+        }
+        if (!nextUrl) throw new Error('Invalid redirect feed URL');
+        currentUrl = nextUrl;
+        continue;
+      }
+
+      if (res && res.url) {
+        try {
+          const finalHost = new URL(res.url).hostname;
+          if (isPrivateOrReservedIp(finalHost)) {
+            throw new Error('Blocked redirect to private or loopback host');
+          }
+        } catch (err) {
+          if (err && /Blocked redirect/i.test(err.message)) throw err;
+        }
+      }
+      if (!res || !res.ok) {
+        throw new Error(`HTTP ${res ? res.status : 'error'}`);
+      }
+      return await readResponseBodyBounded(res, MAX_FEED_BYTES);
     }
-    if (!res || !res.ok) {
-      throw new Error(`HTTP ${res ? res.status : 'error'}`);
-    }
-    return await readResponseBodyBounded(res, MAX_FEED_BYTES);
+    throw new Error('Too many feed redirects');
   } finally {
     clearTimeout(timer);
     if (signal) {
@@ -1219,7 +1319,7 @@ function registerCornerPreloadForSession(ses) {
           id: 'nextgx-corner-preload',
           type: 'frame',
           filePath: CORNER_PRELOAD_FILE,
-          includeGlobs: ['file://*corner.html*']
+          includeGlobs: [CORNER_FILE_URL, `${CORNER_FILE_URL}?*`, `${CORNER_FILE_URL}#*`]
         });
       }
       registeredPreloadSessions.add(ses);

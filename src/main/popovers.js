@@ -101,6 +101,16 @@ const POPOVER_KIND_SPECS = {
     minH: 76,
     maxH: 220
   },
+  'split-menu': {
+    isMenu: true,
+    align: 'right',
+    defaultW: 296,
+    defaultH: 230,
+    minW: 268,
+    maxW: 344,
+    minH: 112,
+    maxH: 460
+  },
   permissions: {
     isMenu: false,
     align: 'right',
@@ -522,6 +532,7 @@ function resizePopover(ctx, { kind, width, height } = {}) {
 }
 
 function openPopover(ctx, { kind, x, y, width, height, payload }) {
+  if (!ctx || !ctx.win || ctx.win.isDestroyed() || ctx.shellModalOpen) return false;
   if (ctx.popoverOpenKind === kind && kind !== 'tab-context' && kind !== 'permission-prompt') {
     const isDifferentFolder =
       kind === 'bookmark-folder' &&
@@ -559,7 +570,7 @@ function openPopover(ctx, { kind, x, y, width, height, payload }) {
     const items = Array.isArray(effectivePayload?.items) ? effectivePayload.items : [];
     const rawH = items.length === 0 ? 96 : 54 + items.length * 33;
     estimatedHeight = Math.max(84, Math.min(560, height || rawH));
-  } else if (kind === 'menu' || kind === 'tab-context' || kind === 'screenshot' || kind === 'shield' || kind === 'permissions' || kind === 'permission-prompt' || kind === 'site-info' || kind === 'zoom-bubble') {
+  } else if (kind === 'menu' || kind === 'tab-context' || kind === 'screenshot' || kind === 'split-menu' || kind === 'shield' || kind === 'permissions' || kind === 'permission-prompt' || kind === 'site-info' || kind === 'zoom-bubble') {
     estimatedWidth = spec.defaultW;
     estimatedHeight = spec.defaultH;
   }
@@ -605,6 +616,11 @@ function openPopover(ctx, { kind, x, y, width, height, payload }) {
   const initialBounds = computePopoverBounds(ctx, kind, initialW, initialH);
 
   ctx.win.contentView.addChildView(view);
+  if (ctx.screenshotView) {
+    try {
+      ctx.win.contentView.addChildView(ctx.screenshotView);
+    } catch (_) {}
+  }
   if (typeof view.setVisible === 'function') {
     try {
       view.setVisible(true);

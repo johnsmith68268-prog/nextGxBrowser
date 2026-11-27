@@ -60,7 +60,10 @@ function switchTool(tool) {
       webFrame.src = targetUrl;
     }
   } else {
-    serviceSelect.innerHTML = `<option>${tool.toUpperCase()}</option>`;
+    serviceSelect.textContent = '';
+    const opt = document.createElement('option');
+    opt.textContent = String(tool || '').toUpperCase();
+    serviceSelect.appendChild(opt);
     if (tool === 'control') refreshTabsList();
   }
 }
@@ -102,20 +105,19 @@ function refreshTabsList() {
     for (const t of tabs) {
       const row = document.createElement('div');
       row.className = 'tab-item';
-      row.innerHTML = `
-        <span>${t.discarded ? '💤 ' : ''}${t.title || t.url}</span>
-        ${
-          !t.active && !t.discarded
-            ? `<button class="icon-btn discard-btn">Sleep</button>`
-            : ''
-        }
-      `;
-      const btn = row.querySelector('.discard-btn');
-      if (btn) {
+      const labelSpan = document.createElement('span');
+      labelSpan.textContent = `${t.discarded ? '💤 ' : ''}${t.title || t.url || ''}`;
+      row.appendChild(labelSpan);
+      if (!t.active && !t.discarded) {
+        const btn = document.createElement('button');
+        btn.className = 'icon-btn discard-btn';
+        btn.type = 'button';
+        btn.textContent = 'Sleep';
         btn.addEventListener('click', async () => {
           await chrome.tabs.discard(t.id);
           refreshTabsList();
         });
+        row.appendChild(btn);
       }
       container.appendChild(row);
     }

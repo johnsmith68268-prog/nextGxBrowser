@@ -587,7 +587,8 @@ class AdBlocker {
         try {
           currentOrigin = extractOrigin(webContents.getURL());
         } catch (_) {}
-        if (state.generation !== gen || !this.shouldInjectCosmetic(currentOrigin)) {
+        const currentPid = webContents.session ? this.sessionProfiles.get(webContents.session) : pid;
+        if (state.generation !== gen || !this.shouldInjectCosmetic(currentOrigin, currentPid)) {
           if (key && typeof webContents.removeInsertedCSS === 'function') {
             webContents.removeInsertedCSS(key).catch(() => {});
           }
@@ -706,7 +707,8 @@ class AdBlocker {
       if (!wcOrigin) continue;
       if (normTarget && wcOrigin !== normTarget) continue;
 
-      if (this.shouldInjectCosmetic(wcOrigin)) {
+      const wcPid = wc.session ? this.sessionProfiles.get(wc.session) : undefined;
+      if (this.shouldInjectCosmetic(wcOrigin, wcPid)) {
         tasks.push(this.injectCosmeticFilters(wc));
       } else {
         tasks.push(this.removeCosmeticFilters(wc));

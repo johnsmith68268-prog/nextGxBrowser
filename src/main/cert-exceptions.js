@@ -15,7 +15,8 @@
 //   MITM proxy whose CA is not in the OS store (ERR_CERT_AUTHORITY_INVALID
 //   on every HTTPS site). On a normal network this path never triggers.
 
-const allowedOrigins = new Set();
+const allowedExceptions = new Map(); // `${sessionKey}|${origin}` -> Set<fingerprintOrWildcard>
+const observedCertErrors = new Map(); // `${sessionKey}|${origin}` -> fingerprint
 
 function normalizeOrigin(raw) {
   if (!raw || typeof raw !== 'string') return '';
@@ -36,30 +37,93 @@ function isCertErrorCode(code, description) {
   return Number.isFinite(n) && n <= -200 && n >= -219;
 }
 
-function allowCertException(origin) {
+function normalizeScopeKey(sessionKey) {
+  return typeof sessionKey === 'string' && sessionKey.trim() ? sessionKey.trim() : 'global';
+}
+
+function recordObservedCertError(origin, { sessionKey = 'global', fingerprint = '' } = {}) {
+  const norm = normalizeOrigin(origin);
+  if (!norm) return;
+  const scope = normalizeScopeKey(sessionKey);
+  const fp = typeof fingerprint === 'string' && fingerprint.trim() ? fingerprint.trim() : '*';
+  observedCertErrors.set(`${scope}|${norm}`, fp);
+}
+
+function getObservedCertFingerprint(origin, sessionKey = 'global') {
   const norm = normalizeOrigin(origin);
   if (!norm) return '';
-  allowedOrigins.add(norm);
+  const scope = normalizeScopeKey(sessionKey);
+  return observedCertErrors.get(`${scope}|${norm}`) || '';
+}
+
+function allowCertException(origin, opts = {}) {
+  const norm = normalizeOrigin(origin);
+  if (!norm) return '';
+  const scope = normalizeScopeKey(opts?.sessionKey);
+  const fp =
+    (typeof opts?.fingerprint === 'string' && opts.fingerprint.trim()) ||
+    getObservedCertFingerprint(norm, scope) ||
+    '*';
+  const mapKey = `${scope}|${norm}`;
+  let set = allowedExceptions.get(mapKey);
+  if (!set) {
+    set = new Set();
+    allowedExceptions.set(mapKey, set);
+  }
+  set.add(fp);
   return norm;
 }
 
-function isCertExceptionAllowed(origin) {
+function isCertExceptionAllowed(origin, opts = {}) {
   const norm = normalizeOrigin(origin);
   if (!norm) return false;
-  return allowedOrigins.has(norm);
+  const fp = typeof opts?.fingerprint === 'string' && opts.fingerprint.trim() ? opts.fingerprint.trim() : '';
+  const checkScope = (scope) => {
+    const set = allowedExceptions.get(`${scope}|${norm}`);
+    if (!set || set.size === 0) return false;
+    if (set.has('*') || !fp) return true;
+    return set.has(fp);
+  };
+  if (opts && typeof opts.sessionKey === 'string' && opts.sessionKey.trim()) {
+    if (checkScope(opts.sessionKey.trim())) return true;
+  }
+  return checkScope('global');
 }
 
-function listCertExceptions() {
-  return Array.from(allowedOrigins).sort();
+function listCertExceptions(sessionKey = null) {
+  const origins = new Set();
+  for (const key of allowedExceptions.keys()) {
+    const sep = key.indexOf('|');
+    if (sep === -1) continue;
+    const scope = key.slice(0, sep);
+    const origin = key.slice(sep + 1);
+    if (!sessionKey || scope === sessionKey || scope === 'global') {
+      origins.add(origin);
+    }
+  }
+  return Array.from(origins).sort();
 }
 
-function clearCertExceptions() {
-  allowedOrigins.clear();
+function clearCertExceptions(sessionKey = null) {
+  if (!sessionKey) {
+    allowedExceptions.clear();
+    observedCertErrors.clear();
+    return;
+  }
+  const prefix = `${sessionKey}|`;
+  for (const key of Array.from(allowedExceptions.keys())) {
+    if (key.startsWith(prefix)) allowedExceptions.delete(key);
+  }
+  for (const key of Array.from(observedCertErrors.keys())) {
+    if (key.startsWith(prefix)) observedCertErrors.delete(key);
+  }
 }
 
 module.exports = {
   normalizeOrigin,
   isCertErrorCode,
+  recordObservedCertError,
+  getObservedCertFingerprint,
   allowCertException,
   isCertExceptionAllowed,
   listCertExceptions,

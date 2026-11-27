@@ -316,13 +316,13 @@ test('LIVE-UX: sidebar hover never slices behind webview, panic hidden in toolba
   assert.ok(!css.includes('.nav-icon-btn.is-stop::after'), 'stop button must stay a clean static Chrome-style X without a dizzy spinning ring');
   assert.ok(!css.includes('.nx-sidebar.rail-hover-expand:hover,'), 'hover-expanding 184px rail over WebContentsView must be disabled');
 
-  const popover = read('src/ui/popover.html');
+  const popover = read('src/ui/popover.html') + '\n' + read('src/ui/popover.js');
   const bodyRule = popover.match(/body\s*\{[\s\S]*?\n    \}/);
   assert.ok(bodyRule, 'popover body CSS rule missing');
   assert.ok(!bodyRule[0].includes('inset 0 0 10px var(--nx-brand-soft)'), 'popover body must not have red inner glow border');
   assert.ok(popover.includes('site-info-icon-badge'), 'site-info popover uses crisp SVG badge icon');
 
-  const sidebarChrome = read('src/ui/sidebar-panel-chrome.html');
+  const sidebarChrome = read('src/ui/sidebar-panel-chrome.html') + '\n' + read('src/ui/sidebar-panel-chrome.js');
   assert.match(sidebarChrome, /border-right:\s*none;/, 'sidebar panel must not draw harsh right accent border');
   assert.ok(sidebarChrome.includes('e.screenX'), 'sidebar resizer must track absolute e.screenX');
 
@@ -427,15 +427,15 @@ test('GX-POLISH-ROUND2: tab favicons, domain-only omnibox elision, nextGx brandi
 
   // 8. Opera GX full-width expanded omnibox suggestions (Suggestions + History + Switch to tab + inline autocomplete)
   const popoversJs = read('src/main/popovers.js');
-  const popoverHtml = read('src/ui/popover.html');
+  const popoverHtml = read('src/ui/popover.html') + '\n' + read('src/ui/popover.js');
   assert.match(popoversJs, /'omnibox-suggest':[\s\S]*?maxW:\s*1800/);
   assert.ok(popoverHtml.includes('Switch to tab'), 'omnibox dropdown must support Switch to tab action');
   assert.ok(popoverHtml.includes('os-inline-text'), 'omnibox dropdown must render single-line expanded rows');
   assert.ok(renderer.includes('getRemoteSuggestions'), 'omnibox must support live search suggestions');
 
   // 9. Clean & classic smoked-glass Start Page, 75% sidebar panel resize + quick wide toggle, and purple orbital ring icon
-  const newtabHtml = read('src/ui/newtab.html');
-  const sidebarChromeHtml = read('src/ui/sidebar-panel-chrome.html');
+  const newtabHtml = read('src/ui/newtab.html') + '\n' + read('src/ui/newtab.js');
+  const sidebarChromeHtml = read('src/ui/sidebar-panel-chrome.html') + '\n' + read('src/ui/sidebar-panel-chrome.js');
   const iconSvg = read('build/icon.svg');
   assert.ok(newtabHtml.includes('TILE_BRANDS'), 'Start Page must render smoked-glass brand icons');
   assert.ok(newtabHtml.includes('suggestion-chip'), 'Start Page must render clean single-line suggestion chips');
@@ -577,4 +577,117 @@ test('UX-POLISH-321: static stop icon, expanded theme-matched Speed Dial modal, 
   assert.ok(tabsJs.includes('tab.explicitNavSeq = (tab.explicitNavSeq || 0) + 1;'), 'navigateActiveTab must bump explicitNavSeq');
   assert.ok(broadcastJs.includes('explicitNavSeq: Number(t.explicitNavSeq) || 0'), 'broadcast must serialize explicitNavSeq');
   assert.ok(rendererJs.includes('explicitNavTriggered') && rendererJs.includes('document.hasFocus()'), 'renderer must clear stale address drafts and reflect navigated/redirected URLs');
+});
+
+test('SPLIT-PRO: merge two tabs, reverse Left/Right views, and separate (un-split) controls are wired end-to-end', () => {
+  const splitJs = read('src/main/splitview.js');
+  const preloadJs = read('src/preload.js');
+  const popoversJs = read('src/main/popovers.js');
+  const popoverHtml = read('src/ui/popover.html');
+  const rendererJs = read('src/ui/renderer.js');
+
+  assert.ok(splitJs.includes('function swapSplitPanes(ctx)'), 'splitview.js must implement swapSplitPanes');
+  assert.ok(splitJs.includes('function mergeSplitTabs(ctx'), 'splitview.js must implement mergeSplitTabs');
+  assert.ok(splitJs.includes("handleInternal('split:swap'"), 'split:swap IPC handler missing');
+  assert.ok(splitJs.includes("handleInternal('split:merge'"), 'split:merge IPC handler missing');
+
+  assert.ok(preloadJs.includes('swapSplitPanes:') && preloadJs.includes('mergeSplitTabs:'), 'preload must expose swapSplitPanes and mergeSplitTabs');
+  assert.ok(popoversJs.includes("'split-menu':"), 'popovers.js must register split-menu spec');
+
+  assert.ok(popoverHtml.includes('id="view-split-menu"'), 'popover.html must contain Split View control menu');
+  assert.ok(popoverHtml.includes('id="btnSplitSwapPanes"') && popoverHtml.includes('id="btnSplitSeparate"'), 'Split View menu must expose Reverse and Separate actions');
+  assert.ok(popoverHtml.includes('id="btnTabCtxSplitSwap"'), 'Tab context menu must expose Reverse Split Views');
+  assert.ok(rendererJs.includes('openSplitMenuPopover'), 'renderer.js must open Split View control menu from toolbar and divider');
+  assert.ok(rendererJs.includes('openPicker: true'), 'clicking Split View when inactive must open in-pane Split Tab Picker');
+  assert.ok(!rendererJs.includes('const canCentreGroup'), 'drag-and-drop must not auto-group tabs');
+  assert.ok(rendererJs.includes('prevTabRects') && rendererJs.includes('flipNodes'), 'tab strip reordering must animate smoothly with FLIP');
+
+  const splitPickerHtml = read('src/ui/split-picker.html') + '\n' + read('src/ui/split-picker.js');
+  assert.ok(splitPickerHtml.includes('id="pickerTabList"') && splitPickerHtml.includes('id="btnOpenNewTab"'), 'split-picker.html must list open tabs and offer Open New Tab');
+});
+
+test('REMEDIATION-322: fail-closed SHA256 & SemVer prereleases, internal URL anti-spoofing, passkey PSL blocklist, scoped cert exceptions, CPU core normalization, and AdGuard MV3 shim', () => {
+  const {
+    compareSemver,
+    parseSha256Sums,
+    lookupExpectedSha256,
+    selectReleaseAsset
+  } = require('../src/main/updater');
+  const {
+    isErrorPageUrl,
+    isNewTabUrl,
+    normalizeAutofillHost,
+    sanitizeFaviconUrl
+  } = require('../src/main/utils');
+  const { NEW_TAB_FILE_URL, ERROR_PAGE_FILE_URL } = require('../src/main/core');
+  const {
+    recordObservedCertError,
+    allowCertException,
+    isCertExceptionAllowed,
+    clearCertExceptions
+  } = require('../src/main/cert-exceptions');
+  const { validateRpId } = require('../src/main/passkeys');
+  const { aggregateProcessMetrics } = require('../src/main/gxcontrol');
+
+  // 1. SemVer prereleases & normalized SHA256 lookup (fail-closed on missing entry)
+  assert.equal(compareSemver('3.2.2', '3.2.2-beta.1'), 1);
+  assert.equal(compareSemver('3.2.2-alpha.1', '3.2.2-beta.1'), -1);
+  assert.equal(compareSemver('3.2.2-rc.1', '3.2.2-rc.1'), 0);
+
+  const expectedHash = 'b'.repeat(64);
+  const shaMap = parseSha256Sums(`${expectedHash}  nextGx Browser Setup 3.2.2 x64.exe\n`);
+  assert.equal(lookupExpectedSha256(shaMap, 'nextGx-Browser-Setup-3.2.2-x64.exe'), expectedHash);
+  assert.equal(lookupExpectedSha256(shaMap, 'nextGx.Browser-Setup-3.2.2-x64.exe'), expectedHash);
+  assert.equal(lookupExpectedSha256(shaMap, 'missing-artifact.exe'), '');
+
+  const hyphenAssets = [
+    { name: 'nextGx-Browser-Setup-3.2.2-x64.exe', browser_download_url: 'https://github.com/johnsmith68268-prog/nextGxBrowser/releases/download/v3.2.2/nextGx-Browser-Setup-3.2.2-x64.exe', size: 1000 },
+    { name: 'SHA256SUMS.txt', browser_download_url: 'https://github.com/johnsmith68268-prog/nextGxBrowser/releases/download/v3.2.2/SHA256SUMS.txt', size: 200 }
+  ];
+  assert.equal(selectReleaseAsset(hyphenAssets, { platform: 'win32', isPortable: false }).asset.name, 'nextGx-Browser-Setup-3.2.2-x64.exe');
+
+  // 2. Internal UI page anti-spoofing, loopback port autofill host, & favicon sanitization
+  assert.equal(isErrorPageUrl(ERROR_PAGE_FILE_URL), true);
+  assert.equal(isNewTabUrl(NEW_TAB_FILE_URL), true);
+  assert.equal(isErrorPageUrl('file:///C:/Users/victim/Downloads/spoof.html?next=/src/ui/error.html'), false);
+  assert.equal(isNewTabUrl('https://evil.example/src/ui/newtab.html'), false);
+  assert.equal(normalizeAutofillHost('http://localhost:3000/login'), 'localhost:3000');
+  assert.equal(normalizeAutofillHost('http://localhost:8080/admin'), 'localhost:8080');
+  assert.equal(normalizeAutofillHost('https://www.example.com:443/account'), 'example.com');
+  assert.equal(sanitizeFaviconUrl('javascript:alert(1)'), '');
+  assert.equal(sanitizeFaviconUrl('data:image/svg+xml,<svg onload=alert(1)>'), '');
+  assert.equal(sanitizeFaviconUrl('https://example.com/favicon.ico'), 'https://example.com/favicon.ico');
+
+  // 3. Session + fingerprint scoped certificate exceptions
+  clearCertExceptions();
+  recordObservedCertError('https://corp.internal:8443', { sessionKey: 'incog:1', fingerprint: 'sha256/AAA' });
+  allowCertException('https://corp.internal:8443', { sessionKey: 'incog:1', fingerprint: 'sha256/AAA' });
+  assert.equal(isCertExceptionAllowed('https://corp.internal:8443', { sessionKey: 'incog:1', fingerprint: 'sha256/AAA' }), true);
+  assert.equal(isCertExceptionAllowed('https://corp.internal:8443', { sessionKey: 'incog:1', fingerprint: 'sha256/BBB' }), false);
+  assert.equal(isCertExceptionAllowed('https://corp.internal:8443', { sessionKey: 'profile:default', fingerprint: 'sha256/AAA' }), false);
+  clearCertExceptions('incog:1');
+  assert.equal(isCertExceptionAllowed('https://corp.internal:8443', { sessionKey: 'incog:1', fingerprint: 'sha256/AAA' }), false);
+
+  // 4. WebAuthn Passkey RP ID public-suffix blocklist
+  assert.equal(validateRpId('attacker.github.io', 'github.io').ok, false);
+  assert.equal(validateRpId('sub.example.co.uk', 'co.uk').ok, false);
+  assert.equal(validateRpId('tenant.vercel.app', 'vercel.app').ok, false);
+  assert.equal(validateRpId('app.example.com', 'example.com').ok, true);
+  assert.equal(validateRpId('attacker.github.io', 'attacker.github.io').ok, true);
+
+  // 5. Multi-core CPU normalization in GX Control
+  const agg = aggregateProcessMetrics(
+    [{ pid: 4242, type: 'Tab', memory: { workingSetSize: 204800 }, cpu: { percentCPUUsage: 160 } }],
+    8
+  );
+  assert.equal(agg.metricsByPid.get(4242).cpuPercent, 20);
+  assert.equal(agg.browserCpuPercent, 20);
+
+  // 6. Proactive AdGuard MV3 Electron shim + Private cookie isolation + Split picker cleanup wiring
+  const extJs = read('src/main/extensions.js');
+  const cookiesJs = read('src/main/cookies.js');
+  const splitJs = read('src/main/splitview.js');
+  assert.ok(extJs.includes('applyElectronBackgroundCompatShim') && extJs.includes('__NX_ELECTRON_EXT_SHIM_V1__'));
+  assert.ok(cookiesJs.includes('resolveCookieSessionForSender') && cookiesJs.includes('incognito: Boolean(ctx.incognito)'));
+  assert.ok(splitJs.includes('cleanupDetachedPickerTab'));
 });

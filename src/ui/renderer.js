@@ -268,10 +268,31 @@ function syncLayoutOffsets() {
   requestAnimationFrame(() => updateSplitDividerLayout());
 }
 
+const SAFE_DATA_FAVICON_RE =
+  /^data:image\/(?:png|jpeg|jpg|webp|gif|x-icon|vnd\.microsoft\.icon);base64,[a-z0-9+/=]+$/i;
+
+function sanitizeUiFaviconUrl(rawUrl) {
+  if (typeof rawUrl !== 'string') return '';
+  const trimmed = rawUrl.trim();
+  if (!trimmed || /[\u0000-\u001f\u007f]/.test(trimmed)) return '';
+  if (/^data:/i.test(trimmed)) {
+    if (trimmed.length > 32768) return '';
+    return SAFE_DATA_FAVICON_RE.test(trimmed) ? trimmed : '';
+  }
+  if (trimmed.length > 2048) return '';
+  try {
+    const u = new URL(trimmed);
+    if (u.protocol === 'https:' || u.protocol === 'http:') {
+      return u.toString();
+    }
+  } catch (_) { }
+  return '';
+}
+
 function getBookmarkFaviconUrl(bm) {
   if (bm && typeof bm.favicon === 'string') {
-    const fav = bm.favicon.trim();
-    if (/^(https?:\/\/|data:image\/)/i.test(fav)) return fav;
+    const fav = sanitizeUiFaviconUrl(bm.favicon);
+    if (fav) return fav;
   }
   if (bm && typeof bm.url === 'string') {
     try {
@@ -575,7 +596,7 @@ function clearTabDropIndicators() {
   }
 }
 
-function getDropPositionForTab(el, targetTabId, sourceTabId, clientX, clientY, targetTab, sourceTab) {
+function getDropPositionForTab(el, targetTabId, sourceTabId, clientX, clientY) {
   if (clientX === 0 && clientY === 0 && sourceTabId) {
     const srcIdx = currentState.tabs.findIndex((t) => t.id === sourceTabId);
     const dstIdx = currentState.tabs.findIndex((t) => t.id === targetTabId);
@@ -586,20 +607,7 @@ function getDropPositionForTab(el, targetTabId, sourceTabId, clientX, clientY, t
   const rect = el.getBoundingClientRect();
   if (rect.width <= 0) return 'before';
   const relX = (clientX - rect.left) / rect.width;
-
-  const canCentreGroup =
-    sourceTab &&
-    targetTab &&
-    !sourceTab.pinned &&
-    !targetTab.pinned &&
-    sourceTabId !== targetTabId &&
-    !(sourceTab.groupId && sourceTab.groupId === targetTab.groupId);
-
-  if (canCentreGroup) {
-    if (relX < 0.25) return 'before';
-    if (relX > 0.75) return 'after';
-    return 'center';
-  }
+  // Drag-and-drop reorders tabs only (Tab Grouping is strictly via Right-Click menu).
   return relX > 0.5 ? 'after' : 'before';
 }
 
@@ -830,8 +838,9 @@ function buildTabElement(tab, group, state, activeWsGroupsList, otherClosableCou
     .filter(Boolean)
     .join(' ');
 
+  const safeTabFav = sanitizeUiFaviconUrl(tab.favicon);
   el.dataset.tabId = tab.id;
-  el.dataset.favicon = tab.favicon || '';
+  el.dataset.favicon = safeTabFav;
   if (inGroup) {
     el.dataset.groupId = group.id;
     el.dataset.groupColor = group.color || 'group-1';
@@ -845,8 +854,8 @@ function buildTabElement(tab, group, state, activeWsGroupsList, otherClosableCou
   // Loading indicator spins around the corner Stop (✕) button (#btnReload.is-stop)
   // rather than replacing the tab favicon in the top strip (tab-loading-spinner kept for CSS compat).
   // Capture-phase error listener swaps broken favicons to .tab-favicon-fallback cleanly.
-  const iconHtml = tab.favicon
-    ? `<img class="tab-favicon" draggable="false" src="${escapeHtml(tab.favicon)}" alt="" />`
+  const iconHtml = safeTabFav
+    ? `<img class="tab-favicon" draggable="false" src="${escapeHtml(safeTabFav)}" alt="" />`
     : `<svg class="tab-favicon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8"/></svg>`;
 
   const splitSvg = splitRole
@@ -1012,7 +1021,9 @@ function buildTabElement(tab, group, state, activeWsGroupsList, otherClosableCou
         splitActive: Boolean(liveState.split),
         splitVisible: Boolean(liveState.split && liveState.split.visible),
         isSplitPane: Boolean(
-          liveState.split && (tab.id === liveState.split.leftTabId || tab.id === liveState.split.rightTabId)
+          liveState.split &&
+            liveState.split.visible &&
+            (tab.id === liveState.split.leftTabId || tab.id === liveState.split.rightTabId)
         ),
         splitPaneSide: liveState.split
           ? tab.id === liveState.split.leftTabId
@@ -1119,11 +1130,12 @@ function buildGroupPillElement(group, groupTabs, state) {
   // Market audit bug #14: a collapsed pill only showed the group name and
   // count, so the active tab inside was invisible. Show the active tab's
   // favicon + title in the pill so it stays identifiable while collapsed.
+  const safeGroupActiveFav = activeTabInGroup ? sanitizeUiFaviconUrl(activeTabInGroup.favicon) : '';
   const activeTabHtml =
     isCollapsed && activeTabInGroup
       ? `<span class="group-active-tab" title="${escapeHtml(activeTabInGroup.title || '')}">
-          ${activeTabInGroup.favicon
-        ? `<img class="group-active-favicon" src="${escapeHtml(activeTabInGroup.favicon)}" alt="" onerror="this.remove()" />`
+          ${safeGroupActiveFav
+        ? `<img class="group-active-favicon" src="${escapeHtml(safeGroupActiveFav)}" alt="" />`
         : '<span class="group-active-dot"></span>'
       }
           <span class="group-active-title">${escapeHtml(activeTabInGroup.title || 'Untitled')}</span>
@@ -1242,7 +1254,7 @@ function patchTabElementInPlace(el, tab, group, state) {
   }
 
   const prevFav = el.dataset.favicon || '';
-  const nextFav = tab.favicon || '';
+  const nextFav = sanitizeUiFaviconUrl(tab.favicon);
   if (prevFav !== nextFav) {
     el.dataset.favicon = nextFav;
     const existingIcon = el.querySelector('img.tab-favicon, .tab-favicon-svg, .tab-favicon-fallback');
@@ -1340,14 +1352,15 @@ function scheduleTabHoverCard(tab, group, tabEl) {
     // the tab's favicon shown large on a gradient tile, with the title's
     // initial as the fallback when the favicon is missing or dead.
     const thumbLetter = (tab.title || 'Start Page').match(/[A-Za-z0-9]/)?.[0].toUpperCase() || 'N';
+    const safeHoverFav = sanitizeUiFaviconUrl(tab.favicon);
     card.innerHTML = `
-      <div class="tab-hover-thumb"><span class="tab-hover-thumb-letter">${escapeHtml(thumbLetter)}</span>${tab.favicon
-        ? `<img class="tab-hover-thumb-img" src="${escapeHtml(tab.favicon)}" alt="" onerror="this.remove()" />`
+      <div class="tab-hover-thumb"><span class="tab-hover-thumb-letter">${escapeHtml(thumbLetter)}</span>${safeHoverFav
+        ? `<img class="tab-hover-thumb-img" src="${escapeHtml(safeHoverFav)}" alt="" />`
         : ''
       }</div>
       <div class="tab-hover-head">
-        ${tab.favicon
-        ? `<img class="tab-hover-favicon" src="${escapeHtml(tab.favicon)}" alt="" onerror="this.style.display='none'" />`
+        ${safeHoverFav
+        ? `<img class="tab-hover-favicon" src="${escapeHtml(safeHoverFav)}" alt="" />`
         : `<svg class="tab-hover-favicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8"/></svg>`
       }
         <span class="tab-hover-title">${escapeHtml(tab.title || 'Start Page')}</span>
@@ -1385,7 +1398,7 @@ function openTabSearchPopover() {
     id: t.id,
     title: t.title || 'Start Page',
     url: t.url || '',
-    favicon: t.favicon || '',
+    favicon: sanitizeUiFaviconUrl(t.favicon),
     groupName:
       ((currentState.groups || []).find((g) => g.id === t.groupId) || {}).name || '',
     lastSeen: tabLastSeen.get(t.id) || 0,
@@ -1555,7 +1568,7 @@ async function renderOmniboxSuggestions() {
           title: title || domain,
           url,
           displayUrl: getCleanOmniboxUrl(url),
-          favicon: favicon || `https://${domain}/favicon.ico`,
+          favicon: sanitizeUiFaviconUrl(favicon) || `https://${domain}/favicon.ico`,
           switchTabId
         };
       }
@@ -1641,7 +1654,7 @@ async function renderOmniboxSuggestions() {
         title: title || dom || url,
         url,
         displayUrl: getCleanOmniboxUrl(url),
-        favicon: entry.favicon || (dom ? `https://${dom}/favicon.ico` : '')
+        favicon: sanitizeUiFaviconUrl(entry.favicon) || (dom ? `https://${dom}/favicon.ico` : '')
       });
       historyCount += 1;
       if (historyCount >= 6) break;
@@ -1739,7 +1752,7 @@ function openBookmarkBubble() {
     payload: {
       url: active.url,
       title: active.title || active.url,
-      favicon: active.favicon || '',
+      favicon: sanitizeUiFaviconUrl(active.favicon),
       isBookmarked: Boolean(active.isBookmarked)
     }
   });
@@ -1769,6 +1782,21 @@ function renderTabs(state) {
   renderWorkspaces(state);
 
   const allTabs = Array.isArray(state.tabs) ? state.tabs : [];
+  if (countChanged) {
+    const liveIds = new Set(allTabs.map((t) => t && t.id).filter(Boolean));
+    for (const map of [
+      tabMuteMap,
+      tabLastSeen,
+      addressDraftByTabId,
+      lastTabUrlById,
+      lastTabNavSeqById,
+      lastTabExplicitNavSeqById
+    ]) {
+      for (const id of map.keys()) {
+        if (!liveIds.has(id)) map.delete(id);
+      }
+    }
+  }
   const pinnedTabs = allTabs.filter((t) => t && t.pinned);
   const wsUnpinnedTabs = allTabs.filter(
     (t) => t && !t.pinned && (state.windowIncognito ? 'default' : t.workspaceId || 'default') === activeWsId
@@ -1860,6 +1888,12 @@ function renderTabs(state) {
     }
   }
 
+  const prevTabRects = new Map();
+  tabsContainer.querySelectorAll('.nx-tab[data-tab-id]').forEach((node) => {
+    const id = node.dataset.tabId;
+    if (id) prevTabRects.set(id, node.getBoundingClientRect().left);
+  });
+
   lastTabStripStructureKey = structureKey;
   tabsContainer.innerHTML = '';
 
@@ -1917,6 +1951,35 @@ function renderTabs(state) {
   }
 
   tabsContainer.scrollLeft = prevScrollLeft;
+  if (prevTabRects.size > 0) {
+    const flipNodes = [];
+    tabsContainer.querySelectorAll('.nx-tab[data-tab-id]').forEach((node) => {
+      const prevLeft = prevTabRects.get(node.dataset.tabId);
+      if (typeof prevLeft !== 'number') return;
+      const nextLeft = node.getBoundingClientRect().left;
+      const dx = prevLeft - nextLeft;
+      if (Math.abs(dx) > 1.5 && Math.abs(dx) < 900) {
+        node.classList.add('flip-anim');
+        node.style.transition = 'none';
+        node.style.transform = `translateX(${dx}px)`;
+        flipNodes.push(node);
+      }
+    });
+    if (flipNodes.length > 0) {
+      void tabsContainer.offsetWidth;
+      for (const node of flipNodes) {
+        node.style.transition = 'transform 220ms cubic-bezier(0.2, 0.9, 0.25, 1)';
+        node.style.transform = 'translateX(0)';
+        const cleanup = () => {
+          node.classList.remove('flip-anim');
+          node.style.transition = '';
+          node.style.transform = '';
+        };
+        node.addEventListener('transitionend', cleanup, { once: true });
+        setTimeout(cleanup, 260);
+      }
+    }
+  }
   updateTabScrollButtons();
   updateTopContourWidth();
   const focusStripEl = activeTabEl || activeCollapsedPillEl;
@@ -2184,7 +2247,16 @@ document.addEventListener(
   'error',
   (e) => {
     const t = e.target;
-    if (!t || !t.classList || !t.classList.contains('tab-favicon')) return;
+    if (!t || !t.classList) return;
+    if (t.classList.contains('group-active-favicon') || t.classList.contains('tab-hover-thumb-img')) {
+      t.remove();
+      return;
+    }
+    if (t.classList.contains('tab-hover-favicon')) {
+      t.style.display = 'none';
+      return;
+    }
+    if (!t.classList.contains('tab-favicon')) return;
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('class', 'tab-favicon tab-favicon-fallback');
     svg.setAttribute('viewBox', '0 0 24 24');
@@ -2532,6 +2604,7 @@ addressInput.addEventListener('mousedown', (e) => {
 // [TABS-W2] Gap 3.7 — Opera GX expanded suggestions while typing in the omnibox.
 addressInput.addEventListener('input', (e) => {
   if (e && e.isComposing) return;
+  omniboxSuggestSelectedIdx = -1;
   lastOmniboxInputWasDelete = Boolean(e && typeof e.inputType === 'string' && e.inputType.startsWith('delete'));
   const activeId = currentState.activeTab?.id;
   if (activeId) {
@@ -2746,8 +2819,45 @@ function updateSplitToolbarButton(splitState = currentState.split) {
   btnSplitView.classList.toggle('split-active', isVisible);
   btnSplitView.setAttribute('aria-pressed', isVisible ? 'true' : 'false');
   btnSplitView.title = isVisible
-    ? 'Exit Split View (restore both tabs)'
-    : 'Split View — Open current tab side by side with a new tab';
+    ? 'Split View Active — Reverse views, separate tabs, or switch pane'
+    : 'Split View — Split with a new tab or merge two open tabs';
+}
+
+function openSplitMenuPopover(point = null) {
+  const activeWsId = currentState.windowIncognito ? 'default' : currentState.activeWorkspaceId || 'default';
+  const visibleTabs = (currentState.tabs || [])
+    .filter((t) => t && (t.pinned || (t.workspaceId || 'default') === activeWsId))
+    .map((t) => ({
+      id: t.id,
+      title: t.title || t.url || 'Tab',
+      url: t.url || '',
+      favicon: sanitizeUiFaviconUrl(t.favicon),
+      pinned: Boolean(t.pinned)
+    }));
+
+  let x = 120;
+  let y = TOP_CHROME_HEIGHT + 2;
+  if (point && typeof point.x === 'number' && typeof point.y === 'number') {
+    x = Math.max(12, Math.round(point.x - 148));
+    y = Math.max(TOP_CHROME_HEIGHT + 2, Math.round(point.y));
+  } else if (btnSplitView) {
+    const rect = btnSplitView.getBoundingClientRect();
+    x = Math.round(rect.right - 296);
+    y = TOP_CHROME_HEIGHT + 2;
+  }
+
+  window.gxAPI.openPopover({
+    kind: 'split-menu',
+    x,
+    y,
+    width: 296,
+    height: 230,
+    payload: {
+      activeTabId: currentState.activeTabId || null,
+      split: currentState.split || null,
+      tabs: visibleTabs
+    }
+  });
 }
 
 function positionSplitDividerForRatio(ratio) {
@@ -2836,16 +2946,38 @@ function endSplitResize({ commit = true } = {}) {
 if (btnSplitView) {
   btnSplitView.addEventListener('click', () => {
     window.gxSounds?.playClick();
-    window.gxAPI.closePopover();
-    window.gxAPI.toggleSplit();
+    if (currentState.split && currentState.split.visible) {
+      openSplitMenuPopover();
+    } else {
+      window.gxAPI.closePopover();
+      window.gxAPI.startSplit({ openPicker: true });
+    }
   });
 }
 
+let lastSplitDividerPointerDownAt = 0;
+
 if (splitDivider) {
+  splitDivider.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    window.gxSounds?.playClick();
+    openSplitMenuPopover({ x: e.clientX, y: e.clientY });
+  });
   splitDivider.addEventListener('pointerdown', (e) => {
     if (e.button !== undefined && e.button !== 0) return;
     e.preventDefault();
     window.gxAPI.closePopover();
+    const now = Date.now();
+    if (now - lastSplitDividerPointerDownAt < 400 && currentState.split?.visible) {
+      lastSplitDividerPointerDownAt = 0;
+      window.gxSounds?.playClick();
+      splitDragRatio = SPLIT_DEFAULT_RATIO;
+      positionSplitDividerForRatio(SPLIT_DEFAULT_RATIO);
+      window.gxAPI.setSplitRatio(SPLIT_DEFAULT_RATIO, { persist: true });
+      return;
+    }
+    lastSplitDividerPointerDownAt = now;
     beginSplitResize(e.clientX, e.pointerId);
   });
   splitDivider.addEventListener('mousedown', (e) => {
@@ -3830,10 +3962,12 @@ const LEFT_TOOL_TITLES = {
   sidebarSetup: 'Customize Dock'
 };
 
+let currentOverlayDrawerKind = null;
+
 function openLeftTool(toolName) {
   window.gxSounds?.playPanelOpen();
   window.gxAPI.closePopover();
-  if (!IS_DRAWER_OVERLAY && window.gxAPI.toggleShellDrawer) {
+  if ((!IS_DRAWER_OVERLAY || currentOverlayDrawerKind !== 'left-tool') && window.gxAPI.toggleShellDrawer) {
     window.gxAPI.toggleShellDrawer({ kind: 'left-tool', tool: toolName });
     return;
   }
@@ -4001,6 +4135,7 @@ function closeRightDrawer() {
 function applyShellDrawerOverlayState(st) {
   const open = Boolean(st && st.open);
   const kind = open ? st.kind : null;
+  currentOverlayDrawerKind = kind;
   if (!IS_DRAWER_OVERLAY) {
     const activeTool = kind === 'left-tool' ? st.tool : null;
     document.querySelectorAll('[data-left-tool]').forEach((btn) => {
@@ -4763,7 +4898,7 @@ function syncEasySetupCheckboxes(s) {
   setChk('chkBookmarksBar', s.showBookmarksBar !== false);
   setChk('chkForceDarkWeb', Boolean(s.forceDarkWeb));
   setChk('chkUiSounds', s.uiSoundsEnabled !== false);
-  setChk('chkCloseLastTab', Boolean(s.closeWindowOnLastTab));
+  setChk('chkCloseLastTab', s.closeWindowOnLastTab !== false);
   setChk('chkEasyWallpaperEnabled', s.wallpaper?.type !== 'none');
   setChk('chkEasyColorizeSidebar', Boolean(s.colorizeSidebarIcons));
   setChk('chkEasyReduceAnimations', Boolean(s.reduceAnimations));
@@ -4774,7 +4909,9 @@ function syncEasySetupCheckboxes(s) {
   setChk('chkEasySpBigger', Boolean(s.startPageBiggerTiles));
   setChk('chkEasySpSuggestions', s.startPageShowSuggestions !== false);
   setChk('chkEasySpHideSearch', s.startPageShowSearch === false);
-  setChk('chkEasyTrackerBlock', s.trackerBlockEnabled !== false);
+  setChk('chkEasyTrackerBlock', s.adblockEnabled !== false && s.trackerBlockEnabled !== false);
+  const easyTrackerChk = document.getElementById('chkEasyTrackerBlock');
+  if (easyTrackerChk) easyTrackerChk.disabled = s.adblockEnabled === false;
 
   const activeWp = s.wallpaper?.type === 'preset' ? (s.wallpaper.preset || 'obsidian-wave') : '';
   document.querySelectorAll('[data-easy-wp]').forEach((btn) => {
@@ -4817,6 +4954,13 @@ function renderAdblockStats(stats) {
 
   if (typeof stats.enabled === 'boolean') {
     document.getElementById('chkAdblockEnabled').checked = stats.enabled;
+    const easyTrackerChk = document.getElementById('chkEasyTrackerBlock');
+    if (easyTrackerChk) {
+      easyTrackerChk.disabled = !stats.enabled;
+      if (typeof stats.trackerBlockEnabled === 'boolean') {
+        easyTrackerChk.checked = Boolean(stats.enabled && stats.trackerBlockEnabled);
+      }
+    }
   }
 
   const listEl = document.getElementById('recentBlockedList');

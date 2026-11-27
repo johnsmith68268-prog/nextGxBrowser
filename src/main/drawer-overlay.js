@@ -180,7 +180,7 @@ function updateShellDrawerBounds(ctx) {
 }
 
 function openShellDrawer(ctx, spec = {}) {
-  if (!ctx || !ctx.win || ctx.win.isDestroyed()) return getShellDrawerState(ctx);
+  if (!ctx || !ctx.win || ctx.win.isDestroyed() || ctx.shellModalOpen) return getShellDrawerState(ctx);
   const kind = spec.kind;
   if (kind !== 'rail' && kind !== 'left-tool' && kind !== 'right-drawer') {
     return closeShellDrawer(ctx);

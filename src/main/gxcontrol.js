@@ -66,8 +66,9 @@ function aggregateProcessMetrics(metrics, coreCountInput) {
           ? Math.max(0, m.cpu.percentCPUUsage)
           : 0;
 
+      const normCpu = rawCpu / cores;
       totalWorkingSetKB += workingSetKB;
-      totalRawCpu += rawCpu;
+      totalRawCpu += normCpu;
 
       if (typeof m.pid === 'number' && m.pid > 0) {
         metricsByPid.set(m.pid, {
@@ -75,7 +76,7 @@ function aggregateProcessMetrics(metrics, coreCountInput) {
           type: m.type || 'Unknown',
           ramMB: Math.round(workingSetKB / 1024),
           rawCpuPercent: rawCpu,
-          cpuPercent: Math.max(0, Math.min(100, Math.round(rawCpu * 10) / 10))
+          cpuPercent: Math.max(0, Math.min(100, Math.round(normCpu * 10) / 10))
         });
       }
     }

@@ -40,6 +40,11 @@ echo "[Linux Build] Source tree: $SRC_ROOT"
 
 BUILD_DIR="/tmp/nextgx-linux-build"
 
+cleanup_build_dir() {
+  rm -rf "$BUILD_DIR"
+}
+trap cleanup_build_dir EXIT
+
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 cp -r "$SRC_ROOT/src" "$BUILD_DIR/"
@@ -62,7 +67,7 @@ echo "[Linux Build] Running tests before packaging..."
 npm test
 
 echo "[Linux Build] Packaging Linux AppImage + deb..."
-npx electron-builder --linux AppImage deb
+npx electron-builder --linux AppImage deb --publish never
 
 mkdir -p "$SRC_ROOT/dist"
 cp -f "$BUILD_DIR"/dist/*.AppImage "$SRC_ROOT/dist/"

@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file: https: http:; font-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none';" />
+  <title>Split View — Choose Tab</title>
+  <link rel="stylesheet" href="theme.css" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background:
+        radial-gradient(620px 360px at 85% 0%, color-mix(in srgb, var(--nx-accent, #8b5cf6) 16%, transparent), transparent 65%),
+        radial-gradient(520px 340px at 10% 100%, color-mix(in srgb, var(--nx-accent, #8b5cf6) 10%, transparent), transparent 65%),
+        var(--bg-base, #0b0b12);
+      color: var(--text-main, #f1f3fa);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    .picker-shell {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      max-width: 560px;
+      margin: 0 auto;
+      padding: 28px 24px 22px;
+      gap: 16px;
+    }
+
+    .picker-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .picker-title-row {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+    }
+
+    .picker-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: color-mix(in srgb, var(--nx-accent, #8b5cf6) 16%, rgba(255, 255, 255, 0.04));
+      border: 1px solid color-mix(in srgb, var(--nx-accent, #8b5cf6) 42%, transparent);
+      color: var(--nx-accent-bright, #a78bfa);
+      flex-shrink: 0;
+    }
+
+    .picker-header h1 {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: var(--text-main, #f1f3fa);
+    }
+
+    .picker-header p {
+      margin-top: 2px;
+      font-size: 12.5px;
+      color: var(--text-muted, #98a0b8);
+    }
+
+    .picker-cancel-btn {
+      height: 32px;
+      padding: 0 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.11);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text-muted, #98a0b8);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+      flex-shrink: 0;
+    }
+
+    .picker-cancel-btn:hover {
+      background: rgba(255, 77, 115, 0.14);
+      border-color: rgba(255, 77, 115, 0.45);
+      color: #ff9ab0;
+    }
+
+    .picker-search-form {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .picker-search-form svg {
+      position: absolute;
+      left: 13px;
+      color: var(--text-muted, #8e96b0);
+      pointer-events: none;
+    }
+
+    .picker-search-input {
+      width: 100%;
+      height: 42px;
+      padding: 0 14px 0 38px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.11);
+      background: rgba(14, 15, 24, 0.78);
+      color: var(--text-main, #f1f3fa);
+      font-size: 13.5px;
+      outline: none;
+      transition: border-color 140ms ease, box-shadow 140ms ease;
+    }
+
+    .picker-search-input:focus {
+      border-color: var(--nx-accent, #8b5cf6);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--nx-accent, #8b5cf6) 22%, transparent);
+    }
+
+    .picker-section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted, #8e96b0);
+      padding: 0 2px;
+    }
+
+    .picker-count {
+      color: var(--nx-accent-bright, #a78bfa);
+    }
+
+    .picker-list {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      padding-right: 4px;
+    }
+
+    .picker-list::-webkit-scrollbar { width: 6px; }
+    .picker-list::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 999px;
+    }
+
+    .tab-row {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 11px 13px;
+      border-radius: 11px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(20, 22, 34, 0.68);
+      color: var(--text-main, #f1f3fa);
+      text-align: left;
+      cursor: pointer;
+      transition: transform 140ms ease, background 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+    }
+
+    .tab-row:hover {
+      transform: translateY(-1px);
+      background: rgba(28, 30, 48, 0.9);
+      border-color: color-mix(in srgb, var(--nx-accent, #8b5cf6) 58%, rgba(255, 255, 255, 0.14));
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.34);
+    }
+
+    .tab-fav-wrap {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+
+    .tab-fav {
+      width: 18px;
+      height: 18px;
+      object-fit: contain;
+    }
+
+    .tab-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .tab-title {
+      font-size: 13.5px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--text-main, #f1f3fa);
+    }
+
+    .tab-url {
+      margin-top: 2px;
+      font-size: 11.5px;
+      color: var(--text-muted, #8e96b0);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .tab-open-pill {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 7px;
+      background: color-mix(in srgb, var(--nx-accent, #8b5cf6) 16%, transparent);
+      border: 1px solid color-mix(in srgb, var(--nx-accent, #8b5cf6) 40%, transparent);
+      color: var(--nx-accent-bright, #a78bfa);
+      flex-shrink: 0;
+    }
+
+    .picker-empty {
+      padding: 28px 18px;
+      text-align: center;
+      border-radius: 12px;
+      border: 1px dashed rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.02);
+      color: var(--text-muted, #8e96b0);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .picker-footer {
+      padding-top: 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn-new-tab {
+      flex: 1;
+      height: 40px;
+      border-radius: 10px;
+      border: 1px solid color-mix(in srgb, var(--nx-accent, #8b5cf6) 75%, #ffffff);
+      background: var(--nx-accent, #8b5cf6);
+      color: var(--nx-on-accent, #ffffff);
+      font-size: 13.5px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: 0 6px 20px color-mix(in srgb, var(--nx-accent, #8b5cf6) 34%, transparent);
+      transition: filter 140ms ease, transform 140ms ease;
+    }
+
+    .btn-new-tab:hover {
+      filter: brightness(1.08);
+      transform: translateY(-1px);
+    }
+
+    .btn-swap {
+      height: 40px;
+      padding: 0 14px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-main, #f1f3fa);
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 140ms ease, border-color 140ms ease;
+    }
+
+    .btn-swap:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: var(--nx-accent, #8b5cf6);
+    }
+  </style>
+</head>
+<body>
+  <div class="picker-shell">
+    <div class="picker-header">
+      <div class="picker-title-row">
+        <div class="picker-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="16" rx="2" />
+            <line x1="12" y1="4" x2="12" y2="20" />
+          </svg>
+        </div>
+        <div>
+          <h1>Split View</h1>
+          <p>Select an open tab to display here, or open a new tab</p>
+        </div>
+      </div>
+      <button type="button" class="picker-cancel-btn" id="btnCancelSplit" title="Exit Split View">
+        ✕ Close Split
+      </button>
+    </div>
+
+    <form class="picker-search-form" id="pickerSearchForm">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="7" />
+        <line x1="21" y1="21" x2="16.65" y2="16.65" />
+      </svg>
+      <input type="text" class="picker-search-input" id="pickerSearchInput" placeholder="Filter open tabs or type a website / search..." autocomplete="off" />
+    </form>
+
+    <div class="picker-section-head">
+      <span>Open Tabs</span>
+      <span class="picker-count" id="pickerCount">0 tabs</span>
+    </div>
+
+    <div class="picker-list" id="pickerTabList"></div>
+
+    <div class="picker-footer">
+      <button type="button" class="btn-new-tab" id="btnOpenNewTab">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+          <line x1="12" y1="5" x2="12" y2="19" />
+          <line x1="5" y1="12" x2="19" y2="12" />
+        </svg>
+        <span>Open New Tab</span>
+      </button>
+      <button type="button" class="btn-swap" id="btnSwapSide" title="Reverse Left ↔ Right side">
+        ⇄ Reverse
+      </button>
+    </div>
+  </div>
+
+  <script src="split-picker.js"></script>
+</body>
+</html>

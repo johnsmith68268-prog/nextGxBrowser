@@ -95,7 +95,10 @@ test('UX-1: sidebar panel range is 260–1600px (up to 75% window width) in ever
     const renderer = fs.readFileSync(path.join(ROOT, 'src', 'ui', 'renderer.js'), 'utf8');
     assert.match(renderer, /SIDEBAR_PANEL_MIN_WIDTH = 260/);
     assert.match(renderer, /SIDEBAR_PANEL_MAX_WIDTH = 1600/);
-    const chrome = fs.readFileSync(path.join(ROOT, 'src', 'ui', 'sidebar-panel-chrome.html'), 'utf8');
+    const chrome =
+      fs.readFileSync(path.join(ROOT, 'src', 'ui', 'sidebar-panel-chrome.html'), 'utf8') +
+      '\n' +
+      fs.readFileSync(path.join(ROOT, 'src', 'ui', 'sidebar-panel-chrome.js'), 'utf8');
     assert.match(chrome, /SIDEBAR_PANEL_MIN_WIDTH = 260/);
     assert.match(chrome, /SIDEBAR_PANEL_MAX_WIDTH = 1600/);
     const css = fs.readFileSync(path.join(ROOT, 'src', 'ui', 'styles.css'), 'utf8');
@@ -241,7 +244,10 @@ test('UX-5: the shared New Profile modal exists in the shell and both entry poin
   assert.match(webui, /nx-empty-state/);
   assert.match(webui, /Keyboard shortcuts/);
 
-  const popover = fs.readFileSync(path.join(ROOT, 'src', 'ui', 'popover.html'), 'utf8');
+  const popover =
+    fs.readFileSync(path.join(ROOT, 'src', 'ui', 'popover.html'), 'utf8') +
+    '\n' +
+    fs.readFileSync(path.join(ROOT, 'src', 'ui', 'popover.js'), 'utf8');
   assert.match(popover, /openCreateProfileModal/);
   assert.match(popover, /Open — click to focus/);
   assert.match(popover, /os-favicon/);
@@ -268,7 +274,10 @@ test('UX-6: earlier fixes are untouched — adblock scriptlet, GX loader, cert p
   assert.match(preload, /adPlacements/);
   const main = fs.readFileSync(path.join(ROOT, 'src', 'main.js'), 'utf8');
   assert.match(main, /loadBundledGxExtension|gx-extension/);
-  const errorHtml = fs.readFileSync(path.join(ROOT, 'src', 'ui', 'error.html'), 'utf8');
+  const errorHtml =
+    fs.readFileSync(path.join(ROOT, 'src', 'ui', 'error.html'), 'utf8') +
+    '\n' +
+    fs.readFileSync(path.join(ROOT, 'src', 'ui', 'error.js'), 'utf8');
   assert.match(errorHtml, /Proceed anyway/);
   const split = fs.readFileSync(path.join(ROOT, 'src', 'main', 'splitview.js'), 'utf8');
   assert.match(split, /function toggleSplit|toggleSplit/);

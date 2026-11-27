@@ -36,6 +36,8 @@ const WEBUI_FILE = path.join(UI_DIR, 'chrome-webui.html');
 const WEBUI_FILE_URL = pathToFileURL(WEBUI_FILE).toString();
 const ONBOARDING_FILE = path.join(UI_DIR, 'onboarding.html');
 const ONBOARDING_FILE_URL = pathToFileURL(ONBOARDING_FILE).toString();
+const SPLIT_PICKER_FILE = path.join(UI_DIR, 'split-picker.html');
+const SPLIT_PICKER_FILE_URL = pathToFileURL(SPLIT_PICKER_FILE).toString();
 const ERROR_PAGE_FILE = path.join(UI_DIR, 'error.html');
 const ERROR_PAGE_FILE_URL = pathToFileURL(ERROR_PAGE_FILE).toString();
 const POPOVER_FILE = path.join(UI_DIR, 'popover.html');
@@ -106,6 +108,8 @@ module.exports = {
   WEBUI_FILE_URL,
   ONBOARDING_FILE,
   ONBOARDING_FILE_URL,
+  SPLIT_PICKER_FILE,
+  SPLIT_PICKER_FILE_URL,
   ERROR_PAGE_FILE,
   ERROR_PAGE_FILE_URL,
   POPOVER_FILE,

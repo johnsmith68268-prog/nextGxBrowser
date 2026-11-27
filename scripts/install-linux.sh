@@ -95,7 +95,8 @@ else
   curl -fL --progress-bar "$DL_URL" -o "$DL_TMP/$APPIMAGE_FILE"
   if [ -n "$SUMS_URL" ]; then
     curl -fsSL "$SUMS_URL" -o "$DL_TMP/SHA256SUMS.txt"
-    if ! grep -F "  $APPIMAGE_FILE" "$DL_TMP/SHA256SUMS.txt" > "$DL_TMP/appimage.sha256"; then
+    ESCAPED_FILE="$(printf '%s' "$APPIMAGE_FILE" | sed -E 's/[][(){}.^$*+?|\\]/\\&/g')"
+    if ! grep -E "^[0-9a-fA-F]{64}[[:space:]]+\\*?${ESCAPED_FILE}$" "$DL_TMP/SHA256SUMS.txt" > "$DL_TMP/appimage.sha256"; then
       echo "[nextGx Installer] ERROR: SHA256SUMS.txt has no checksum entry for $APPIMAGE_FILE — refusing to install an unverifiable download." >&2
       exit 1
     fi
@@ -143,7 +144,7 @@ cat > "$LAUNCHER" <<EOF
 # blindly relaunching or disabling the Chromium sandbox after a normal crash.
 APPIMAGE="$TARGET_APPIMAGE"
 
-if [ ! -e /dev/fuse ] || ! command -v fusermount >/dev/null 2>&1 && ! command -v fusermount3 >/dev/null 2>&1; then
+if [ ! -e /dev/fuse ] || { ! command -v fusermount >/dev/null 2>&1 && ! command -v fusermount3 >/dev/null 2>&1; }; then
   export APPIMAGE_EXTRACT_AND_RUN=1
 fi
 
