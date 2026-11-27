@@ -9,3 +9,5 @@ out/
 # Chromium-generated extension metadata (indexed DNR rulesets); do not commit
 gx-extension/_metadata/
 bgnkhhnnamicmpeenaelnjfhikgbkllg_*.zip
+screen/
+NextGx Browser.html

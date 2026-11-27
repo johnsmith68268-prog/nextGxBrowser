@@ -1,0 +1,1868 @@
+<!doctype html>
+<html lang="en" data-theme="violet">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="nextGx Browser — Fast, open-source Chromium desktop browser built for power users &amp; gamers. Native Split View, 8 GB Memory Saver, GX Control limiters, built-in Ad &amp; YouTube Shield, 8 Live Themes, and SHA256-verified Auto-Updater for Windows &amp; Linux.">
+<meta property="og:title" content="nextGx Browser — Fast. Distraction-Free. Built for Power Users.">
+<meta property="og:description" content="Open-source Chromium desktop browser for Windows &amp; Linux with Native Split View, GX Control RAM/CPU/Network limiters, built-in Ad &amp; YouTube Shield, and SHA256-verified Auto-Updater.">
+<meta property="og:image" content="screenshots/hero-startpage.jpg">
+<meta property="og:type" content="website">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="alternate icon" type="image/png" href="assets/logo.png">
+<title>nextGx Browser — Fast, Distraction-Free Chromium Desktop Browser</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #06070d;
+  --bg-alt: #0a0c16;
+  --surface: rgba(16, 19, 34, 0.72);
+  --surface-solid: #101322;
+  --surface-hover: rgba(24, 29, 50, 0.86);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.15);
+  --text: #f3f5fc;
+  --muted: #98a2be;
+  --muted-dim: #69738f;
+  --accent: #8b5cf6;
+  --accent-bright: #a78bfa;
+  --accent-2: #22d3ee;
+  --accent-glow: rgba(139, 92, 246, 0.34);
+  --accent-2-glow: rgba(34, 211, 238, 0.24);
+  --on-accent: #ffffff;
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --font-display: "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --font-body: "Inter", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+html[data-theme="cyan"] {
+  --accent: #06b6d4;
+  --accent-bright: #22d3ee;
+  --accent-2: #8b5cf6;
+  --accent-glow: rgba(6, 182, 212, 0.34);
+  --accent-2-glow: rgba(139, 92, 246, 0.22);
+  --on-accent: #04131a;
+}
+
+html[data-theme="emerald"] {
+  --accent: #10b981;
+  --accent-bright: #34d399;
+  --accent-2: #22d3ee;
+  --accent-glow: rgba(16, 185, 129, 0.32);
+  --accent-2-glow: rgba(34, 211, 238, 0.20);
+  --on-accent: #031912;
+}
+
+html[data-theme="amber"] {
+  --accent: #f59e0b;
+  --accent-bright: #fbbf24;
+  --accent-2: #a855f7;
+  --accent-glow: rgba(245, 158, 11, 0.30);
+  --accent-2-glow: rgba(168, 85, 247, 0.20);
+  --on-accent: #181002;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 84px; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; }
+img { max-width: 100%; display: block; }
+button { font-family: inherit; cursor: pointer; }
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  margin: 0;
+  letter-spacing: -0.025em;
+  line-height: 1.08;
+}
+.mono { font-family: var(--font-mono); }
+.wrap { width: min(1220px, calc(100% - 40px)); margin: 0 auto; }
+
+/* Ambient top orbital mesh */
+.bg-aurora {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(900px 520px at 14% -8%, var(--accent-glow), transparent 62%),
+    radial-gradient(760px 460px at 88% 4%, var(--accent-2-glow), transparent 60%),
+    radial-gradient(600px 420px at 50% 100%, rgba(139, 92, 246, 0.08), transparent 65%);
+  transition: background 0.35s ease;
+}
+
+/* NAVBAR */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  background: rgba(6, 7, 13, 0.78);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-bottom: 1px solid var(--border);
+}
+.nav-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  height: 70px;
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  text-decoration: none;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 19px;
+  letter-spacing: -0.02em;
+}
+.brand img {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  box-shadow: 0 0 18px var(--accent-glow);
+}
+.brand span em {
+  font-style: normal;
+  background: linear-gradient(135deg, var(--accent-bright), var(--accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.nav-links a {
+  text-decoration: none;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 8px 13px;
+  border-radius: 9px;
+  transition: color 0.16s ease, background 0.16s ease;
+}
+.nav-links a:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+}
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.theme-pills {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+}
+.theme-swatch-btn {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  padding: 0;
+  transition: transform 0.16s ease, border-color 0.16s ease;
+}
+.theme-swatch-btn:hover { transform: scale(1.18); }
+.theme-swatch-btn.active { border-color: #ffffff; transform: scale(1.15); }
+
+.icon-link {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  transition: border-color 0.16s ease, color 0.16s ease, background 0.16s ease;
+}
+.icon-link:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+/* BUTTONS */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  text-decoration: none;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14.5px;
+  border-radius: 11px;
+  padding: 12px 22px;
+  border: 1px solid transparent;
+  transition: transform 0.16s ease, box-shadow 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+  white-space: nowrap;
+}
+.btn:active { transform: translateY(1px); }
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: var(--on-accent);
+  box-shadow: 0 10px 30px var(--accent-glow);
+}
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 36px var(--accent-glow);
+  filter: brightness(1.06);
+}
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: var(--accent-bright);
+}
+.btn-sm { padding: 9px 15px; font-size: 13.5px; border-radius: 9px; }
+
+@media (max-width: 920px) {
+  .nav-links { display: none; }
+}
+@media (max-width: 560px) {
+  .theme-pills { display: none; }
+  .nav-cta-text { display: none; }
+}
+
+/* HERO */
+.hero {
+  position: relative;
+  padding: 68px 0 64px;
+}
+.hero-top {
+  text-align: center;
+  max-width: 840px;
+  margin: 0 auto;
+}
+.release-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 14px 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-strong);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: #dbe3ff;
+  text-decoration: none;
+  transition: border-color 0.18s ease, background 0.18s ease;
+}
+.release-pill:hover {
+  border-color: var(--accent-bright);
+  background: rgba(255, 255, 255, 0.07);
+}
+.release-pill .pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-2);
+  box-shadow: 0 0 0 4px var(--accent-2-glow);
+}
+.hero h1 {
+  margin-top: 22px;
+  font-size: clamp(42px, 6.4vw, 76px);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.03;
+}
+.grad-text {
+  background: linear-gradient(125deg, #ffffff 10%, var(--accent-bright) 52%, var(--accent-2) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.hero-sub {
+  margin: 20px auto 0;
+  max-width: 660px;
+  font-size: clamp(16.5px, 2vw, 19px);
+  color: var(--muted);
+  line-height: 1.65;
+}
+.hero-actions {
+  margin-top: 30px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+.hero-meta {
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--muted-dim);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 14px;
+}
+.hero-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* HERO VISUAL */
+.hero-stage {
+  margin-top: 46px;
+  position: relative;
+}
+.hero-glow-ring {
+  position: absolute;
+  inset: -14px;
+  border-radius: 26px;
+  background: radial-gradient(65% 60% at 50% 0%, var(--accent-glow), transparent 72%);
+  filter: blur(26px);
+  opacity: 0.72;
+  z-index: -1;
+}
+.hero-window {
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: #070911;
+  box-shadow: 0 36px 100px rgba(0, 0, 0, 0.78), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  cursor: zoom-in;
+  transition: transform 0.25s ease, border-color 0.25s ease;
+}
+.hero-window:hover {
+  border-color: color-mix(in srgb, var(--accent-bright) 55%, rgba(255, 255, 255, 0.16));
+}
+.hero-window img { width: 100%; height: auto; }
+
+.float-chip {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: rgba(12, 15, 28, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.56);
+}
+.float-chip.left { left: -14px; bottom: 26px; }
+.float-chip.right { right: -14px; bottom: -20px; }
+.float-chip .chip-ico {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, transparent);
+  color: var(--accent-bright);
+  flex-shrink: 0;
+}
+.float-chip b {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 14px;
+  color: var(--text);
+}
+.float-chip small {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+}
+@media (max-width: 960px) {
+  .float-chip { position: static; margin-top: 12px; }
+  .hero-chips-mobile { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+}
+@media (max-width: 580px) {
+  .hero-chips-mobile { grid-template-columns: 1fr; }
+}
+
+/* STATS STRIP */
+.stats-strip {
+  margin-top: 48px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+@media (max-width: 780px) { .stats-strip { grid-template-columns: 1fr 1fr; } }
+.stat-card {
+  padding: 20px 22px;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(12px);
+}
+.stat-card b {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 28px;
+  background: linear-gradient(135deg, #fff, var(--accent-bright));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.stat-card span {
+  display: block;
+  margin-top: 4px;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+
+/* SECTIONS */
+section { padding: 84px 0; }
+.section-alt {
+  background: linear-gradient(180deg, rgba(16, 19, 34, 0.42) 0%, rgba(10, 12, 22, 0.72) 100%);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.sec-head {
+  max-width: 720px;
+  margin-bottom: 38px;
+}
+.sec-head.center {
+  text-align: center;
+  margin-left: auto;
+  margin-right: auto;
+}
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--accent-2);
+  margin-bottom: 12px;
+}
+.sec-head h2 {
+  font-size: clamp(30px, 4.2vw, 46px);
+  font-weight: 700;
+}
+.sec-head p {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1.65;
+}
+
+/* INTERACTIVE SHOWCASE GALLERY */
+.showcase-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 24px;
+}
+.sc-tab {
+  padding: 9px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  font-size: 13.5px;
+  font-weight: 600;
+  transition: all 0.16s ease;
+}
+.sc-tab:hover { color: var(--text); border-color: var(--border-strong); }
+.sc-tab.active {
+  background: color-mix(in srgb, var(--accent) 20%, rgba(255, 255, 255, 0.04));
+  border-color: var(--accent-bright);
+  color: #ffffff;
+  box-shadow: 0 0 20px var(--accent-glow);
+}
+.showcase-featured {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--surface-solid);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.6);
+  margin-bottom: 22px;
+}
+.showcase-featured-img-wrap {
+  position: relative;
+  background: #05060b;
+  cursor: zoom-in;
+}
+.showcase-featured-img-wrap img {
+  width: 100%;
+  height: auto;
+  max-height: 640px;
+  object-fit: cover;
+  object-position: top center;
+}
+.zoom-hint {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: rgba(6, 7, 13, 0.8);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  font-size: 12px;
+  font-weight: 500;
+  color: #e6ebff;
+}
+.showcase-caption {
+  padding: 18px 24px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--border);
+}
+.showcase-caption h3 { font-size: 19px; }
+.showcase-caption p { margin: 4px 0 0; color: var(--muted); font-size: 14.5px; }
+
+.shot-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+@media (max-width: 980px) { .shot-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 540px) { .shot-grid { grid-template-columns: 1fr; } }
+.shot-thumb {
+  border-radius: 13px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+  text-align: left;
+  padding: 0;
+  color: var(--text);
+}
+.shot-thumb:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-strong);
+}
+.shot-thumb.active {
+  border-color: var(--accent-bright);
+  box-shadow: 0 0 0 1px var(--accent-bright), 0 12px 30px var(--accent-glow);
+}
+.shot-thumb img {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  object-position: top left;
+}
+.shot-thumb .thumb-meta {
+  padding: 10px 12px;
+}
+.shot-thumb b {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 13.5px;
+}
+.shot-thumb span {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* SPOTLIGHT ROWS */
+.spotlights {
+  display: flex;
+  flex-direction: column;
+  gap: 54px;
+  margin-bottom: 64px;
+}
+.spotlight {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr;
+  gap: 38px;
+  align-items: center;
+}
+.spotlight.flip { grid-template-columns: 1.15fr 1fr; }
+.spotlight.flip .spot-media { order: -1; }
+@media (max-width: 920px) {
+  .spotlight, .spotlight.flip { grid-template-columns: 1fr; gap: 22px; }
+  .spotlight.flip .spot-media { order: 0; }
+}
+.spot-copy h3 { font-size: clamp(24px, 3vw, 34px); margin-top: 8px; }
+.spot-copy p { color: var(--muted); margin: 14px 0 0; font-size: 16px; line-height: 1.68; }
+.spot-list {
+  list-style: none;
+  padding: 0;
+  margin: 18px 0 0;
+  display: grid;
+  gap: 9px;
+}
+.spot-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14.5px;
+  color: #d6ddf4;
+}
+.spot-list li::before {
+  content: "✓";
+  color: var(--accent-2);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.spot-media {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  background: #070911;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.52);
+  cursor: zoom-in;
+}
+.spot-media img { width: 100%; height: auto; }
+
+/* BENTO GRID */
+.bento {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+@media (max-width: 960px) { .bento { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 620px) { .bento { grid-template-columns: 1fr; } }
+.bento-card {
+  padding: 24px;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  transition: border-color 0.18s ease, transform 0.18s ease, background 0.18s ease;
+}
+.bento-card:hover {
+  border-color: color-mix(in srgb, var(--accent-bright) 42%, rgba(255, 255, 255, 0.12));
+  background: var(--surface-hover);
+  transform: translateY(-2px);
+}
+.bento-ico {
+  width: 42px;
+  height: 42px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--accent) 15%, rgba(255, 255, 255, 0.03));
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
+  color: var(--accent-bright);
+  margin-bottom: 15px;
+}
+.bento-card h3 { font-size: 18px; }
+.bento-card p { margin: 8px 0 0; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
+.bento-card code {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--accent-2);
+  background: rgba(34, 211, 238, 0.08);
+  padding: 1px 6px;
+  border-radius: 5px;
+}
+
+/* THEMES SHOWCASE */
+.themes-layout {
+  display: grid;
+  grid-template-columns: 0.92fr 1.08fr;
+  gap: 28px;
+  align-items: center;
+}
+@media (max-width: 920px) { .themes-layout { grid-template-columns: 1fr; } }
+.theme-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.t-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 15px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  transition: border-color 0.16s ease, transform 0.16s ease;
+}
+.t-card:hover { transform: translateY(-1px); border-color: var(--border-strong); }
+.t-card .dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  flex-shrink: 0;
+  box-shadow: 0 0 14px currentColor;
+}
+.t-card b { display: block; font-size: 14px; font-family: var(--font-display); }
+.t-card small { display: block; font-size: 12px; color: var(--muted); }
+.themes-shots {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+@media (max-width: 560px) { .themes-shots { grid-template-columns: 1fr; } }
+.themes-shots figure {
+  margin: 0;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface-solid);
+  cursor: zoom-in;
+}
+.themes-shots figcaption {
+  padding: 10px 13px;
+  font-size: 12.5px;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+}
+
+/* COMPARISON & SECURITY TABLE */
+.compare-wrap {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.compare-scroll { overflow-x: auto; }
+table.compare {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 640px;
+}
+table.compare th, table.compare td {
+  padding: 15px 20px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  font-size: 14.5px;
+}
+table.compare tr:last-child td { border-bottom: 0; }
+table.compare thead th {
+  font-family: var(--font-display);
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.025);
+}
+table.compare th.col-nx, table.compare td.col-nx {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  color: #ffffff;
+  font-weight: 600;
+}
+.tag-yes { color: #34d399; font-weight: 600; }
+.tag-no { color: var(--muted-dim); }
+.tag-mid { color: #fbbf24; }
+
+/* DOWNLOAD CENTER */
+.os-tabs {
+  display: inline-flex;
+  padding: 5px;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  margin: 0 auto 28px;
+}
+.os-tabs-wrap { text-align: center; }
+.os-tab {
+  padding: 10px 22px;
+  border-radius: 9px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-display);
+  font-size: 14.5px;
+  font-weight: 600;
+  transition: all 0.16s ease;
+}
+.os-tab.active {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: var(--on-accent);
+  box-shadow: 0 6px 20px var(--accent-glow);
+}
+.dl-pane { display: none; }
+.dl-pane.active { display: block; }
+.dl-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+.dl-cards.two-col { grid-template-columns: repeat(2, 1fr); }
+@media (max-width: 900px) { .dl-cards, .dl-cards.two-col { grid-template-columns: 1fr; } }
+.dl-card {
+  padding: 24px;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: relative;
+}
+.dl-card.recommended {
+  border-color: color-mix(in srgb, var(--accent-bright) 58%, rgba(255, 255, 255, 0.14));
+  box-shadow: 0 20px 50px var(--accent-glow);
+}
+.rec-badge {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-bright) 50%, transparent);
+  color: var(--accent-bright);
+}
+.dl-card h3 { font-size: 20px; }
+.dl-card p { margin: 0; font-size: 14.5px; color: var(--muted); }
+.dl-filename {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: #dce4ff;
+  background: rgba(4, 6, 12, 0.72);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 9px 11px;
+  word-break: break-all;
+}
+.dl-cmd {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent-2);
+  background: rgba(4, 6, 12, 0.85);
+  border: 1px dashed var(--border-strong);
+  border-radius: 9px;
+  padding: 10px 12px;
+  word-break: break-all;
+}
+.dl-actions {
+  margin-top: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 6px;
+}
+.dl-actions .btn { flex: 1; }
+.verify-bar {
+  margin-top: 22px;
+  padding: 18px 22px;
+  border-radius: var(--radius-md);
+  background: rgba(12, 15, 28, 0.75);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.verify-bar p { margin: 4px 0 0; font-size: 13.5px; color: var(--muted); }
+
+/* FAQ */
+.faq-list {
+  max-width: 860px;
+  margin: 0 auto;
+  display: grid;
+  gap: 10px;
+}
+.faq-item {
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.faq-q {
+  width: 100%;
+  background: none;
+  border: 0;
+  color: var(--text);
+  text-align: left;
+  padding: 18px 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  font-family: var(--font-display);
+  font-size: 16.5px;
+  font-weight: 600;
+}
+.faq-q .plus {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--accent-bright);
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+.faq-item.open .faq-q .plus { transform: rotate(45deg); }
+.faq-a {
+  display: none;
+  padding: 0 22px 18px;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.68;
+}
+.faq-item.open .faq-a { display: block; }
+.faq-a code {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--accent-2);
+  background: rgba(34, 211, 238, 0.08);
+  padding: 2px 6px;
+  border-radius: 5px;
+}
+
+/* FOOTER */
+footer {
+  border-top: 1px solid var(--border);
+  background: #04050a;
+  padding: 44px 0 48px;
+}
+.footer-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+}
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.footer-links a { text-decoration: none; }
+.footer-links a:hover { color: var(--text); }
+
+/* LIGHTBOX MODAL */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(4, 5, 11, 0.92);
+  backdrop-filter: blur(14px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.lightbox.open { display: flex; }
+.lightbox-inner {
+  max-width: min(1240px, 96vw);
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: relative;
+}
+.lightbox-inner img {
+  max-height: 80vh;
+  width: auto;
+  margin: 0 auto;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.85);
+}
+.lightbox-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  color: var(--text);
+}
+.lightbox-bar b { font-family: var(--font-display); font-size: 16px; }
+.lightbox-bar span { color: var(--muted); font-size: 13.5px; margin-left: 8px; }
+.lb-controls { display: flex; gap: 8px; }
+.lb-btn {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 9px;
+  border: 1px solid var(--border-strong);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.lb-btn:hover { background: rgba(255, 255, 255, 0.15); }
+</style>
+</head>
+<body>
+<div class="bg-aurora" aria-hidden="true"></div>
+
+<!-- NAV -->
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="#top" aria-label="nextGx Browser home">
+      <img src="assets/logo.png" alt="nextGx Browser emblem" width="34" height="34">
+      <span>next<em>Gx</em> Browser</span>
+    </a>
+
+    <nav class="nav-links" aria-label="Main navigation">
+      <a href="#showcase">Showcase</a>
+      <a href="#features">Features</a>
+      <a href="#themes">Themes</a>
+      <a href="#privacy">Privacy</a>
+      <a href="#download">Download</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+
+    <div class="nav-right">
+      <div class="theme-pills" title="Preview landing page accent">
+        <button type="button" class="theme-swatch-btn active" data-set-theme="violet" style="background:#8b5cf6" aria-label="Violet theme"></button>
+        <button type="button" class="theme-swatch-btn" data-set-theme="cyan" style="background:#22d3ee" aria-label="Cyber Cyan theme"></button>
+        <button type="button" class="theme-swatch-btn" data-set-theme="emerald" style="background:#10b981" aria-label="Emerald theme"></button>
+        <button type="button" class="theme-swatch-btn" data-set-theme="amber" style="background:#f59e0b" aria-label="Amber theme"></button>
+      </div>
+      <a class="icon-link" href="https://github.com/johnsmith68268-prog/nextGxBrowser" target="_blank" rel="noopener" title="GitHub Repository" aria-label="GitHub Repository">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 .5a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.03c-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.33-1.76-1.33-1.76-1.09-.75.08-.73.08-.73 1.2.09 1.84 1.24 1.84 1.24 1.07 1.84 2.81 1.31 3.5 1 .11-.78.42-1.31.76-1.61-2.67-.3-5.47-1.34-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.12-.3-.54-1.52.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.29-1.55 3.3-1.23 3.3-1.23.66 1.66.24 2.88.12 3.18.77.84 1.24 1.91 1.24 3.22 0 4.6-2.81 5.62-5.49 5.92.43.37.82 1.1.82 2.22v3.29c0 .32.22.7.83.58A12 12 0 0 0 12 .5z"/></svg>
+      </a>
+      <a class="btn btn-primary btn-sm" href="#download" id="navDownloadBtn">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16"/></svg>
+        <span class="nav-cta-text">Download <span data-release-ver>v3.2.1</span></span>
+      </a>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+  <!-- HERO -->
+  <section class="hero">
+    <div class="wrap">
+      <div class="hero-top">
+        <a class="release-pill" href="https://github.com/johnsmith68268-prog/nextGxBrowser/releases/latest" target="_blank" rel="noopener">
+          <span class="pulse"></span>
+          <span><strong data-release-ver>v3.2.1</strong> Live &nbsp;·&nbsp; Windows &amp; Linux &nbsp;·&nbsp; MIT Open Source</span>
+        </a>
+        <h1>Browse at full speed.<br><span class="grad-text">Own every pixel.</span></h1>
+        <p class="hero-sub">
+          <strong>nextGx Browser</strong> is a fast, distraction-free Chromium desktop browser engineered for power users and gamers — packed with Native Split View, GX Control RAM/CPU/Network limiters, built-in Ad &amp; YouTube Shield, 8 live themes, and a SHA256-verified Auto-Updater.
+        </p>
+
+        <div class="hero-actions">
+          <a class="btn btn-primary" id="heroPrimaryDl" href="https://github.com/johnsmith68268-prog/nextGxBrowser/releases/latest/download/nextGx.Browser-Setup-3.2.1-x64.exe">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16"/></svg>
+            <span id="heroPrimaryLabel">Download for Windows (Setup .exe)</span>
+          </a>
+          <a class="btn btn-secondary" href="#download">All Platforms &amp; Checksums</a>
+          <a class="btn btn-secondary" href="https://github.com/johnsmith68268-prog/nextGxBrowser" target="_blank" rel="noopener">Star on GitHub</a>
+        </div>
+
+        <div class="hero-meta">
+          <span>✓ Free &amp; Open Source (MIT)</span>
+          <span>✓ Zero Telemetry</span>
+          <span>✓ Built-in Silent Auto-Updater</span>
+          <span>✓ SHA256 Verified Releases</span>
+        </div>
+      </div>
+
+      <div class="hero-stage">
+        <div class="hero-glow-ring" aria-hidden="true"></div>
+        <div class="hero-window" data-lightbox-idx="0" role="button" tabindex="0" aria-label="View Start Page screenshot fullscreen">
+          <img src="screenshots/hero-startpage.jpg" alt="nextGx Browser v3.2.1 Start Page with Obsidian Wave wallpaper, smoked-glass Speed Dial cards, and clean sidebar rail">
+        </div>
+
+        <div class="hero-chips-mobile">
+          <div class="float-chip left">
+            <div class="chip-ico">
+              <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+            </div>
+            <div>
+              <b>8 GB Memory Saver</b>
+              <small>Auto-hibernates idle tabs + Hot Tab Killer</small>
+            </div>
+          </div>
+
+          <div class="float-chip right">
+            <div class="chip-ico">
+              <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8 3v6c0 5-3.5 9-8 11-4.5-2-8-6-8-11V5z"/><path d="M9 12l2 2 4-4"/></svg>
+            </div>
+            <div>
+              <b>Built-in Ad &amp; YouTube Shield</b>
+              <small>AdGuard MV3 + native player-response stripper</small>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="stats-strip" aria-label="Key numbers">
+        <div class="stat-card">
+          <b>166 / 166</b>
+          <span>Automated security &amp; UI tests passing</span>
+        </div>
+        <div class="stat-card">
+          <b>8 Themes</b>
+          <span>+ 6 curated AI dark wallpapers built-in</span>
+        </div>
+        <div class="stat-card">
+          <b>5 Formats</b>
+          <span>Win Setup, Portable, MSIX, AppImage, .deb</span>
+        </div>
+        <div class="stat-card">
+          <b>100% Free</b>
+          <span>MIT licensed · Zero ads · Zero telemetry</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- INTERACTIVE SHOWCASE -->
+  <section id="showcase" class="section-alt">
+    <div class="wrap">
+      <div class="sec-head center">
+        <div class="eyebrow">Real Build Screenshots</div>
+        <h2>Every pixel from the shipped <span data-release-ver>v3.2.1</span> build</h2>
+        <p>No mockups, no stock art. Switch through live views of nextGx Browser or click any frame to inspect it fullscreen.</p>
+      </div>
+
+      <div class="showcase-tabs" id="showcaseTabs" role="tablist"></div>
+
+      <div class="showcase-featured">
+        <div class="showcase-featured-img-wrap" id="featuredShotWrap" role="button" tabindex="0">
+          <img id="featuredShotImg" src="screenshots/hero-startpage.jpg" alt="nextGx Browser Start Page">
+          <span class="zoom-hint">Click to zoom fullscreen ⤢</span>
+        </div>
+        <div class="showcase-caption">
+          <div>
+            <h3 id="featuredShotTitle">Clean &amp; Classic Start Page</h3>
+            <p id="featuredShotDesc">Minimalist clock, smoked-glass Speed Dial cards with crisp brand SVGs, curated dark AI wallpapers, and translucent RAM/Shield status pills.</p>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" id="btnOpenLightbox">Inspect Fullscreen</button>
+        </div>
+      </div>
+
+      <div class="shot-grid" id="shotGrid"></div>
+    </div>
+  </section>
+
+  <!-- FEATURES & SPOTLIGHTS -->
+  <section id="features">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">Engineered For Power Users</div>
+        <h2>Everything Chrome misses — built natively into the shell</h2>
+        <p>Designed on Electron &amp; Chromium <code>WebContentsView</code> so split panes, sidebar apps, resource limiters, and privacy protection feel instant and cohesive.</p>
+      </div>
+
+      <div class="spotlights">
+        <!-- Spotlight 1 -->
+        <div class="spotlight">
+          <div class="spot-copy">
+            <div class="eyebrow">Multitasking</div>
+            <h3>Native Split View &amp; 75% Resizable Sidebar</h3>
+            <p>Open two live tabs side-by-side with a smooth draggable divider — or dock ChatGPT, Discord, Twitch, Spotify, YouTube Music, and WhatsApp in a slim sidebar rail that expands up to 75% width with a 1-click Wide toggle.</p>
+            <ul class="spot-list">
+              <li>True dual <code>WebContentsView</code> Split View with independent focus &amp; ratio persistence</li>
+              <li>Resizable sidebar panel (260px – 1600px) with smooth glowing resizer handle</li>
+              <li>Idle sidebar service views auto-suspend to keep background RAM usage low</li>
+            </ul>
+          </div>
+          <div class="spot-media" data-lightbox-idx="2" role="button" tabindex="0">
+            <img src="screenshots/splitview.jpg" alt="nextGx Browser Native Split View showing two pages side-by-side">
+          </div>
+        </div>
+
+        <!-- Spotlight 2 -->
+        <div class="spotlight flip">
+          <div class="spot-copy">
+            <div class="eyebrow">Performance Control</div>
+            <h3>GX Control, Resource Limiters &amp; Hot Tab Killer</h3>
+            <p>Gaming or compiling in the background? Cap browser RAM, throttle CPU usage, limit network bandwidth, and kill memory-hungry tabs in one click — without losing your open workspace.</p>
+            <ul class="spot-list">
+              <li>Live RAM, CPU, and Network limiters right inside the GX Control drawer</li>
+              <li>Auto-Memory Saver (8 GB Mode) hibernates idle background tabs automatically</li>
+              <li>Per-tab live Memory MB &amp; CPU % monitor with 1-click Hibernate / Hot Tab Killer</li>
+            </ul>
+          </div>
+          <div class="spot-media" data-lightbox-idx="3" role="button" tabindex="0">
+            <img src="screenshots/gx-control.jpg" alt="nextGx Browser GX Control panel with RAM, CPU, Network limiters and Hot Tab Killer">
+          </div>
+        </div>
+
+        <!-- Spotlight 3 -->
+        <div class="spotlight">
+          <div class="spot-copy">
+            <div class="eyebrow">Privacy First</div>
+            <h3>Built-in Ad &amp; Tracker Shield + YouTube Ad Stripping</h3>
+            <p>Block ads, trackers, and pre-roll clutter right out of the box. nextGx combines a fast native engine blocker, bundled AdGuard MV3 filters, and a YouTube player-response scriptlet that strips ad schedules without breaking video streams.</p>
+            <ul class="spot-list">
+              <li>Per-site Shield popover with live blocked counter &amp; 1-click site allowlist</li>
+              <li>Strips YouTube <code>adPlacements</code> &amp; <code>playerAds</code> while keeping <code>googlevideo.com</code> intact</li>
+              <li>DNS-over-HTTPS (DoH), WebRTC IP policy, and third-party cookie blocking in Private Mode</li>
+            </ul>
+          </div>
+          <div class="spot-media" data-lightbox-idx="6" role="button" tabindex="0">
+            <img src="screenshots/shield-youtube.jpg" alt="nextGx Browser Shield popover blocking ads live on YouTube">
+          </div>
+        </div>
+      </div>
+
+      <!-- 12-CARD BENTO GRID -->
+      <div class="bento">
+        <article class="bento-card">
+          <div class="bento-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div>
+          <h3>Smart Omnibox</h3>
+          <p>Inline domain autocomplete, instant Google/DuckDuckGo suggestions, History rows, and <strong>Switch to tab</strong> directly from a full-width dropdown.</p>
+        </article>
+
+        <article class="bento-card">
+          <div class="bento-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16"/></svg></div>
+          <h3>Pro Download Manager</h3>
+          <p>Animated circular toolbar progress ring &amp; wave indicator, live download speed, ETA, Pause/Resume/Cancel, and smart collision auto-numbering.</p>
+        </article>
+
+        <article class="bento-card">
+          <div class="bento-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg></div>
+          <h3>SHA256 Hybrid Auto-Updater</h3>
+          <p>Checks GitHub Releases automatically, verifies downloads against <code>SHA256SUMS.txt</code>, and installs silently on restart or exit.</p>
+        </article>
+
+        <article class="bento-card">
+          <div class="bento-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 21V9"/></svg></div>
+          <h3>First-Run Setup Wizard</h3>
+          <p>Personalize your theme, AI wallpaper, privacy shield level, and sidebar apps in under 30 seconds via <code>nextgx://welcome</code>.</p>
+        </article>
+
+        <article class="bento-card">
+          <div class="bento-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+          <h3>Multi-Profile &amp; Private Windows</h3>
+          <p>Isolated profiles with separate history, bookmarks, and themes — plus Private windows with zero saved history and third-party cookie blocking.</p>
+        </article>
+
+        <article class="bento-card">
+          <div class="bento-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg></div>
+          <h3>Panic Button (Ctrl+Shift+P)</h3>
+          <p>Instantly hides all open tabs and mutes audio with one shortcut — press again anytime to restore your exact session.</p>
+        </article>
+
+        <article class="bento-card">
+          <div class="bento-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></div>
+          <h3>GX Cleaner</h3>
+          <p>Granular 1-click cleanup for cache, cookies, browsing history, and downloads with clear size feedback and instant control.</p>
+        </article>
+
+        <article class="bento-card">
+          <div class="bento-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
+          <h3>Reader Mode, QR &amp; PiP</h3>
+          <p>Distraction-free article reader extraction, instant QR code sharing for any page, Picture-in-Picture video popout, and full-page screenshots/PDF.</p>
+        </article>
+
+        <article class="bento-card">
+          <div class="bento-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+          <h3>Passkeys &amp; Extensions</h3>
+          <p>Built-in WebAuthn Passkey store, encrypted autofill, Chrome extension &amp; CRX3 loader, Tab Groups, Workspaces, and Reading List.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- THEMES & PERSONALIZATION -->
+  <section id="themes" class="section-alt">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">Personalization</div>
+        <h2>8 live themes &amp; 6 curated AI wallpapers</h2>
+        <p>Click a signature theme below to preview its accent right on this page — inside nextGx Browser, every tab, border, modal, and Start Page adapts live in real time.</p>
+      </div>
+
+      <div class="themes-layout">
+        <div class="theme-cards-grid">
+          <button type="button" class="t-card" data-set-theme="violet">
+            <span class="dot" style="background:#8b5cf6;color:rgba(139,92,246,.5)"></span>
+            <div><b>nextGx Violet</b><small>Signature orbital purple</small></div>
+          </button>
+          <button type="button" class="t-card" data-set-theme="cyan">
+            <span class="dot" style="background:#22d3ee;color:rgba(34,211,238,.5)"></span>
+            <div><b>Sub Zero / Cyber Cyan</b><small>Crisp neon glacier blue</small></div>
+          </button>
+          <button type="button" class="t-card" data-set-theme="emerald">
+            <span class="dot" style="background:#10b981;color:rgba(16,185,129,.5)"></span>
+            <div><b>Matrix Emerald</b><small>Deep terminal green</small></div>
+          </button>
+          <button type="button" class="t-card" data-set-theme="amber">
+            <span class="dot" style="background:#f59e0b;color:rgba(245,158,11,.5)"></span>
+            <div><b>Solar Amber</b><small>Warm gold contrast</small></div>
+          </button>
+          <div class="t-card">
+            <span class="dot" style="background:#f43f5e;color:rgba(244,63,94,.45)"></span>
+            <div><b>Crimson</b><small>High-contrast ruby</small></div>
+          </div>
+          <div class="t-card">
+            <span class="dot" style="background:#e879f9;color:rgba(232,121,249,.45)"></span>
+            <div><b>Neon Magenta</b><small>Electric synth pink</small></div>
+          </div>
+          <div class="t-card">
+            <span class="dot" style="background:#a3e635;color:rgba(163,230,53,.45)"></span>
+            <div><b>Acid Lime</b><small>Sharp cyber volt</small></div>
+          </div>
+          <div class="t-card">
+            <span class="dot" style="background:#bae6fd;color:rgba(186,230,253,.45)"></span>
+            <div><b>Frost Ice</b><small>Minimal silver white</small></div>
+          </div>
+        </div>
+
+        <div class="themes-shots">
+          <figure data-lightbox-idx="4" role="button" tabindex="0">
+            <img src="screenshots/easy-setup.jpg" alt="Easy Setup floating drawer with theme cards and AI wallpapers">
+            <figcaption>Easy Setup Drawer — switch themes &amp; wallpapers on the fly</figcaption>
+          </figure>
+          <figure data-lightbox-idx="5" role="button" tabindex="0">
+            <img src="screenshots/settings.jpg" alt="14-section minimalist Settings page">
+            <figcaption>14-Section Settings — searchable, structured, and crisp</figcaption>
+          </figure>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRIVACY & COMPARISON -->
+  <section id="privacy">
+    <div class="wrap">
+      <div class="sec-head center">
+        <div class="eyebrow">Transparent &amp; Hardened</div>
+        <h2>How nextGx compares</h2>
+        <p>Built cleanly in the open under the MIT license — strict CSP on every internal UI page, atomic JSON storage with <code>.bak</code> crash recovery, and zero tracking.</p>
+      </div>
+
+      <div class="compare-wrap">
+        <div class="compare-scroll">
+          <table class="compare">
+            <thead>
+              <tr>
+                <th>Capability</th>
+                <th class="col-nx">nextGx Browser</th>
+                <th>Google Chrome</th>
+                <th>Opera GX</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>100% Open Source (MIT License)</td>
+                <td class="col-nx"><span class="tag-yes">✓ Yes — Full Source on GitHub</span></td>
+                <td><span class="tag-no">✕ Closed Source</span></td>
+                <td><span class="tag-no">✕ Closed Source</span></td>
+              </tr>
+              <tr>
+                <td>Zero Telemetry &amp; Sponsored Bloat</td>
+                <td class="col-nx"><span class="tag-yes">✓ Zero Telemetry</span></td>
+                <td><span class="tag-no">✕ Telemetry Enabled</span></td>
+                <td><span class="tag-no">✕ Telemetry + Sponsored Tiles</span></td>
+              </tr>
+              <tr>
+                <td>Built-in Ad &amp; YouTube Ad Stripping</td>
+                <td class="col-nx"><span class="tag-yes">✓ Native Engine + AdGuard MV3</span></td>
+                <td><span class="tag-no">✕ Extension Required</span></td>
+                <td><span class="tag-mid">~ Basic Built-in Blocker</span></td>
+              </tr>
+              <tr>
+                <td>RAM / CPU / Network Limiters &amp; Hot Tab Killer</td>
+                <td class="col-nx"><span class="tag-yes">✓ Built-in GX Control</span></td>
+                <td><span class="tag-mid">~ Memory Saver Only</span></td>
+                <td><span class="tag-yes">✓ Built-in</span></td>
+              </tr>
+              <tr>
+                <td>Native Dual-Pane Split View + 75% Sidebar</td>
+                <td class="col-nx"><span class="tag-yes">✓ Built-in</span></td>
+                <td><span class="tag-no">✕ Not Native</span></td>
+                <td><span class="tag-yes">✓ Built-in</span></td>
+              </tr>
+              <tr>
+                <td>SHA256-Verified GitHub Releases Auto-Updater</td>
+                <td class="col-nx"><span class="tag-yes">✓ Verified via SHA256SUMS.txt</span></td>
+                <td><span class="tag-yes">✓ Proprietary Updater</span></td>
+                <td><span class="tag-yes">✓ Proprietary Updater</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DOWNLOAD CENTER -->
+  <section id="download" class="section-alt">
+    <div class="wrap">
+      <div class="sec-head center">
+        <div class="eyebrow">Download <span data-release-ver>v3.2.1</span></div>
+        <h2>Install nextGx Browser</h2>
+        <p>Direct downloads from official GitHub Releases with SHA256 checksum verification. Every installer is built cleanly via GitHub Actions CI.</p>
+      </div>
+
+      <div class="os-tabs-wrap">
+        <div class="os-tabs" role="tablist">
+          <button type="button" class="os-tab active" data-os-tab="windows" role="tab">Windows (x64)</button>
+          <button type="button" class="os-tab" data-os-tab="linux" role="tab">Linux (x86_64)</button>
+          <button type="button" class="os-tab" data-os-tab="macos" role="tab">macOS</button>
+        </div>
+      </div>
+
+      <!-- WINDOWS PANE -->
+      <div class="dl-pane active" id="pane-windows">
+        <div class="dl-cards">
+          <article class="dl-card recommended">
+            <span class="rec-badge">Recommended</span>
+            <h3>Windows Setup (.exe)</h3>
+            <p>Full NSIS installer with Desktop &amp; Start Menu shortcuts, protocol registration, and silent background auto-updates.</p>
+            <div class="dl-filename" id="file-win-setup">nextGx.Browser-Setup-3.2.1-x64.exe</div>
+            <p class="mono" style="font-size:12.5px;" id="size-win-setup">Windows 10 / 11 · 64-bit x64</p>
+            <div class="dl-actions">
+              <a class="btn btn-primary" id="link-win-setup" href="https://github.com/johnsmith68268-prog/nextGxBrowser/releases/latest/download/nextGx.Browser-Setup-3.2.1-x64.exe">Download Setup .exe</a>
+            </div>
+          </article>
+
+          <article class="dl-card">
+            <h3>Windows Portable (.exe)</h3>
+            <p>Self-contained executable — no installation needed. Run straight from a folder or USB drive with zero registry clutter.</p>
+            <div class="dl-filename" id="file-win-portable">nextGx.Browser-Portable-3.2.1-x64.exe</div>
+            <p class="mono" style="font-size:12.5px;" id="size-win-portable">Windows 10 / 11 · Portable x64</p>
+            <div class="dl-actions">
+              <a class="btn btn-secondary" id="link-win-portable" href="https://github.com/johnsmith68268-prog/nextGxBrowser/releases/latest/download/nextGx.Browser-Portable-3.2.1-x64.exe">Download Portable</a>
+            </div>
+          </article>
+
+          <article class="dl-card">
+            <h3>Windows MSIX (.msix)</h3>
+            <p>Modern Windows app package with clean sandboxing and instant uninstall support for enterprise &amp; power setups.</p>
+            <div class="dl-filename" id="file-win-msix">nextGx.Browser-3.2.1-x64.msix</div>
+            <p class="mono" style="font-size:12.5px;" id="size-win-msix">Windows 10 / 11 · MSIX x64</p>
+            <div class="dl-actions">
+              <a class="btn btn-secondary" id="link-win-msix" href="https://github.com/johnsmith68268-prog/nextGxBrowser/releases/latest/download/nextGx.Browser-3.2.1-x64.msix">Download MSIX</a>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <!-- LINUX PANE -->
+      <div class="dl-pane" id="pane-linux">
+        <div class="dl-cards two-col">
+          <article class="dl-card recommended">
+            <span class="rec-badge">Universal</span>
+            <h3>Linux AppImage (x86_64)</h3>
+            <p>Runs on Ubuntu, Fedora, Arch, Mint, and Pop!_OS with zero root installation required.</p>
+            <div class="dl-filename" id="file-linux-appimage">nextGx-Browser-3.2.1-x86_64.AppImage</div>
+            <div class="dl-cmd" id="cmd-linux-appimage">chmod +x nextGx-Browser-3.2.1-x86_64.AppImage &amp;&amp; ./nextGx-Browser-3.2.1-x86_64.AppImage</div>
+            <div class="dl-actions">
+              <a class="btn btn-primary" id="link-linux-appimage" href="https://github.com/johnsmith68268-prog/nextGxBrowser/releases/latest/download/nextGx-Browser-3.2.1-x86_64.AppImage">Download AppImage</a>
+              <button type="button" class="btn btn-secondary copy-btn" data-copy-target="cmd-linux-appimage">Copy Command</button>
+            </div>
+          </article>
+
+          <article class="dl-card">
+            <h3>Debian / Ubuntu (.deb)</h3>
+            <p>Native system package with desktop entry, app launcher icon, and default browser protocol integration.</p>
+            <div class="dl-filename" id="file-linux-deb">nextGx-Browser-3.2.1-amd64.deb</div>
+            <div class="dl-cmd" id="cmd-linux-deb">sudo apt install ./nextGx-Browser-3.2.1-amd64.deb</div>
+            <div class="dl-actions">
+              <a class="btn btn-secondary" id="link-linux-deb" href="https://github.com/johnsmith68268-prog/nextGxBrowser/releases/latest/download/nextGx-Browser-3.2.1-amd64.deb">Download .deb</a>
+              <button type="button" class="btn btn-secondary copy-btn" data-copy-target="cmd-linux-deb">Copy Command</button>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <!-- MACOS PANE -->
+      <div class="dl-pane" id="pane-macos">
+        <div class="dl-card" style="max-width:680px;margin:0 auto;text-align:center;">
+          <span class="rec-badge">Roadmap</span>
+          <h3>macOS (.dmg — Apple Silicon &amp; Intel)</h3>
+          <p>Windows and Linux builds are live today. A native macOS build is planned on our roadmap — watch the GitHub repository to be notified as soon as the first <code>.dmg</code> lands.</p>
+          <div class="dl-actions" style="justify-content:center;max-width:340px;margin:10px auto 0;">
+            <a class="btn btn-secondary" href="https://github.com/johnsmith68268-prog/nextGxBrowser/releases" target="_blank" rel="noopener">Follow Releases on GitHub</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- SHA256 VERIFICATION BAR -->
+      <div class="verify-bar">
+        <div>
+          <strong style="font-family:var(--font-display);font-size:15.5px;">Verify Download Integrity (SHA256)</strong>
+          <p>Every release publishes cryptographic checksums in <span class="mono">SHA256SUMS.txt</span> — our built-in Auto-Updater verifies them automatically too.</p>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <a class="btn btn-secondary btn-sm" id="link-sha256" href="https://github.com/johnsmith68268-prog/nextGxBrowser/releases/latest/download/SHA256SUMS.txt" target="_blank" rel="noopener">View SHA256SUMS.txt</a>
+          <a class="btn btn-secondary btn-sm" href="https://github.com/johnsmith68268-prog/nextGxBrowser/releases/latest" target="_blank" rel="noopener">All Release Notes ↗</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section id="faq">
+    <div class="wrap">
+      <div class="sec-head center">
+        <div class="eyebrow">Questions &amp; Answers</div>
+        <h2>Straight answers</h2>
+      </div>
+
+      <div class="faq-list" id="faqList">
+        <div class="faq-item open">
+          <button type="button" class="faq-q" aria-expanded="true">
+            <span>Is nextGx Browser completely free and open-source?</span>
+            <span class="plus">+</span>
+          </button>
+          <div class="faq-a">
+            Yes — nextGx Browser is 100% free and licensed under the <strong>MIT License</strong>, built by <strong>MD Abdullah Al Marzan (Marjan)</strong>. The full source code, build workflow, and 166 automated tests are public on GitHub.
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button type="button" class="faq-q" aria-expanded="false">
+            <span>How does the Auto-Updater work?</span>
+            <span class="plus">+</span>
+          </button>
+          <div class="faq-a">
+            nextGx checks GitHub Releases over HTTPS in the background, downloads the matching installer for your platform, verifies its hash against <code>SHA256SUMS.txt</code>, and installs silently when you click <strong>Restart &amp; Update</strong> (or automatically on quit). You can also manage updates anytime in <code>Settings → About nextGx</code>.
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button type="button" class="faq-q" aria-expanded="false">
+            <span>Why does Windows SmartScreen show a warning on an open-source installer?</span>
+            <span class="plus">+</span>
+          </button>
+          <div class="faq-a">
+            Because nextGx is an independent, community-funded open-source project without a costly commercial EV code-signing certificate yet, Windows SmartScreen may show "Windows protected your PC" on first run. Click <strong>More info → Run anyway</strong>, and feel free to verify the file hash against <code>SHA256SUMS.txt</code> or inspect our public GitHub Actions CI build logs.
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button type="button" class="faq-q" aria-expanded="false">
+            <span>Does it block ads and YouTube ads automatically?</span>
+            <span class="plus">+</span>
+          </button>
+          <div class="faq-a">
+            Yes. nextGx ships with a fast built-in network/cosmetic blocker, bundled AdGuard MV3 rules, and a YouTube player-response scriptlet that strips <code>adPlacements</code> and <code>playerAds</code> without breaking <code>googlevideo.com</code> playback. You can toggle protection per site via the Shield icon in the address bar.
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button type="button" class="faq-q" aria-expanded="false">
+            <span>Does nextGx Browser collect telemetry or include a VPN?</span>
+            <span class="plus">+</span>
+          </button>
+          <div class="faq-a">
+            Zero telemetry — your browsing history, bookmarks, settings, and encrypted credentials stay strictly local on your device. There is no built-in VPN, and we support DNS-over-HTTPS (DoH), custom proxy settings, and strict WebRTC IP policies.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- FOOTER -->
+<footer>
+  <div class="wrap footer-grid">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <img src="assets/logo.png" alt="nextGx Browser logo" width="32" height="32" style="border-radius:8px;">
+      <div>
+        <strong style="font-family:var(--font-display);font-size:15px;">nextGx Browser <span data-release-ver>v3.2.1</span></strong>
+        <div style="font-size:13px;color:var(--muted);">Built by MD Abdullah Al Marzan · Chromium · Electron · MIT License</div>
+      </div>
+    </div>
+    <div class="footer-links">
+      <a href="https://github.com/johnsmith68268-prog/nextGxBrowser" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/johnsmith68268-prog/nextGxBrowser/releases" target="_blank" rel="noopener">Releases</a>
+      <a href="https://github.com/johnsmith68268-prog/nextGxBrowser/issues" target="_blank" rel="noopener">Report a Bug</a>
+      <a href="#download">Download</a>
+    </div>
+  </div>
+</footer>
+
+<!-- FULLSCREEN LIGHTBOX -->
+<div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Screenshot preview">
+  <div class="lightbox-inner">
+    <img id="lbImg" src="" alt="">
+    <div class="lightbox-bar">
+      <div>
+        <b id="lbTitle"></b>
+        <span id="lbDesc"></span>
+      </div>
+      <div class="lb-controls">
+        <button type="button" class="lb-btn" id="lbPrev" aria-label="Previous screenshot">← Prev</button>
+        <button type="button" class="lb-btn" id="lbNext" aria-label="Next screenshot">Next →</button>
+        <button type="button" class="lb-btn" id="lbClose" aria-label="Close preview">✕ Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const REPO = 'johnsmith68268-prog/nextGxBrowser';
+  const FALLBACK_VERSION = '3.2.1';
+
+  const SHOTS = [
+    {
+      label: 'Start Page',
+      title: 'Clean & Classic Start Page',
+      desc: 'Minimal clock, smoked-glass Speed Dial cards with crisp brand SVGs, curated dark AI wallpapers, and translucent RAM/Shield status pills.',
+      src: 'screenshots/hero-startpage.jpg'
+    },
+    {
+      label: 'Smart Omnibox',
+      title: 'Full-Width Omnibox & Inline Autocomplete',
+      desc: 'Instant inline domain completion, live search suggestions, History matches, and Switch-to-Tab right beneath the address bar.',
+      src: 'screenshots/omnibox-search.jpg'
+    },
+    {
+      label: 'Split View',
+      title: 'Native Dual-Pane Split View',
+      desc: 'Work across two live websites side-by-side with a draggable neon divider and independent zoom/navigation controls.',
+      src: 'screenshots/splitview.jpg'
+    },
+    {
+      label: 'GX Control',
+      title: 'GX Control & Hot Tab Killer',
+      desc: 'Cap RAM, CPU, and Network usage live, auto-suspend idle tabs with 8 GB Memory Saver, or hibernate the hungriest tab in one click.',
+      src: 'screenshots/gx-control.jpg'
+    },
+    {
+      label: 'Easy Setup',
+      title: 'Easy Setup Floating Drawer',
+      desc: 'Preview and switch between 8 live themes, 6 curated AI dark wallpapers, sidebar appearance, and privacy toggles instantly.',
+      src: 'screenshots/easy-setup.jpg'
+    },
+    {
+      label: 'Settings',
+      title: '14-Section Minimalist Settings',
+      desc: 'Searchable, distraction-free settings covering Appearance, GX Features, Video, Privacy & DoH, Downloads, System, and Auto-Updates.',
+      src: 'screenshots/settings.jpg'
+    },
+    {
+      label: 'Ad Shield',
+      title: 'Built-in Ad & Tracker Shield on YouTube',
+      desc: 'Real-time per-site ad & tracker blocking counter paired with bundled AdGuard MV3 rules and YouTube ad-schedule stripping.',
+      src: 'screenshots/shield-youtube.jpg'
+    },
+    {
+      label: 'Setup Wizard',
+      title: 'First-Run Onboarding Wizard',
+      desc: 'Clean 30-second first-run setup (nextgx://welcome) to choose your theme, wallpaper, privacy shield, and sidebar apps.',
+      src: 'screenshots/onboarding.jpg'
+    }
+  ];
+
+  let activeShotIdx = 0;
+  let lightboxIdx = 0;
+
+  // Theme switcher
+  function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    document.querySelectorAll('.theme-swatch-btn').forEach((b) => {
+      b.classList.toggle('active', b.dataset.setTheme === theme);
+    });
+  }
+  document.querySelectorAll('[data-set-theme]').forEach((btn) => {
+    btn.addEventListener('click', () => applyTheme(btn.dataset.setTheme));
+  });
+
+  // Render showcase tabs & thumbnail grid
+  const tabsEl = document.getElementById('showcaseTabs');
+  const gridEl = document.getElementById('shotGrid');
+  const featImg = document.getElementById('featuredShotImg');
+  const featTitle = document.getElementById('featuredShotTitle');
+  const featDesc = document.getElementById('featuredShotDesc');
+
+  function selectShot(idx) {
+    activeShotIdx = (idx + SHOTS.length) % SHOTS.length;
+    const s = SHOTS[activeShotIdx];
+    featImg.src = s.src;
+    featImg.alt = s.title;
+    featTitle.textContent = s.title;
+    featDesc.textContent = s.desc;
+    tabsEl.querySelectorAll('.sc-tab').forEach((t, i) => t.classList.toggle('active', i === activeShotIdx));
+    gridEl.querySelectorAll('.shot-thumb').forEach((t, i) => t.classList.toggle('active', i === activeShotIdx));
+  }
+
+  SHOTS.forEach((s, i) => {
+    const tab = document.createElement('button');
+    tab.type = 'button';
+    tab.className = 'sc-tab' + (i === 0 ? ' active' : '');
+    tab.textContent = s.label;
+    tab.addEventListener('click', () => selectShot(i));
+    tabsEl.appendChild(tab);
+
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'shot-thumb' + (i === 0 ? ' active' : '');
+    card.innerHTML = `<img src="${s.src}" alt="${s.title}" loading="lazy"><div class="thumb-meta"><b>${s.label}</b><span>${s.title}</span></div>`;
+    card.addEventListener('click', () => selectShot(i));
+    gridEl.appendChild(card);
+  });
+
+  // Lightbox
+  const lightbox = document.getElementById('lightbox');
+  const lbImg = document.getElementById('lbImg');
+  const lbTitle = document.getElementById('lbTitle');
+  const lbDesc = document.getElementById('lbDesc');
+
+  function openLightbox(idx) {
+    lightboxIdx = (idx + SHOTS.length) % SHOTS.length;
+    const s = SHOTS[lightboxIdx];
+    lbImg.src = s.src;
+    lbImg.alt = s.title;
+    lbTitle.textContent = s.title;
+    lbDesc.textContent = s.desc;
+    lightbox.classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeLightbox() {
+    lightbox.classList.remove('open');
+    document.body.style.overflow = '';
+  }
+
+  document.getElementById('featuredShotWrap').addEventListener('click', () => openLightbox(activeShotIdx));
+  document.getElementById('btnOpenLightbox').addEventListener('click', () => openLightbox(activeShotIdx));
+  document.querySelectorAll('[data-lightbox-idx]').forEach((el) => {
+    el.addEventListener('click', () => openLightbox(Number(el.dataset.lightboxIdx) || 0));
+  });
+  document.getElementById('lbPrev').addEventListener('click', () => openLightbox(lightboxIdx - 1));
+  document.getElementById('lbNext').addEventListener('click', () => openLightbox(lightboxIdx + 1));
+  document.getElementById('lbClose').addEventListener('click', closeLightbox);
+  lightbox.addEventListener('click', (e) => { if (e.target === lightbox) closeLightbox(); });
+  document.addEventListener('keydown', (e) => {
+    if (!lightbox.classList.contains('open')) return;
+    if (e.key === 'Escape') closeLightbox();
+    if (e.key === 'ArrowLeft') openLightbox(lightboxIdx - 1);
+    if (e.key === 'ArrowRight') openLightbox(lightboxIdx + 1);
+  });
+
+  // OS detection & Download tabs
+  function selectOsTab(os) {
+    document.querySelectorAll('.os-tab').forEach((t) => t.classList.toggle('active', t.dataset.osTab === os));
+    document.querySelectorAll('.dl-pane').forEach((p) => p.classList.toggle('active', p.id === 'pane-' + os));
+  }
+  document.querySelectorAll('.os-tab').forEach((t) => {
+    t.addEventListener('click', () => selectOsTab(t.dataset.osTab));
+  });
+
+  const ua = (navigator.userAgent || '').toLowerCase();
+  const detectedOs = ua.includes('linux') && !ua.includes('android') ? 'linux' : ua.includes('mac os') ? 'macos' : 'windows';
+  if (detectedOs === 'linux') {
+    selectOsTab('linux');
+    document.getElementById('heroPrimaryLabel').textContent = 'Download for Linux (AppImage)';
+    document.getElementById('heroPrimaryDl').href = `https://github.com/${REPO}/releases/latest/download/nextGx-Browser-${FALLBACK_VERSION}-x86_64.AppImage`;
+  } else {
+    selectOsTab('windows');
+  }
+
+  // Copy command buttons
+  document.querySelectorAll('.copy-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const target = document.getElementById(btn.dataset.copyTarget);
+      if (!target) return;
+      const text = target.textContent.trim();
+      const orig = btn.textContent;
+      const done = () => {
+        btn.textContent = 'Copied ✓';
+        setTimeout(() => { btn.textContent = orig; }, 1800);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(() => {});
+      }
+    });
+  });
+
+  // FAQ accordion
+  document.querySelectorAll('.faq-item').forEach((item) => {
+    const q = item.querySelector('.faq-q');
+    q.addEventListener('click', () => {
+      const isOpen = item.classList.contains('open');
+      document.querySelectorAll('.faq-item').forEach((o) => {
+        o.classList.remove('open');
+        o.querySelector('.faq-q').setAttribute('aria-expanded', 'false');
+      });
+      if (!isOpen) {
+        item.classList.add('open');
+        q.setAttribute('aria-expanded', 'true');
+      }
+    });
+  });
+
+  // Live GitHub Releases auto-sync (auto-updates links, version & sizes on every future release)
+  function fmtMB(bytes) {
+    const n = Number(bytes) || 0;
+    return n > 0 ? `${(n / (1024 * 1024)).toFixed(1)} MB` : '';
+  }
+
+  fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { Accept: 'application/vnd.github+json' } })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((rel) => {
+      if (!rel || !rel.tag_name) return;
+      const tag = rel.tag_name;
+      document.querySelectorAll('[data-release-ver]').forEach((el) => { el.textContent = tag; });
+      const assets = Array.isArray(rel.assets) ? rel.assets : [];
+      const findAsset = (re) => assets.find((a) => a && typeof a.name === 'string' && re.test(a.name));
+
+      const winSetup = findAsset(/setup.*\.exe$/i);
+      const winPortable = findAsset(/portable.*\.exe$/i);
+      const winMsix = findAsset(/\.msix$/i);
+      const linuxAppImage = findAsset(/\.AppImage$/i);
+      const linuxDeb = findAsset(/\.deb$/i);
+      const shaSums = findAsset(/^SHA256SUMS\.txt$/i);
+
+      if (winSetup) {
+        document.getElementById('file-win-setup').textContent = winSetup.name;
+        document.getElementById('link-win-setup').href = winSetup.browser_download_url;
+        if (winSetup.size) document.getElementById('size-win-setup').textContent = `${fmtMB(winSetup.size)} · Windows 10 / 11 x64`;
+        if (detectedOs !== 'linux') document.getElementById('heroPrimaryDl').href = winSetup.browser_download_url;
+      }
+      if (winPortable) {
+        document.getElementById('file-win-portable').textContent = winPortable.name;
+        document.getElementById('link-win-portable').href = winPortable.browser_download_url;
+        if (winPortable.size) document.getElementById('size-win-portable').textContent = `${fmtMB(winPortable.size)} · Portable x64`;
+      }
+      if (winMsix) {
+        document.getElementById('file-win-msix').textContent = winMsix.name;
+        document.getElementById('link-win-msix').href = winMsix.browser_download_url;
+        if (winMsix.size) document.getElementById('size-win-msix').textContent = `${fmtMB(winMsix.size)} · MSIX x64`;
+      }
+      if (linuxAppImage) {
+        document.getElementById('file-linux-appimage').textContent = linuxAppImage.name;
+        document.getElementById('link-linux-appimage').href = linuxAppImage.browser_download_url;
+        document.getElementById('cmd-linux-appimage').textContent = `chmod +x ${linuxAppImage.name} && ./${linuxAppImage.name}`;
+        if (detectedOs === 'linux') document.getElementById('heroPrimaryDl').href = linuxAppImage.browser_download_url;
+      }
+      if (linuxDeb) {
+        document.getElementById('file-linux-deb').textContent = linuxDeb.name;
+        document.getElementById('link-linux-deb').href = linuxDeb.browser_download_url;
+        document.getElementById('cmd-linux-deb').textContent = `sudo apt install ./${linuxDeb.name}`;
+      }
+      if (shaSums) {
+        document.getElementById('link-sha256').href = shaSums.browser_download_url;
+      }
+    })
+    .catch(() => { /* fallback direct links already set */ });
+})();
+</script>
+</body>
+</html>
