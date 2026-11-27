@@ -7,6 +7,7 @@ const {
   NEW_TAB_FILE_URL,
   CORNER_FILE_URL,
   WEBUI_FILE_URL,
+  ONBOARDING_FILE_URL,
   ERROR_PAGE_FILE_URL,
   PLAYER_PANEL_FILE_URL,
   state
@@ -177,6 +178,17 @@ function isWebUiUrl(urlStr) {
   );
 }
 
+function isOnboardingUrl(urlStr) {
+  if (!urlStr || typeof urlStr !== 'string') return false;
+  return (
+    urlStr === 'nextgx://welcome' ||
+    urlStr === 'nextgx://setup' ||
+    urlStr === 'nextgx://onboarding' ||
+    urlStr.startsWith(ONBOARDING_FILE_URL) ||
+    (urlStr.startsWith('file:') && urlStr.includes('/src/ui/onboarding.html'))
+  );
+}
+
 function isErrorPageUrl(urlStr) {
   if (!urlStr || typeof urlStr !== 'string') return false;
   return (
@@ -201,7 +213,7 @@ function getInternalUiQuery(incognito = false, profileId) {
 }
 
 function appendInternalUrlParams(rawUrl, ctx) {
-  if (!isNewTabUrl(rawUrl) && !isCornerUrl(rawUrl) && !isWebUiUrl(rawUrl) && !isErrorPageUrl(rawUrl)) return rawUrl;
+  if (!isNewTabUrl(rawUrl) && !isCornerUrl(rawUrl) && !isWebUiUrl(rawUrl) && !isOnboardingUrl(rawUrl) && !isErrorPageUrl(rawUrl)) return rawUrl;
   try {
     const u = new URL(rawUrl);
     if (u.protocol !== 'file:') return rawUrl;
@@ -247,6 +259,7 @@ module.exports = {
   isNewTabUrl,
   isCornerUrl,
   isWebUiUrl,
+  isOnboardingUrl,
   isErrorPageUrl,
   isPlayerPanelUrl,
   getInternalUiQuery,

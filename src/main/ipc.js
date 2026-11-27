@@ -4,6 +4,7 @@ const {
   dialog,
   ipcMain,
   session,
+  shell,
   nativeImage
 } = require('electron');
 const { readClipboardText, writeClipboardText } = require('./clipboard-utils');
@@ -11,6 +12,7 @@ const {
   NEW_TAB_FILE,
   CORNER_FILE,
   WEBUI_FILE,
+  ONBOARDING_FILE,
   ERROR_PAGE_FILE,
   PLAYER_PANEL_FILE,
   SCREENSHOT_FILE,
@@ -125,6 +127,7 @@ const { getSessionForProfile, registerProfileIpcHandlers } = require('./profiles
 const { registerImportExportIpcHandlers } = require('./import-export');
 const { registerPrivacyAndPasswordIpcHandlers } = require('./privacy');
 const { registerSplitIpcHandlers, onWorkspacesChanged } = require('./splitview');
+const { registerShellDrawerIpcHandlers, openShellDrawer } = require('./drawer-overlay');
 const {
   getWorkspaces,
   getGroupsForCtx,
@@ -158,16 +161,46 @@ const TP_COOKIE_TWO_LABEL_SUFFIXES = new Set([
   'com.hk', 'co.il', 'com.sg', 'com.ar', 'com.co', 'com.pl', 'co.th'
 ]);
 
+const registrableDomainCache = new Map();
+
+function fastExtractHost(rawUrl) {
+  if (typeof rawUrl !== 'string' || !rawUrl) return '';
+  const idx = rawUrl.indexOf('://');
+  if (idx === -1) return '';
+  const start = idx + 3;
+  let end = rawUrl.length;
+  for (let i = start; i < end; i++) {
+    const c = rawUrl.charCodeAt(i);
+    if (c === 47 || c === 63 || c === 35 || c === 58) {
+      // '/', '?', '#', ':'
+      if (c === 58 && rawUrl.charCodeAt(start) === 91) continue; // IPv6 [::1]
+      end = i;
+      break;
+    }
+  }
+  return rawUrl.slice(start, end).toLowerCase();
+}
+
 function getRegistrableDomain(host) {
   const h = String(host || '').toLowerCase().replace(/^\.+|\.+$/g, '');
   if (!h) return '';
+  const cached = registrableDomainCache.get(h);
+  if (cached !== undefined) return cached;
   const parts = h.split('.').filter(Boolean);
-  if (parts.length <= 2) return h;
-  const lastTwo = parts.slice(-2).join('.');
-  if (TP_COOKIE_TWO_LABEL_SUFFIXES.has(lastTwo) && parts.length >= 3) {
-    return parts.slice(-3).join('.');
+  let res;
+  if (parts.length <= 2) {
+    res = h;
+  } else {
+    const lastTwo = parts.slice(-2).join('.');
+    res = TP_COOKIE_TWO_LABEL_SUFFIXES.has(lastTwo) && parts.length >= 3
+      ? parts.slice(-3).join('.')
+      : lastTwo;
   }
-  return lastTwo;
+  if (registrableDomainCache.size >= 512) {
+    registrableDomainCache.clear();
+  }
+  registrableDomainCache.set(h, res);
+  return res;
 }
 
 // [Wave2-D] Third-party cookie blocking (gap 5.9), enforced at the network
@@ -182,14 +215,14 @@ const tpCookieSessions = new Map(); // session -> isIncognito
 function isThirdPartyRequest(details) {
   try {
     if (details.resourceType === 'mainFrame') return false;
-    const reqHost = new URL(details.url).hostname.toLowerCase();
     const initiatorRaw =
       (typeof details.initiator === 'string' && details.initiator) ||
       (typeof details.referrer === 'string' && details.referrer) ||
       '';
     if (!initiatorRaw || initiatorRaw === 'null') return false;
-    const initHost = new URL(initiatorRaw).hostname.toLowerCase();
-    if (!reqHost || !initHost) return false;
+    const reqHost = fastExtractHost(details.url) || new URL(details.url).hostname.toLowerCase();
+    const initHost = fastExtractHost(initiatorRaw) || new URL(initiatorRaw).hostname.toLowerCase();
+    if (!reqHost || !initHost || reqHost === initHost) return false;
     return getRegistrableDomain(reqHost) !== getRegistrableDomain(initHost);
   } catch (_) {
     return false;
@@ -375,6 +408,8 @@ function registerIpcHandlers() {
       event.returnValue = 'corner';
     } else if (normalized === normalizePathForCompare(WEBUI_FILE)) {
       event.returnValue = 'webui';
+    } else if (normalized === normalizePathForCompare(ONBOARDING_FILE)) {
+      event.returnValue = 'onboarding';
     } else if (normalized === normalizePathForCompare(ERROR_PAGE_FILE)) {
       event.returnValue = 'error';
     } else if (normalized === normalizePathForCompare(PLAYER_PANEL_FILE)) {
@@ -1402,6 +1437,39 @@ function registerIpcHandlers() {
   });
 
   handleInternal('history:get', (e) => state.storage.getHistory(getSenderProfileId(e)));
+  // Live search suggestions for the Opera GX expanded omnibox (skipped in Private windows; cached 2m)
+  const remoteSuggestCache = new Map();
+  handleInternal('omnibox:remote-suggest', async (e, rawQuery) => {
+    const ctx = getCtxFromSender(e.sender);
+    if (ctx && ctx.incognito) return [];
+    const q = typeof rawQuery === 'string' ? rawQuery.trim() : '';
+    if (!q || q.length < 2 || q.length > 96 || /^https?:\/\//i.test(q)) return [];
+    const key = q.toLowerCase();
+    const cached = remoteSuggestCache.get(key);
+    if (cached && Date.now() - cached.at < 120000) return cached.items;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 700);
+    try {
+      const resp = await fetch(
+        `https://suggestqueries.google.com/complete/search?client=firefox&q=${encodeURIComponent(q)}`,
+        { signal: ctrl.signal, headers: { Accept: 'application/json' } }
+      );
+      if (!resp.ok) return [];
+      const json = await resp.json();
+      const rawList = Array.isArray(json) && Array.isArray(json[1]) ? json[1] : [];
+      const items = rawList
+        .filter((s) => typeof s === 'string' && s.trim() && s.trim().toLowerCase() !== key)
+        .slice(0, 4)
+        .map((s) => s.trim());
+      if (remoteSuggestCache.size >= 120) remoteSuggestCache.clear();
+      remoteSuggestCache.set(key, { at: Date.now(), items });
+      return items;
+    } catch (_) {
+      return [];
+    } finally {
+      clearTimeout(timer);
+    }
+  });
   handleInternal('history:clear', (e, range) => {
     const pid = getSenderProfileId(e);
     const res = state.storage.clearHistory(range || 'all', pid);
@@ -1436,6 +1504,7 @@ function registerIpcHandlers() {
   registerImportExportIpcHandlers(handleInternal);
   registerPrivacyAndPasswordIpcHandlers(handleInternal, { getSenderProfileId });
   registerSplitIpcHandlers(handleInternal);
+  registerShellDrawerIpcHandlers();
 
   // Passkeys (software authenticator) — worker C, gaps 4.1-4.3. The ceremony
   // channel is deliberately NOT internal-UI gated (web pages call it); the
@@ -1539,6 +1608,29 @@ function registerIpcHandlers() {
     if (changedKeys.includes('downloadPath')) {
       applyDownloadPathSetting(s);
     }
+    if (changedKeys.includes('runOnStartup')) {
+      try {
+        if (typeof app.setLoginItemSettings === 'function') {
+          app.setLoginItemSettings({ openAtLogin: Boolean(s.runOnStartup) });
+        }
+      } catch (_) { }
+    }
+    if (changedKeys.includes('dnsOverHttps')) {
+      try {
+        if (typeof app.configureHostResolver === 'function') {
+          app.configureHostResolver({ secureDnsMode: s.dnsOverHttps ? 'automatic' : 'off' });
+        }
+      } catch (_) { }
+    }
+    if (changedKeys.includes('webrtcPolicy')) {
+      try {
+        for (const wc of getAllTabWebContents()) {
+          if (typeof wc.setWebRTCIPHandlingPolicy === 'function') {
+            wc.setWebRTCIPHandlingPolicy(s.webrtcPolicy || 'default');
+          }
+        }
+      } catch (_) { }
+    }
     const prevWallpaperFile = prev.wallpaper?.file || '';
     const nextWallpaperFile = s.wallpaper?.file || '';
     const wallpaperFileChanged =
@@ -1619,6 +1711,10 @@ function registerIpcHandlers() {
     if (win.isMaximized()) win.unmaximize();
     else win.maximize();
   });
+  handleInternal('window:is-maximized', (e) => {
+    const win = getCtxFromSender(e.sender)?.win;
+    return Boolean(win && !win.isDestroyed() && win.isMaximized());
+  });
   handleInternal('window:close', (e) => getCtxFromSender(e.sender)?.win?.close());
 
   // [Wave2-D] Autofill management (gaps 6.2/6.3): addresses + payment methods.
@@ -1698,10 +1794,30 @@ function registerIpcHandlers() {
       const https = args
         ? app.setAsDefaultProtocolClient('https', process.execPath, args)
         : app.setAsDefaultProtocolClient('https');
-      return { ok: Boolean(http && https), http: Boolean(http), https: Boolean(https) };
+      if (process.platform === 'win32' && shell && typeof shell.openExternal === 'function') {
+        shell.openExternal('ms-settings:defaultapps').catch(() => { });
+      }
+      return { ok: Boolean(http && https), http: Boolean(http), https: Boolean(https), openedSystemSettings: process.platform === 'win32' };
     } catch (err) {
       return { ok: false, error: err?.message || String(err) };
     }
+  });
+  handleInternal('system:open-proxy-settings', () => {
+    try {
+      if (process.platform === 'win32' && shell && typeof shell.openExternal === 'function') {
+        shell.openExternal('ms-settings:network-proxy').catch(() => { });
+        return { ok: true };
+      }
+      return { ok: false, error: 'Open your OS network proxy settings manually on this platform.' };
+    } catch (err) {
+      return { ok: false, error: err?.message || String(err) };
+    }
+  });
+  handleInternal('system:open-onboarding', (e) => {
+    const ctx = getCtxFromSender(e.sender);
+    if (!ctx) return { ok: false };
+    createTab(ctx, { url: 'nextgx://welcome', incognito: false, active: true });
+    return { ok: true };
   });
 
   // [Wave2-D] Apply stored spellcheck / third-party-cookie / download-path

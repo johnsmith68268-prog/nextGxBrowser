@@ -368,7 +368,29 @@ class StorageManager {
             extensionsDevMode: true,
             sidebarPanelWidth: 380,
             sidebarPanelPinned: false,
-            sidebarItems: buildDefaultSidebarItems()
+            sidebarItems: buildDefaultSidebarItems(),
+            // Start Page, Appearance, System & First-Run Onboarding settings
+            startPageShowClock: true,
+            startPageShowSearch: true,
+            startPageShowSpeedDial: true,
+            startPageShowAddButton: true,
+            startPageShowNames: true,
+            startPageBiggerTiles: false,
+            startPageShowSuggestions: true,
+            showSidebar: true,
+            colorizeSidebarIcons: false,
+            reduceAnimations: false,
+            defaultFontSize: 'medium',
+            defaultPageZoom: 100,
+            warnCloseMultipleTabs: false,
+            addressBarSuggestions: true,
+            dnsOverHttps: false,
+            webrtcPolicy: 'default',
+            runOnStartup: false,
+            textSelectionPopup: true,
+            copiedToastEnabled: true,
+            videoPopOutEnabled: true,
+            onboardingCompleted: false
           },
       speedDial: [
         { id: 'sd-1', title: 'YouTube', url: 'https://www.youtube.com', domain: 'youtube.com' },
@@ -384,6 +406,9 @@ class StorageManager {
 
     this.cache = {};
     this._pendingWrites = new Map();
+    this._asyncWriteChains = new Map();
+    this._memoRootSettings = null;
+    this._memoBookmarkUrlSet = null;
     this._compactKeys = new Set(['history', 'downloads', 'session']);
     this._encryptionWarned = false;
     this._initAll();
@@ -476,8 +501,36 @@ class StorageManager {
     }
   }
 
+  async _atomicWriteFileAsync(filePath, content) {
+    const fsp = fs.promises;
+    await fsp.mkdir(this.dataDir, { recursive: true });
+    const tmpPath = `${filePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const bakPath = `${filePath}.bak`;
+    await fsp.writeFile(tmpPath, content, 'utf-8');
+    try {
+      await fsp.copyFile(filePath, bakPath);
+    } catch (_) {}
+    try {
+      await fsp.rename(tmpPath, filePath);
+    } catch (_) {
+      try {
+        await fsp.copyFile(tmpPath, filePath);
+        await fsp.unlink(tmpPath);
+      } catch (copyErr) {
+        try { await fsp.unlink(tmpPath); } catch (__) {}
+        throw copyErr;
+      }
+    }
+  }
+
+  _invalidateDerivedCaches(key) {
+    if (key === 'settings') this._memoRootSettings = null;
+    else if (key === 'bookmarks') this._memoBookmarkUrlSet = null;
+  }
+
   _write(key, data) {
     this.cache[key] = data;
+    this._invalidateDerivedCaches(key);
     const pendingTimer = this._pendingWrites?.get(key);
     if (pendingTimer) {
       clearTimeout(pendingTimer);
@@ -493,17 +546,23 @@ class StorageManager {
 
   _scheduleWrite(key, data, delayMs = 600) {
     this.cache[key] = data;
+    this._invalidateDerivedCaches(key);
     if (!this._pendingWrites) this._pendingWrites = new Map();
     const existing = this._pendingWrites.get(key);
     if (existing) clearTimeout(existing);
     const timer = setTimeout(() => {
       this._pendingWrites.delete(key);
       if (!Object.prototype.hasOwnProperty.call(this.cache, key)) return;
-      try {
-        this._atomicWriteFile(this.files[key], this._serializeKey(key, this.cache[key]));
-      } catch (err) {
-        console.error(`[Storage] Failed deferred writing ${key}:`, err.message);
-      }
+      const filePath = this.files[key];
+      const serialized = this._serializeKey(key, this.cache[key]);
+      const prev = this._asyncWriteChains?.get(filePath) || Promise.resolve();
+      const next = prev
+        .catch(() => {})
+        .then(() => this._atomicWriteFileAsync(filePath, serialized))
+        .catch((err) => {
+          console.error(`[Storage] Failed deferred writing ${key}:`, err.message);
+        });
+      if (this._asyncWriteChains) this._asyncWriteChains.set(filePath, next);
     }, Math.max(50, delayMs));
     if (typeof timer.unref === 'function') timer.unref();
     this._pendingWrites.set(key, timer);
@@ -893,8 +952,8 @@ class StorageManager {
   _clampSidebarPanelWidth(rawWidth) {
     const num = Number(rawWidth);
     if (!Number.isFinite(num)) return this.defaults.settings.sidebarPanelWidth;
-    // UX phase: panel range widened from 320–640px to 260–800px (see core.js).
-    return Math.max(260, Math.min(800, Math.round(num)));
+    // Allow dragging the sidebar panel up to 75% of wide displays (260–1600px; see core.js).
+    return Math.max(260, Math.min(1600, Math.round(num)));
   }
 
   _sanitizeAutoSleepMinutes(rawMinutes) {
@@ -1051,6 +1110,9 @@ class StorageManager {
   }
 
   _getRootSettings() {
+    if (this._memoRootSettings) {
+      return this._memoRootSettings;
+    }
     const saved = this.cache.settings || {};
     const merged = {
       ...this.defaults.settings,
@@ -1106,6 +1168,37 @@ class StorageManager {
     merged.accessibilityFocusHighlight = Boolean(merged.accessibilityFocusHighlight);
     merged.runBackgroundApps = Boolean(merged.runBackgroundApps);
     merged.gpuAcceleration = merged.gpuAcceleration !== false;
+    merged.startPageShowClock = merged.startPageShowClock !== false;
+    merged.startPageShowSearch = merged.startPageShowSearch !== false;
+    merged.startPageShowSpeedDial = merged.startPageShowSpeedDial !== false;
+    merged.startPageShowAddButton = merged.startPageShowAddButton !== false;
+    merged.startPageShowNames = merged.startPageShowNames !== false;
+    merged.startPageBiggerTiles = Boolean(merged.startPageBiggerTiles);
+    merged.startPageShowSuggestions = merged.startPageShowSuggestions !== false;
+    merged.showSidebar = merged.showSidebar !== false;
+    merged.colorizeSidebarIcons = Boolean(merged.colorizeSidebarIcons);
+    merged.reduceAnimations = Boolean(merged.reduceAnimations);
+    merged.defaultFontSize = ['small', 'medium', 'large', 'very-large'].includes(merged.defaultFontSize)
+      ? merged.defaultFontSize
+      : 'medium';
+    const rawZoom = Number(merged.defaultPageZoom);
+    merged.defaultPageZoom = Number.isFinite(rawZoom) ? Math.max(50, Math.min(200, Math.round(rawZoom))) : 100;
+    merged.warnCloseMultipleTabs = Boolean(merged.warnCloseMultipleTabs);
+    merged.addressBarSuggestions = merged.addressBarSuggestions !== false;
+    merged.dnsOverHttps = Boolean(merged.dnsOverHttps);
+    merged.webrtcPolicy = [
+      'default',
+      'default_public_and_private_interfaces',
+      'default_public_interface_only',
+      'disable_non_proxied_udp'
+    ].includes(merged.webrtcPolicy)
+      ? merged.webrtcPolicy
+      : 'default';
+    merged.runOnStartup = Boolean(merged.runOnStartup);
+    merged.textSelectionPopup = merged.textSelectionPopup !== false;
+    merged.copiedToastEnabled = merged.copiedToastEnabled !== false;
+    merged.videoPopOutEnabled = merged.videoPopOutEnabled !== false;
+    merged.onboardingCompleted = Boolean(merged.onboardingCompleted);
     // [Fix2] Battery saver, page effects, local audio toggles, local Mods.
     merged.batterySaverEnabled = Boolean(merged.batterySaverEnabled);
     merged.shaderPreset = [
@@ -1144,6 +1237,7 @@ class StorageManager {
           }))
       : [];
     merged.activeGxModId = typeof merged.activeGxModId === 'string' ? merged.activeGxModId.slice(0, 80) : '';
+    this._memoRootSettings = merged;
     return merged;
   }
 
@@ -1358,6 +1452,52 @@ class StorageManager {
     }
     if (Object.prototype.hasOwnProperty.call(safePartial, 'sidebarPanelPinned')) {
       safePartial.sidebarPanelPinned = Boolean(safePartial.sidebarPanelPinned);
+    }
+    for (const boolKey of [
+      'startPageShowClock',
+      'startPageShowSearch',
+      'startPageShowSpeedDial',
+      'startPageShowAddButton',
+      'startPageShowNames',
+      'startPageBiggerTiles',
+      'startPageShowSuggestions',
+      'showSidebar',
+      'colorizeSidebarIcons',
+      'reduceAnimations',
+      'warnCloseMultipleTabs',
+      'addressBarSuggestions',
+      'dnsOverHttps',
+      'runOnStartup',
+      'textSelectionPopup',
+      'copiedToastEnabled',
+      'videoPopOutEnabled',
+      'onboardingCompleted'
+    ]) {
+      if (Object.prototype.hasOwnProperty.call(safePartial, boolKey)) {
+        safePartial[boolKey] = Boolean(safePartial[boolKey]);
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(safePartial, 'defaultFontSize')) {
+      if (!['small', 'medium', 'large', 'very-large'].includes(safePartial.defaultFontSize)) {
+        delete safePartial.defaultFontSize;
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(safePartial, 'defaultPageZoom')) {
+      const z = Number(safePartial.defaultPageZoom);
+      if (Number.isFinite(z)) safePartial.defaultPageZoom = Math.max(50, Math.min(200, Math.round(z)));
+      else delete safePartial.defaultPageZoom;
+    }
+    if (Object.prototype.hasOwnProperty.call(safePartial, 'webrtcPolicy')) {
+      if (
+        ![
+          'default',
+          'default_public_and_private_interfaces',
+          'default_public_interface_only',
+          'disable_non_proxied_udp'
+        ].includes(safePartial.webrtcPolicy)
+      ) {
+        delete safePartial.webrtcPolicy;
+      }
     }
     if (Object.prototype.hasOwnProperty.call(safePartial, 'homepageUrl')) {
       const hpCheck = this.validateHomepageUrl(safePartial.homepageUrl);
@@ -1623,12 +1763,19 @@ class StorageManager {
 
   incrementBlockedCount(count = 1) {
     const s = this._getRootSettings();
-    s.totalAdsBlocked = (s.totalAdsBlocked || 0) + count;
-    this.cache.settings = s;
-    if (s.totalAdsBlocked % 15 === 0) {
-      this._scheduleWrite('settings', s, 1500);
+    const nextTotal = (s.totalAdsBlocked || 0) + count;
+    s.totalAdsBlocked = nextTotal;
+    if (!this.cache.settings || typeof this.cache.settings !== 'object') {
+      this.cache.settings = { ...s };
+    } else {
+      this.cache.settings.totalAdsBlocked = nextTotal;
     }
-    return s.totalAdsBlocked;
+    if (nextTotal % 25 === 0) {
+      const keepMemo = this._memoRootSettings;
+      this._scheduleWrite('settings', this.cache.settings, 2500);
+      this._memoRootSettings = keepMemo;
+    }
+    return nextTotal;
   }
 
   flushSettings() {
@@ -1901,8 +2048,14 @@ class StorageManager {
     const target = this._targetFor(profileId);
     if (target !== this) return target.isBookmarked(url);
     if (!url || typeof url !== 'string') return false;
-    const normalized = url.replace(/\/$/, '');
-    return this._readOwnBookmarks().some(b => b.url.replace(/\/$/, '') === normalized);
+    if (!this._memoBookmarkUrlSet) {
+      const set = new Set();
+      for (const b of this._readOwnBookmarks()) {
+        if (b && typeof b.url === 'string') set.add(b.url.replace(/\/$/, ''));
+      }
+      this._memoBookmarkUrlSet = set;
+    }
+    return this._memoBookmarkUrlSet.has(url.replace(/\/$/, ''));
   }
 
   toggleBookmark({ title, url, favicon = '', folder = '' }, profileId) {
@@ -2033,7 +2186,7 @@ class StorageManager {
       }
     }
     if (!changed) return null;
-    return this._write('bookmarks', list);
+    return this._scheduleWrite('bookmarks', list, 1200);
   }
 
   renameBookmarkFolder(oldName, newName, profileId) {

@@ -3,6 +3,7 @@ const {
   NEW_TAB_FILE_URL,
   CORNER_FILE_URL,
   WEBUI_FILE_URL,
+  ONBOARDING_FILE_URL,
   ERROR_PAGE_FILE_URL,
   state
 } = require('./core');
@@ -10,6 +11,7 @@ const {
   isNewTabUrl,
   isCornerUrl,
   isWebUiUrl,
+  isOnboardingUrl,
   isErrorPageUrl
 } = require('./utils');
 
@@ -52,6 +54,7 @@ function buildErrorPageUrl({ failedUrl, errorCode, errorDescription }, ctx) {
 function formatDisplayUrl(rawUrl) {
   if (isNewTabUrl(rawUrl)) return 'nextgx://newtab';
   if (isCornerUrl(rawUrl)) return 'nextgx://corner';
+  if (isOnboardingUrl(rawUrl)) return 'nextgx://welcome';
   if (isWebUiUrl(rawUrl)) {
     const hash = (rawUrl.split('#')[1] || 'history').toLowerCase();
     if (hash === 'passwords') return 'nextgx://passwords';
@@ -178,6 +181,9 @@ function resolveNavigateInput(input, settingsOverride = null) {
     const suffix = internalMatch[3] || '';
     if (page === 'corner' || page === 'gx-corner' || page === 'gxcorner') {
       return CORNER_FILE_URL;
+    }
+    if (page === 'welcome' || page === 'setup' || page === 'onboarding') {
+      return ONBOARDING_FILE_URL;
     }
     if (page === 'password-manager') page = 'passwords';
     if (page === 'privacy-dashboard') page = 'privacy';

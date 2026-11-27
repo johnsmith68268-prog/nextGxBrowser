@@ -4,7 +4,31 @@ const globalSearchInput = document.getElementById('globalSearchInput');
 const topRightActions = document.getElementById('topRightActions');
 
 let currentPage = 'history';
-let settingsSubTab = 'all'; // 'all' | 'gx' | 'performance' | 'appearance' | 'search-startup' | 'privacy' | 'profiles' | 'system'
+const VALID_SETTINGS_TABS = new Set([
+  'appearance',
+  'gx',
+  'video',
+  'autofill',
+  'privacy',
+  'search',
+  'default-browser',
+  'startup',
+  'languages',
+  'downloads',
+  'accessibility',
+  'system',
+  'reset',
+  'about'
+]);
+const SETTINGS_TAB_ALIASES = {
+  all: 'appearance',
+  performance: 'gx',
+  'search-startup': 'search',
+  defaultbrowser: 'default-browser',
+  onstartup: 'startup',
+  profiles: 'appearance'
+};
+let settingsSubTab = 'appearance';
 let cookieShowAll = false;
 let searchQuery = '';
 let dlFilterCat = 'all';
@@ -79,9 +103,10 @@ function applySettingsCategoryAndSearch() {
       emptyEl = document.createElement('div');
       emptyEl.id = 'settingsSearchEmpty';
       emptyEl.className = 'section-card';
-      mainContainer.appendChild(emptyEl);
+      const contentWrap = mainContainer.querySelector('.settings-gx-content') || mainContainer;
+      contentWrap.appendChild(emptyEl);
     }
-    emptyEl.innerHTML = `<div class="nx-empty-state"><div class="nx-empty-art" aria-hidden="true">🔍</div><div class="nx-empty-title">No settings match "${escapeHtml(searchQuery)}"</div><div class="nx-empty-copy">Try searching for theme, ad blocker, search engine, downloads, panic, or shaders.</div></div>`;
+    emptyEl.innerHTML = `<div class="nx-empty-state"><div class="nx-empty-art" aria-hidden="true">🔍</div><div class="nx-empty-title">No settings match "${escapeHtml(searchQuery)}"</div><div class="nx-empty-copy">Try searching for theme, wallpaper, ad blocker, search engine, downloads, proxy, or webrtc.</div></div>`;
     emptyEl.style.display = '';
   } else if (emptyEl) {
     emptyEl.style.display = 'none';
@@ -93,9 +118,10 @@ function switchPage(rawPage) {
   let page = rawStr;
   if (rawStr.startsWith('settings/')) {
     page = 'settings';
-    const sub = rawStr.slice('settings/'.length);
-    if (['all', 'gx', 'performance', 'appearance', 'search-startup', 'privacy', 'profiles', 'system'].includes(sub)) {
-      settingsSubTab = sub;
+    const rawSub = rawStr.slice('settings/'.length);
+    const mapped = SETTINGS_TAB_ALIASES[rawSub] || rawSub;
+    if (VALID_SETTINGS_TABS.has(mapped)) {
+      settingsSubTab = mapped;
     }
   }
   const VALID_PAGES = new Set(['history', 'downloads', 'bookmarks', 'passwords', 'privacy', 'extensions', 'settings']);
@@ -107,7 +133,7 @@ function switchPage(rawPage) {
     if (globalSearchInput) globalSearchInput.value = '';
   }
   currentPage = page;
-  window.location.hash = page === 'settings' && settingsSubTab !== 'all' ? `settings/${settingsSubTab}` : page;
+  window.location.hash = page === 'settings' ? `settings/${settingsSubTab}` : page;
   lastHistoryRenderKey = '';
   lastDownloadsRenderKey = '';
   lastBookmarksRenderKey = '';
@@ -147,6 +173,7 @@ function switchPage(rawPage) {
     settingsProfileError = '';
   }
 
+  document.body.dataset.activePage = page;
   document.querySelectorAll('.nav-link').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.page === page);
   });
@@ -4721,28 +4748,121 @@ async function renderSettingsPage() {
   }).join('');
 
   const settingsSubnavTabs = [
-    ['all', 'All Settings', false],
-    ['gx', 'GX Studio', true],
-    ['performance', 'GX Performance', true],
-    ['appearance', 'Appearance & Dock', false],
-    ['search-startup', 'Search & Startup', false],
-    ['privacy', 'Privacy & Data', false],
-    ['profiles', 'Profiles', false],
-    ['system', 'System & About', false]
+    ['appearance', 'Appearance', false, '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/></svg>'],
+    ['gx', 'GX Features', true, '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>'],
+    ['video', 'Video', false, '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="2" y="5" width="15" height="14" rx="2"/><polygon points="17 10 22 7 22 17 17 14"/></svg>'],
+    ['---'],
+    ['autofill', 'Autofill & Passwords', false, '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3"/></svg>'],
+    ['privacy', 'Privacy & Security', false, '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>'],
+    ['search', 'Search Engine', false, '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>'],
+    ['default-browser', 'Default Browser', false, '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8M12 3a14 14 0 0 0 0 18M12 3a14 14 0 0 1 0 18"/></svg>'],
+    ['startup', 'On Startup', false, '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>'],
+    ['---'],
+    ['languages', 'Languages', false, '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 5h10M9 3v2m1.048 9.5A18.022 18.022 0 0 1 6.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"/></svg>'],
+    ['downloads', 'Downloads', false, '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'],
+    ['accessibility', 'Accessibility', false, '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="5" r="2"/><path d="M4 9h16M12 9v12M8 21l4-6 4 6"/></svg>'],
+    ['system', 'System', false, '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 1 1 0 4h-.09c-.66 0-1.25.4-1.51 1z"/></svg>'],
+    ['reset', 'Reset Settings', false, '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>'],
+    ['---'],
+    ['about', 'About nextGx', false, '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>']
   ];
+  const settingsHeroHtml = `
+    <div class="settings-gx-hero">
+      <nav class="settings-gx-topnav" aria-label="Browser pages">
+        <button type="button" class="settings-gx-toplink" data-jump-page="history">History</button>
+        <button type="button" class="settings-gx-toplink" data-jump-page="downloads">Downloads</button>
+        <span class="settings-gx-toplink active" aria-current="page">Settings</span>
+        <button type="button" class="settings-gx-toplink" data-jump-page="bookmarks">Bookmarks</button>
+        <button type="button" class="settings-gx-toplink" data-jump-page="extensions">Extensions</button>
+      </nav>
+      <div class="settings-gx-searchbar">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        <input type="text" id="settingsHeroSearchInput" placeholder="Search settings" value="${escapeHtml(searchQuery)}" autocomplete="off" />
+      </div>
+    </div>
+  `;
   const settingsSubnavHtml = `
     <div class="settings-subnav" role="tablist" aria-label="Settings categories">
       ${settingsSubnavTabs
-        .map(
-          ([id, label, isGx]) =>
-            `<button type="button" role="tab" class="settings-tab-pill ${isGx ? 'gx-pill' : ''} ${settingsSubTab === id ? 'active' : ''}" data-settings-tab="${id}" aria-selected="${settingsSubTab === id ? 'true' : 'false'}">${label}</button>`
-        )
+        .map((entry) => {
+          if (entry[0] === '---') return '<div class="settings-subnav-sep" role="separator"></div>';
+          const [id, label, isGx, icon] = entry;
+          return `<button type="button" role="tab" class="settings-tab-pill ${isGx ? 'gx-pill' : ''} ${settingsSubTab === id ? 'active' : ''}" data-settings-tab="${id}" aria-selected="${settingsSubTab === id ? 'true' : 'false'}">${icon}<span>${label}</span></button>`;
+        })
         .join('')}
     </div>
   `;
 
+  const CURATED_WALLPAPERS = [
+    ['obsidian-wave', 'Obsidian Wave', 'assets/default-wallpaper.jpg'],
+    ['midnight-alpine', 'Midnight Alpine', 'assets/wallpapers/midnight-alpine.jpg'],
+    ['crimson-eclipse', 'Crimson Eclipse', 'assets/wallpapers/crimson-eclipse.jpg'],
+    ['cyber-dusk', 'Cyber Dusk', 'assets/wallpapers/cyber-dusk.jpg'],
+    ['violet-aurora', 'Violet Aurora', 'assets/wallpapers/violet-aurora.jpg'],
+    ['emerald-nebula', 'Emerald Nebula', 'assets/wallpapers/emerald-nebula.jpg']
+  ];
+  const activeWpKey = s.wallpaper?.type === 'preset' ? (s.wallpaper.preset || 'obsidian-wave') : '';
+  const settingsWallpapersCardHtml = `
+    <div class="section-card" id="settingsWallpapersCard" data-settings-cat="appearance">
+      <div class="card-header">
+        <h2 class="nx-heading">Wallpapers</h2>
+        <label class="nx-switch" title="Enable Start Page Wallpaper">
+          <input type="checkbox" id="setWallpaperEnabledChk" ${s.wallpaper?.type !== 'none' ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
+      <div class="card-row" style="flex-direction:column;align-items:stretch;gap:12px;">
+        <div class="set-wp-grid" id="setWallpaperGrid">
+          ${CURATED_WALLPAPERS.map(
+            ([key, label, img]) =>
+              `<button type="button" class="set-wp-thumb ${s.wallpaper?.type === 'preset' && activeWpKey === key ? 'active' : ''}" data-set-wp="${key}" style="background-image:url('${img}')" title="${label}"><span>${label}</span></button>`
+          ).join('')}
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <input type="file" id="setWallpaperFileInput" class="hidden" accept=".png,.jpg,.jpeg,.webp,.gif,image/png,image/jpeg,image/webp,image/gif" />
+          <button type="button" class="btn primary" id="btnSetAddWallpaper">Add your wallpaper</button>
+          <span class="row-sub" id="setWallpaperMsg">${s.wallpaper?.type === 'custom' ? 'Custom wallpaper active' : 'Pick a curated wallpaper or upload your own (up to 5 MB)'}</span>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const settingsStartPageCardHtml = `
+    <div class="section-card" id="settingsStartPageCard" data-settings-cat="appearance">
+      <div class="card-header"><h2 class="nx-heading">Start Page</h2></div>
+      <div class="card-row">
+        <div class="row-info"><div class="row-title">Show minimal clock &amp; date</div><div class="row-sub">Display the clean clock header above the Start Page search bar</div></div>
+        <label class="nx-switch"><input type="checkbox" id="setSpClockChk" ${s.startPageShowClock !== false ? 'checked' : ''} /><span class="nx-slider"></span></label>
+      </div>
+      <div class="card-row">
+        <div class="row-info"><div class="row-title">Hide search box</div><div class="row-sub">Hide the search bar on the Start Page</div></div>
+        <label class="nx-switch"><input type="checkbox" id="setSpHideSearchChk" ${s.startPageShowSearch === false ? 'checked' : ''} /><span class="nx-slider"></span></label>
+      </div>
+      <div class="card-row">
+        <div class="row-info"><div class="row-title">Hide Speed Dial</div><div class="row-sub">Keep only the wallpaper and search box on the Start Page</div></div>
+        <label class="nx-switch"><input type="checkbox" id="setSpHideDialChk" ${s.startPageShowSpeedDial === false ? 'checked' : ''} /><span class="nx-slider"></span></label>
+      </div>
+      <div class="card-row">
+        <div class="row-info"><div class="row-title">Hide &ldquo;Add a site&rdquo; button</div><div class="row-sub">Hide the + tile at the end of Speed Dial</div></div>
+        <label class="nx-switch"><input type="checkbox" id="setSpHideAddChk" ${s.startPageShowAddButton === false ? 'checked' : ''} /><span class="nx-slider"></span></label>
+      </div>
+      <div class="card-row">
+        <div class="row-info"><div class="row-title">Show Speed Dial names</div><div class="row-sub">Display site names beneath brand icons</div></div>
+        <label class="nx-switch"><input type="checkbox" id="setSpNamesChk" ${s.startPageShowNames !== false ? 'checked' : ''} /><span class="nx-slider"></span></label>
+      </div>
+      <div class="card-row">
+        <div class="row-info"><div class="row-title">Use bigger Speed Dial tiles</div><div class="row-sub">Switch to larger 5-column Speed Dial cards</div></div>
+        <label class="nx-switch"><input type="checkbox" id="setSpBiggerChk" ${s.startPageBiggerTiles ? 'checked' : ''} /><span class="nx-slider"></span></label>
+      </div>
+      <div class="card-row">
+        <div class="row-info"><div class="row-title">Show Speed Dial suggestions</div><div class="row-sub">Show clean frequently visited quick-access chips beneath Speed Dial</div></div>
+        <label class="nx-switch"><input type="checkbox" id="setSpSuggestionsChk" ${s.startPageShowSuggestions !== false ? 'checked' : ''} /><span class="nx-slider"></span></label>
+      </div>
+    </div>
+  `;
+
   const settingsShortcutsHtml = `
-    <div class="section-card" id="settingsShortcutsCard" data-settings-cat="system">
+    <div class="section-card" id="settingsShortcutsCard" data-settings-cat="gx">
       <div class="card-header"><h2 class="nx-heading">Keyboard shortcuts</h2></div>
       <div class="card-row" style="flex-wrap:wrap;">
         ${settingsShortcutRows
@@ -4755,21 +4875,13 @@ async function renderSettingsPage() {
     </div>
   `;
 
-  if (s.accessibilityFocusHighlight) {
-    document.documentElement.dataset.focusHighlight = 'true';
-  } else {
-    delete document.documentElement.dataset.focusHighlight;
-  }
-
-  mainContainer.innerHTML = `
-    ${settingsSubnavHtml}
-
-    <div class="section-card section-card--gx" id="gxFeaturesCard" data-settings-cat="gx">
-      <div class="card-header"><h2 class="nx-heading">GX Studio &amp; Gaming Features</h2></div>
+  const settingsThemesCardHtml = `
+    <div class="section-card" id="settingsThemesCard" data-settings-cat="appearance">
+      <div class="card-header"><h2 class="nx-heading">Themes</h2></div>
       <div class="card-row" style="flex-wrap:wrap;align-items:flex-start;">
         <div class="row-info" style="min-width:180px;">
           <div class="row-title">nextGx Theme</div>
-          <div class="row-sub">Choose your browser accent</div>
+          <div class="row-sub">Choose your browser accent &amp; chrome glow</div>
         </div>
         <div class="nx-segmented theme-seg-wrap" id="setThemeSeg">
           <button type="button" class="seg-btn theme-card ${s.theme === 'gx-violet' ? 'active' : ''}" data-theme="gx-violet"><span class="theme-preview gx-violet" aria-hidden="true"></span><span class="theme-card-label"><span class="theme-dot gx-violet"></span>nextGx Violet</span></button>
@@ -4782,6 +4894,78 @@ async function renderSettingsPage() {
           <button type="button" class="seg-btn theme-card ${s.theme === 'ice' ? 'active' : ''}" data-theme="ice"><span class="theme-preview ice" aria-hidden="true"></span><span class="theme-card-label"><span class="theme-dot ice"></span>Ice</span></button>
         </div>
       </div>
+    </div>
+  `;
+
+  const settingsVideoCardHtml = `
+    <div class="section-card" id="videoSettingsCard" data-settings-cat="video">
+      <div class="card-header"><h2 class="nx-heading">Video Pop-Out &amp; Enhancement</h2></div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Enable video pop-out (Picture-in-Picture)</div>
+          <div class="row-sub">Detach playing videos into a floating always-on-top window from the toolbar or tab menu</div>
+        </div>
+        <label class="nx-switch">
+          <input type="checkbox" id="setVideoPopOutChk" ${s.videoPopOutEnabled !== false ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Video enhance (filter)</div>
+          <div class="row-sub">Contrast / saturation filter on videos — applies live across open tabs</div>
+        </div>
+        <select id="setVideoEnhancePreset" class="priv-perm-select" style="padding:7px 10px;">
+          ${Object.entries(VIDEO_FX_LABELS).map(([p, label]) => `<option value="${p}"${(s.videoEnhancePreset || 'off') === p ? ' selected' : ''}>${label}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+  `;
+
+  const settingsAutofillCardHtml = `
+    <div class="section-card" id="autofillSettingsCard" data-settings-cat="autofill">
+      <div class="card-header"><h2 class="nx-heading">Autofill &amp; Passwords</h2></div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Password Manager</div>
+          <div class="row-sub">View, edit, generate, import, or export saved website logins</div>
+        </div>
+        <button type="button" class="btn primary" data-jump-page="passwords">Open Passwords &rarr;</button>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Payment Methods</div>
+          <div class="row-sub">Manage encrypted saved cards for faster checkout autofill</div>
+        </div>
+        <button type="button" class="btn" data-jump-page="passwords">Manage Cards &rarr;</button>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Addresses &amp; More</div>
+          <div class="row-sub">Manage saved shipping and contact addresses</div>
+        </div>
+        <button type="button" class="btn" data-jump-page="passwords">Manage Addresses &rarr;</button>
+      </div>
+    </div>
+  `;
+
+  if (s.accessibilityFocusHighlight) {
+    document.documentElement.dataset.focusHighlight = 'true';
+  } else {
+    delete document.documentElement.dataset.focusHighlight;
+  }
+
+  mainContainer.innerHTML = `
+    ${settingsHeroHtml}
+    <div class="settings-gx-shell">
+      ${settingsSubnavHtml}
+      <div class="settings-gx-content">
+
+    ${settingsThemesCardHtml}
+    ${settingsWallpapersCardHtml}
+
+    <div class="section-card section-card--gx" id="gxFeaturesCard" data-settings-cat="gx">
+      <div class="card-header"><h2 class="nx-heading">GX Features, Sounds &amp; Mods</h2></div>
       <div class="card-row">
         <div class="row-info">
           <div class="row-title">Panic button</div>
@@ -4796,15 +4980,6 @@ async function renderSettingsPage() {
         </div>
         <select id="setShaderPreset" class="priv-perm-select" style="padding:7px 10px;">
           ${Object.entries(SHADER_LABELS).map(([p, label]) => `<option value="${p}"${(s.shaderPreset || 'none') === p ? ' selected' : ''}>${label}</option>`).join('')}
-        </select>
-      </div>
-      <div class="card-row">
-        <div class="row-info">
-          <div class="row-title">Video enhance (filter)</div>
-          <div class="row-sub">Contrast / saturation filter on videos — not AI upscaling</div>
-        </div>
-        <select id="setVideoEnhancePreset" class="priv-perm-select" style="padding:7px 10px;">
-          ${Object.entries(VIDEO_FX_LABELS).map(([p, label]) => `<option value="${p}"${(s.videoEnhancePreset || 'off') === p ? ' selected' : ''}>${label}</option>`).join('')}
         </select>
       </div>
       <div class="card-row sounds-settings-row">
@@ -4864,7 +5039,7 @@ async function renderSettingsPage() {
       </div>
     </div>
 
-    <div class="section-card section-card--gx" data-settings-cat="performance">
+    <div class="section-card section-card--gx" data-settings-cat="gx">
       <div class="card-header"><h2 class="nx-heading">GX Performance, Limiters &amp; Memory Saver</h2></div>
       <div class="card-row">
         <div class="row-info">
@@ -4943,8 +5118,63 @@ async function renderSettingsPage() {
       <div id="profilesSettingsBody"></div>
     </div>
 
+    ${settingsVideoCardHtml}
+    ${settingsAutofillCardHtml}
+    ${settingsStartPageCardHtml}
+
     <div class="section-card" data-settings-cat="appearance">
-      <div class="card-header"><h2 class="nx-heading">Appearance, Tabs &amp; Behavior</h2></div>
+      <div class="card-header"><h2 class="nx-heading">Appearance, Sidebar &amp; Behavior</h2></div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Show sidebar</div>
+          <div class="row-sub">Display the left quick-access sidebar rail</div>
+        </div>
+        <label class="nx-switch">
+          <input type="checkbox" id="setShowSidebarChk" ${s.showSidebar !== false ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Colorize sidebar icons using primary color</div>
+          <div class="row-sub">Tint sidebar icons to match your active theme accent</div>
+        </div>
+        <label class="nx-switch">
+          <input type="checkbox" id="setColorizeSidebarChk" ${s.colorizeSidebarIcons ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Reduce animations</div>
+          <div class="row-sub">Minimize UI transitions and glowing motion effects across the shell</div>
+        </div>
+        <label class="nx-switch">
+          <input type="checkbox" id="setReduceAnimationsChk" ${s.reduceAnimations ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Address bar search suggestions</div>
+          <div class="row-sub">Show live suggestions and history matches while typing in the address bar</div>
+        </div>
+        <label class="nx-switch">
+          <input type="checkbox" id="setAddressSuggestChk" ${s.addressBarSuggestions !== false ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Default page zoom</div>
+          <div class="row-sub">Preferred default zoom level for pages</div>
+        </div>
+        <select id="setDefaultZoomSel" class="priv-perm-select" style="padding:6px 10px;">
+          ${[75, 80, 90, 100, 110, 125, 150, 175, 200]
+            .map((z) => `<option value="${z}"${Number(s.defaultPageZoom || 100) === z ? ' selected' : ''}>${z}%</option>`)
+            .join('')}
+        </select>
+      </div>
       <div class="card-row">
         <div class="row-info">
           <div class="row-title">Show Bookmarks Bar</div>
@@ -5034,15 +5264,25 @@ async function renderSettingsPage() {
       </div>
     </div>
 
-    <div class="section-card" data-settings-cat="search-startup">
+    <div class="section-card" data-settings-cat="startup">
       <div class="card-header"><h2 class="nx-heading">On Startup</h2></div>
       ${startupRadio('newtab', 'Open the new tab page', 'Start with a fresh Speed Dial page')}
       ${startupRadio('restore', 'Continue where you left off', 'Reopen tabs from your last browsing session when nextGx launches')}
       ${startupRadio('urls', 'Open a specific page or set of pages', 'Open the pages below every time nextGx launches')}
       ${startupUrlsHtml}
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Run when my computer starts</div>
+          <div class="row-sub">Automatically launch nextGx Browser when you sign in to Windows</div>
+        </div>
+        <label class="nx-switch">
+          <input type="checkbox" id="setRunOnStartupChk" ${s.runOnStartup ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
     </div>
 
-    <div class="section-card" data-settings-cat="search-startup">
+    <div class="section-card" data-settings-cat="startup">
       <div class="card-header"><h2 class="nx-heading">Homepage</h2></div>
       <div class="card-row" style="flex-wrap:wrap;">
         <div class="row-info" style="min-width:220px;">
@@ -5066,9 +5306,21 @@ async function renderSettingsPage() {
       </div>
     </div>
 
-    ${searchEngineCardHtml.replace('class="section-card"', 'class="section-card" data-settings-cat="search-startup"')}
-    ${languagesCardHtml.replace('class="section-card"', 'class="section-card" data-settings-cat="system"')}
-    ${downloadsCardHtml.replace('class="section-card"', 'class="section-card" data-settings-cat="system"')}
+    ${searchEngineCardHtml.replace('class="section-card"', 'class="section-card" data-settings-cat="search"')}
+    ${languagesCardHtml.replace('class="section-card"', 'class="section-card" data-settings-cat="languages"')}
+    ${downloadsCardHtml.replace('class="section-card"', 'class="section-card" data-settings-cat="downloads"')}
+
+    <div class="section-card" id="defaultBrowserSettingsCard" data-settings-cat="default-browser">
+      <div class="card-header"><h2 class="nx-heading">Default Browser</h2></div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Default browser</div>
+          <div class="row-sub">Make nextGx Browser the default browser for web links</div>
+          <div class="settings-form-msg ${defaultBrowserMsgKind}" id="setDefaultBrowserMsg" style="display:${defaultBrowserMsg ? 'block' : 'none'};">${escapeHtml(defaultBrowserMsg)}</div>
+        </div>
+        <button type="button" class="btn primary" id="btnSetDefaultBrowser">Make default</button>
+      </div>
+    </div>
 
     <div class="section-card" data-settings-cat="privacy">
       <div class="card-header"><h2 class="nx-heading">Privacy Shield &amp; Security</h2></div>
@@ -5166,7 +5418,7 @@ async function renderSettingsPage() {
       <div id="cookieDomainsContainer"></div>
     </div>
 
-    <div class="section-card" id="accessibilitySettingsCard" data-settings-cat="system">
+    <div class="section-card" id="accessibilitySettingsCard" data-settings-cat="accessibility">
       <div class="card-header"><h2 class="nx-heading">Accessibility</h2></div>
       <div class="card-row">
         <div class="row-info">
@@ -5188,10 +5440,20 @@ async function renderSettingsPage() {
           <span class="nx-slider"></span>
         </label>
       </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Copied to clipboard confirmations</div>
+          <div class="row-sub">Show a confirmation toast when copying links, passwords, or screenshots</div>
+        </div>
+        <label class="nx-switch">
+          <input type="checkbox" id="setCopiedToastChk" ${s.copiedToastEnabled !== false ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
     </div>
 
     <div class="section-card" id="systemSettingsCard" data-settings-cat="system">
-      <div class="card-header"><h2 class="nx-heading">System</h2></div>
+      <div class="card-header"><h2 class="nx-heading">System &amp; Network</h2></div>
       <div class="card-row">
         <div class="row-info">
           <div class="row-title">Continue running background apps when nextGx is closed</div>
@@ -5212,11 +5474,71 @@ async function renderSettingsPage() {
           <span class="nx-slider"></span>
         </label>
       </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Use DNS-over-HTTPS instead of system DNS</div>
+          <div class="row-sub">Encrypts DNS lookups for stronger network privacy</div>
+        </div>
+        <label class="nx-switch">
+          <input type="checkbox" id="setDnsOverHttpsChk" ${s.dnsOverHttps ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Open your computer&apos;s proxy settings</div>
+          <div class="row-sub">Configure system-wide network proxy in Windows Settings</div>
+        </div>
+        <button type="button" class="btn" id="btnOpenProxySettings">Open proxy settings</button>
+      </div>
+      <div class="card-row" style="flex-direction:column;align-items:stretch;gap:10px;">
+        <div class="row-info">
+          <div class="row-title">WebRTC IP Handling Policy</div>
+          <div class="row-sub">Control how WebRTC exposes local and public network interfaces</div>
+        </div>
+        <div class="set-radio-list" id="setWebrtcPolicyGroup">
+          ${[
+            ['default', 'Use any suitable network interface (recommended)'],
+            ['default_public_and_private_interfaces', 'Use default public and private network interfaces only'],
+            ['default_public_interface_only', 'Use default public network interfaces only'],
+            ['disable_non_proxied_udp', 'Disable non-proxied UDP']
+          ]
+            .map(
+              ([val, label]) =>
+                `<label class="set-radio-opt"><input type="radio" name="webrtcPolicy" value="${val}" ${(s.webrtcPolicy || 'default') === val ? 'checked' : ''} /><span>${label}</span></label>`
+            )
+            .join('')}
+        </div>
+      </div>
     </div>
 
     ${settingsShortcutsHtml}
 
-    <div class="section-card" id="settingsImportExportCard" data-settings-cat="system">
+    <div class="section-card" id="resetSettingsCard" data-settings-cat="reset">
+      <div class="card-header"><h2 class="nx-heading">Reset Settings</h2></div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Reset settings</div>
+          <div class="row-sub">Restore settings to their original defaults. Your bookmarks, history, passwords and extensions stay untouched.</div>
+        </div>
+        <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          ${resetConfirmOpen
+            ? `<span style="font-size:12px;color:var(--text-secondary);">Are you sure?</span>
+          <button type="button" class="btn danger-solid" id="btnConfirmResetSettings">Yes, reset settings</button>
+          <button type="button" class="btn" id="btnCancelResetSettings">Cancel</button>`
+            : `<button type="button" class="btn danger" id="btnResetSettings">Restore settings to their original defaults</button>`}
+        </span>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">First-Run Setup Wizard</div>
+          <div class="row-sub">Re-run the interactive theme, preset, sidebar &amp; default browser setup experience</div>
+        </div>
+        <button type="button" class="btn" id="btnLaunchOnboarding">Launch Setup Wizard</button>
+      </div>
+    </div>
+
+    <div class="section-card" id="settingsImportExportCard" data-settings-cat="reset">
       <div class="card-header"><h2 class="nx-heading">Backup &amp; Restore Settings</h2></div>
       ${settingsIoBannerHtml}
       <div class="card-row" style="flex-wrap:wrap;">
@@ -5231,34 +5553,16 @@ async function renderSettingsPage() {
       </div>
     </div>
 
-    <div class="section-card" id="aboutSettingsCard" data-settings-cat="system">
+    <div class="section-card" id="aboutSettingsCard" data-settings-cat="about">
       <div class="card-header"><h2 class="nx-heading">About nextGx Browser</h2></div>
-      <div class="card-row">
+      <div class="card-row" style="gap:16px;">
+        <img src="assets/nextgx-emblem.png" alt="nextGx" width="44" height="44" style="border-radius:10px;flex-shrink:0;" />
         <div class="row-info">
           <div class="row-title">${escapeHtml(aboutTitle)}</div>
-          <div class="row-sub">Designed for Linux &amp; Windows (Microsoft Store MSIX Ready)</div>
+          <div class="row-sub">Designed for Windows &amp; Linux · Built-in AdGuard MV3 Shield, Media Dock &amp; Memory Saver</div>
         </div>
       </div>
-      <div class="card-row">
-        <div class="row-info">
-          <div class="row-title">Default browser</div>
-          <div class="row-sub">Open web links in nextGx Browser instead of another browser</div>
-          <div class="settings-form-msg ${defaultBrowserMsgKind}" id="setDefaultBrowserMsg" style="display:${defaultBrowserMsg ? 'block' : 'none'};">${escapeHtml(defaultBrowserMsg)}</div>
-        </div>
-        <button type="button" class="btn primary" id="btnSetDefaultBrowser">Make default</button>
-      </div>
-      <div class="card-row">
-        <div class="row-info">
-          <div class="row-title">Reset settings</div>
-          <div class="row-sub">Restore settings to their original defaults. Your bookmarks, history, passwords and extensions stay untouched.</div>
-        </div>
-        <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-          ${resetConfirmOpen
-            ? `<span style="font-size:12px;color:var(--text-secondary);">Are you sure?</span>
-          <button type="button" class="btn danger-solid" id="btnConfirmResetSettings">Yes, reset settings</button>
-          <button type="button" class="btn" id="btnCancelResetSettings">Cancel</button>`
-            : `<button type="button" class="btn danger" id="btnResetSettings">Restore settings to their original defaults</button>`}
-        </span>
+    </div>
       </div>
     </div>
   `;
@@ -5470,14 +5774,19 @@ async function renderSettingsPage() {
   // Settings sub-category tabs + GX limiters + full sidebar dock grid
   mainContainer.querySelectorAll('.settings-tab-pill').forEach((pill) => {
     pill.addEventListener('click', () => {
-      settingsSubTab = pill.dataset.settingsTab || 'all';
+      settingsSubTab = pill.dataset.settingsTab || 'appearance';
+      searchQuery = '';
+      const heroSearchEl = document.getElementById('settingsHeroSearchInput');
+      if (heroSearchEl) heroSearchEl.value = '';
+      if (globalSearchInput) globalSearchInput.value = '';
       mainContainer.querySelectorAll('.settings-tab-pill').forEach((p) => {
         const on = p.dataset.settingsTab === settingsSubTab;
         p.classList.toggle('active', on);
         p.setAttribute('aria-selected', on ? 'true' : 'false');
       });
-      window.location.hash = settingsSubTab === 'all' ? 'settings' : `settings/${settingsSubTab}`;
+      window.location.hash = `settings/${settingsSubTab}`;
       applySettingsCategoryAndSearch();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     });
   });
 
@@ -5916,7 +6225,12 @@ async function renderSettingsPage() {
     if (el) {
       const parentCard = el.closest('.section-card[data-settings-cat]');
       if (parentCard && parentCard.style.display === 'none') {
-        settingsSubTab = parentCard.dataset.settingsCat || 'all';
+        settingsSubTab = parentCard.dataset.settingsCat || 'appearance';
+        mainContainer.querySelectorAll('.settings-tab-pill').forEach((p) => {
+          const on = p.dataset.settingsTab === settingsSubTab;
+          p.classList.toggle('active', on);
+          p.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
         applySettingsCategoryAndSearch();
       }
       const highlightEl = el.closest('.card-row') || el;
@@ -5927,6 +6241,99 @@ async function renderSettingsPage() {
       });
     }
   }
+
+  // Bind Opera GX Settings hero navigation, inline search & newly added Appearance/StartPage/System controls
+  mainContainer.querySelectorAll('[data-jump-page]').forEach((btn) => {
+    btn.addEventListener('click', () => switchPage(btn.dataset.jumpPage));
+  });
+  const heroSearch = document.getElementById('settingsHeroSearchInput');
+  if (heroSearch) {
+    heroSearch.addEventListener('input', (e) => {
+      searchQuery = e.target.value.trim().toLowerCase();
+      if (globalSearchInput) globalSearchInput.value = e.target.value;
+      applySettingsCategoryAndSearch();
+    });
+  }
+  const bindSetBool = (id, key, invert = false) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('change', async (e) => {
+      await window.gxChromePagesAPI.updateSettings({ [key]: invert ? !e.target.checked : e.target.checked });
+    });
+  };
+  bindSetBool('setSpClockChk', 'startPageShowClock');
+  bindSetBool('setSpHideSearchChk', 'startPageShowSearch', true);
+  bindSetBool('setSpHideDialChk', 'startPageShowSpeedDial', true);
+  bindSetBool('setSpHideAddChk', 'startPageShowAddButton', true);
+  bindSetBool('setSpNamesChk', 'startPageShowNames');
+  bindSetBool('setSpBiggerChk', 'startPageBiggerTiles');
+  bindSetBool('setSpSuggestionsChk', 'startPageShowSuggestions');
+  bindSetBool('setShowSidebarChk', 'showSidebar');
+  bindSetBool('setColorizeSidebarChk', 'colorizeSidebarIcons');
+  bindSetBool('setReduceAnimationsChk', 'reduceAnimations');
+  bindSetBool('setAddressSuggestChk', 'addressBarSuggestions');
+  bindSetBool('setRunOnStartupChk', 'runOnStartup');
+  bindSetBool('setDnsOverHttpsChk', 'dnsOverHttps');
+  bindSetBool('setVideoPopOutChk', 'videoPopOutEnabled');
+  bindSetBool('setCopiedToastChk', 'copiedToastEnabled');
+
+  document.getElementById('setDefaultZoomSel')?.addEventListener('change', async (e) => {
+    await window.gxChromePagesAPI.updateSettings({ defaultPageZoom: Number(e.target.value) || 100 });
+  });
+  document.getElementById('setWallpaperEnabledChk')?.addEventListener('change', async (e) => {
+    const cur = s.wallpaper || { type: 'preset', preset: 'obsidian-wave', file: '' };
+    await window.gxChromePagesAPI.updateSettings({
+      wallpaper: e.target.checked
+        ? { ...cur, type: cur.file ? 'custom' : 'preset', preset: cur.preset || 'obsidian-wave' }
+        : { ...cur, type: 'none' }
+    });
+  });
+  mainContainer.querySelectorAll('[data-set-wp]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const preset = btn.dataset.setWp;
+      mainContainer.querySelectorAll('[data-set-wp]').forEach((b) => b.classList.toggle('active', b === btn));
+      const chk = document.getElementById('setWallpaperEnabledChk');
+      if (chk) chk.checked = true;
+      const cur = s.wallpaper || { type: 'preset', preset: '', file: '' };
+      await window.gxChromePagesAPI.updateSettings({ wallpaper: { ...cur, type: 'preset', preset } });
+    });
+  });
+  const setWpFile = document.getElementById('setWallpaperFileInput');
+  document.getElementById('btnSetAddWallpaper')?.addEventListener('click', () => {
+    if (setWpFile) {
+      setWpFile.value = '';
+      setWpFile.click();
+    }
+  });
+  setWpFile?.addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file || !window.gxChromePagesAPI?.saveCustomWallpaper) return;
+    const msgEl = document.getElementById('setWallpaperMsg');
+    try {
+      const buf = await file.arrayBuffer();
+      const res = await window.gxChromePagesAPI.saveCustomWallpaper({
+        name: file.name,
+        type: file.type,
+        bytes: new Uint8Array(buf)
+      });
+      if (msgEl) msgEl.textContent = res?.ok ? 'Custom wallpaper applied!' : (res?.error || 'Could not save wallpaper.');
+    } catch (_) {
+      if (msgEl) msgEl.textContent = 'Could not read image file.';
+    }
+  });
+  document.getElementById('btnOpenProxySettings')?.addEventListener('click', () => {
+    window.gxChromePagesAPI?.openProxySettings?.();
+  });
+  document.querySelectorAll('input[name="webrtcPolicy"]').forEach((rad) => {
+    rad.addEventListener('change', async () => {
+      if (rad.checked) {
+        await window.gxChromePagesAPI.updateSettings({ webrtcPolicy: rad.value });
+      }
+    });
+  });
+  document.getElementById('btnLaunchOnboarding')?.addEventListener('click', () => {
+    window.gxChromePagesAPI?.openOnboarding?.();
+  });
 }
 
 function refreshVisiblePage() {

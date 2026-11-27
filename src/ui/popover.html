@@ -509,14 +509,20 @@
 
     .dl-mini-card {
       padding: 8px 10px;
+      padding: 9px 10px;
       border-radius: var(--nx-radius-sm);
       background: var(--bg-card);
       border: 1px solid var(--border);
       display: flex;
       flex-direction: column;
       gap: 4px;
+      gap: 6px;
       font-size: 12px;
       flex-shrink: 0;
+    }
+
+    .dl-mini-card.active {
+      border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
     }
 
     .dl-mini-top {
@@ -524,6 +530,69 @@
       justify-content: space-between;
       align-items: center;
       gap: 6px;
+    }
+
+    .dl-mini-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .dl-mini-progress-track {
+      width: 100%;
+      height: 5px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .dl-mini-progress-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--accent), var(--accent-bright), var(--accent));
+      background-size: 200% 100%;
+      transition: width 220ms ease;
+    }
+
+    .dl-mini-progress-fill.flowing {
+      animation: nxDlWaveBar 1.2s linear infinite;
+    }
+
+    .dl-mini-progress-fill.indeterminate {
+      width: 42% !important;
+      animation: nxDlIndeterminate 1.25s ease-in-out infinite;
+    }
+
+    .dl-mini-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      font-size: 10.5px;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    @keyframes nxDlWaveBar {
+      0% {
+        background-position: 200% 0;
+      }
+
+      100% {
+        background-position: 0 0;
+      }
+    }
+
+    @keyframes nxDlIndeterminate {
+      0% {
+        transform: translateX(-100%);
+      }
+
+      100% {
+        transform: translateX(260%);
+      }
     }
 
     .dl-name {
@@ -1922,6 +1991,15 @@
 
     #view-omnibox-suggest {
       width: 100%;
+      padding: 6px 8px 10px !important;
+      gap: 2px !important;
+    }
+
+    #view-omnibox-suggest #osList {
+      max-height: 460px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
     }
 
     #view-tab-search .ctx-input {
@@ -1935,18 +2013,61 @@
     }
 
     .ts-list .rl-row.selected,
-    #osList .rl-row.selected {
-      background: var(--accent-subtle, rgba(250, 30, 78, 0.18));
+    #osList .rl-row.selected,
+    #osList .os-row.selected,
+    #osList .os-row:hover {
+      background: color-mix(in srgb, var(--accent) 18%, rgba(255, 255, 255, 0.055));
     }
 
-    /* UX phase: omnibox suggestions — group header + site favicons. */
+    /* Opera GX expanded omnibox suggestions — clean single-line rows */
     .os-header {
-      font-size: 10.5px;
+      font-size: 10px;
       font-weight: 700;
-      letter-spacing: 0.07em;
+      letter-spacing: 0.09em;
       text-transform: uppercase;
       color: var(--muted);
-      padding: 8px 10px 4px;
+      padding: 10px 12px 4px;
+      opacity: 0.85;
+    }
+
+    .os-header:first-child {
+      padding-top: 4px;
+    }
+
+    .os-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 34px;
+      padding: 0 10px;
+      border-radius: 6px;
+      transition: background 110ms ease;
+    }
+
+    .os-open {
+      flex: 1;
+      min-width: 0;
+      height: 100%;
+      border: none;
+      background: transparent;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      text-align: left;
+      padding: 0;
+      font-family: inherit;
+    }
+
+    .os-icon-wrap {
+      width: 18px;
+      height: 18px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      color: var(--muted);
     }
 
     .os-favicon {
@@ -1955,6 +2076,58 @@
       border-radius: 3px;
       object-fit: contain;
       flex-shrink: 0;
+      display: block;
+    }
+
+    .os-inline-text {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      overflow: hidden;
+    }
+
+    .os-title {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 0 1 auto;
+      max-width: 58%;
+    }
+
+    .os-sub {
+      font-size: 12px;
+      font-weight: 400;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1 1 120px;
+      min-width: 0;
+      opacity: 0.85;
+    }
+
+    .os-switch-btn {
+      flex-shrink: 0;
+      height: 24px;
+      padding: 0 10px;
+      border-radius: 5px;
+      border: 1px solid color-mix(in srgb, var(--accent) 48%, rgba(255, 255, 255, 0.16));
+      background: color-mix(in srgb, var(--accent) 16%, rgba(255, 255, 255, 0.04));
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 120ms ease, border-color 120ms ease;
+    }
+
+    .os-switch-btn:hover {
+      background: color-mix(in srgb, var(--accent) 32%, transparent);
+      border-color: var(--accent-bright);
     }
   </style>
 </head>
@@ -2269,7 +2442,11 @@
   <div id="view-site-info" class="hidden" style="display:flex;flex-direction:column;gap:8px;">
     <div class="sec-header">
       <span id="siteInfoIcon" class="site-info-icon-badge" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <rect x="4" y="11" width="16" height="10" rx="2" />
+          <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+        </svg>
       </span>
       <div style="min-width:0;flex:1;">
         <div class="sec-status" id="siteInfoStatus">Connection is secure</div>
@@ -2284,7 +2461,9 @@
       <button class="mini-btn" id="btnSiteInfoClearCookies" title="Clear cookies for this site">Clear</button>
     </div>
     <div class="sep"></div>
-    <div class="nx-heading" style="font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--accent-bright);">Site permissions</div>
+    <div class="nx-heading"
+      style="font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--accent-bright);">
+      Site permissions</div>
     <div id="siteInfoPermRows"></div>
     <div class="sep"></div>
     <button class="menu-item" id="btnSiteInfoSettings">
@@ -2531,7 +2710,11 @@
   <div id="view-rail-context" class="hidden" role="menu" aria-label="Sidebar item actions">
     <button class="menu-item" data-rail-act="open" id="btnRailCtxOpen" role="menuitem">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><line x1="3" y1="9" x2="21" y2="9" /></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <line x1="3" y1="9" x2="21" y2="9" />
+        </svg>
         <span id="railCtxOpenLabel">Open panel</span>
       </span>
     </button>
@@ -2541,19 +2724,34 @@
          writes, so the shell re-applies it on update. -->
     <button class="menu-item" data-rail-act="pin" id="btnRailCtxPin" role="menuitem">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5" /><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 1 1 0 0 0 1-1V4a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v1a1 1 0 0 1 1 1 1 1 0 0 1 1 1v3.76z" /></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 17v5" />
+          <path
+            d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 1 1 0 0 0 1-1V4a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v1a1 1 0 0 1 1 1 1 1 0 0 1 1 1v3.76z" />
+        </svg>
         <span id="railCtxPinLabel">Pin panel</span>
       </span>
     </button>
     <button class="menu-item" data-rail-act="hide" id="btnRailCtxHide" role="menuitem">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" /><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+          <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+          <line x1="1" y1="1" x2="23" y2="23" />
+        </svg>
         Hide from rail
       </span>
     </button>
     <button class="menu-item" data-rail-act="customize" id="btnRailCtxCustomize" role="menuitem">
       <span class="menu-left">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3" />
+          <path
+            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
         Customize Dock…
       </span>
     </button>
@@ -2828,7 +3026,8 @@
         </span>
         <span style="color:var(--muted);font-size:11px;">↗</span>
       </button>
-      <div class="prof-footnote">Switching focuses a profile's open window and restores its tabs — it never opens a duplicate window</div>
+      <div class="prof-footnote">Switching focuses a profile's open window and restores its tabs — it never opens a
+        duplicate window</div>
     </div>
   </div>
 
@@ -2889,7 +3088,8 @@
        front). Opened from the chevron / Ctrl+Shift+A via popover kind
        'tab-search'; the payload carries the recency-sorted tab list. -->
   <div id="view-tab-search" class="hidden" role="dialog" aria-label="Search tabs">
-    <input id="tsInput" class="ctx-input" type="text" placeholder="Search tabs" aria-label="Search tabs" autocomplete="off" spellcheck="false" />
+    <input id="tsInput" class="ctx-input" type="text" placeholder="Search tabs" aria-label="Search tabs"
+      autocomplete="off" spellcheck="false" />
     <div class="sep"></div>
     <div id="tsList" class="ts-list pop-scroll-list"></div>
   </div>
@@ -3945,57 +4145,86 @@
       const suggestions = Array.isArray(payload?.suggestions) ? payload.suggestions : [];
       const selectedIdx = typeof payload?.selectedIndex === 'number' ? payload.selectedIndex : -1;
       listEl.innerHTML = '';
-      if (suggestions.length) {
-        const head = document.createElement('div');
-        head.className = 'os-header';
-        head.textContent = 'From your history';
-        listEl.appendChild(head);
-      }
+
+      const SEARCH_SVG =
+        '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6.5"/><line x1="15.5" y1="15.5" x2="20.5" y2="20.5"/></svg>';
+      const GLOBE_SVG =
+        '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8"/></svg>';
+
+      let lastSection = '';
       for (let i = 0; i < suggestions.length; i++) {
         const m = suggestions[i];
+        const sec = m.section || 'history';
+        if (sec !== lastSection) {
+          lastSection = sec;
+          const head = document.createElement('div');
+          head.className = 'os-header';
+          head.textContent = sec === 'suggestions' ? 'Suggestions' : 'History';
+          listEl.appendChild(head);
+        }
+
         const row = document.createElement('div');
-        row.className = i === selectedIdx ? 'rl-row selected' : 'rl-row';
-        // Market audit bugs #1/#39: the favicon used to be string-built with
-        // an inline onerror whose \" escapes are NOT escapes in HTML — the
-        // attribute terminated early, leaking garbled markup into the row and
-        // throwing "Invalid or unexpected token" every time the icon failed.
-        // Build the icon with DOM APIs and a JS error listener instead.
-        const iconEl = document.createElement('span');
-        iconEl.className = 'rl-icon';
-        iconEl.textContent = '↺';
-        let iconNode = iconEl;
-        if (m.favicon) {
+        row.className = i === selectedIdx ? 'os-row selected' : 'os-row';
+
+        const iconWrap = document.createElement('span');
+        iconWrap.className = 'os-icon-wrap';
+        if (m.type === 'search') {
+          iconWrap.innerHTML = SEARCH_SVG;
+        } else if (m.favicon) {
           const img = document.createElement('img');
           img.className = 'os-favicon';
           img.alt = '';
+          const iconEl = document.createElement('span');
+          iconEl.className = 'os-icon-wrap';
+          iconEl.innerHTML = GLOBE_SVG;
           img.addEventListener('error', () => {
             img.replaceWith(iconEl);
           });
           img.src = m.favicon;
-          iconNode = img;
+          iconWrap.appendChild(img);
+        } else {
+          iconWrap.innerHTML = GLOBE_SVG;
         }
+
         const openBtn = document.createElement('button');
         openBtn.type = 'button';
-        openBtn.className = 'rl-open';
-        openBtn.title = m.url || '';
+        openBtn.className = 'os-open';
+        openBtn.title = m.url || m.title || '';
+
         const textEl = document.createElement('span');
-        textEl.className = 'rl-text';
+        textEl.className = 'os-inline-text';
         const titleEl = document.createElement('span');
-        titleEl.className = 'rl-title';
+        titleEl.className = 'os-title';
         titleEl.textContent = m.title || m.url || '';
-        const urlEl = document.createElement('span');
-        urlEl.className = 'rl-url';
-        urlEl.textContent = m.url || '';
+        const subEl = document.createElement('span');
+        subEl.className = 'os-sub';
+        subEl.textContent = m.type === 'search' ? (m.subtitle || 'Search') : (m.displayUrl || m.url || '');
         textEl.appendChild(titleEl);
-        textEl.appendChild(urlEl);
-        openBtn.appendChild(iconNode);
+        textEl.appendChild(subEl);
+
+        openBtn.appendChild(iconWrap);
         openBtn.appendChild(textEl);
         row.appendChild(openBtn);
+
+        if (m.switchTabId) {
+          const swBtn = document.createElement('button');
+          swBtn.type = 'button';
+          swBtn.className = 'os-switch-btn';
+          swBtn.textContent = 'Switch to tab';
+          swBtn.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            window.gxAPI.closePopover();
+            window.gxAPI.switchTab(m.switchTabId);
+          });
+          row.appendChild(swBtn);
+        }
+
         row.addEventListener('mouseenter', () => {
-          listEl.querySelectorAll('.rl-row.selected').forEach((r) => r.classList.remove('selected'));
+          listEl.querySelectorAll('.os-row.selected').forEach((r) => r.classList.remove('selected'));
           row.classList.add('selected');
         });
-        row.querySelector('.rl-open').addEventListener('mousedown', (e) => {
+        openBtn.addEventListener('mousedown', (e) => {
           e.preventDefault();
           window.gxAPI.closePopover();
           window.gxAPI.navigate(m.url);
@@ -4151,16 +4380,16 @@
         statusEl.textContent = isHttps
           ? 'Connection is secure'
           : isInsecure
-          ? (payload?.hasCertBypass ? 'Certificate warning bypassed (not secure)' : 'Your connection to this site is not secure')
-          : 'Internal browser page';
+            ? (payload?.hasCertBypass ? 'Certificate warning bypassed (not secure)' : 'Your connection to this site is not secure')
+            : 'Internal browser page';
       }
       if (iconEl) {
         iconEl.className = `site-info-icon-badge ${isHttps ? 'secure' : isInsecure ? 'insecure' : 'neutral'}`;
         iconEl.innerHTML = isHttps
           ? '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>'
           : isInsecure
-          ? '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'
-          : '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
+            ? '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'
+            : '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
       }
       if (originEl) originEl.textContent = origin || url;
       if (certEl) certEl.textContent = '';
@@ -4173,7 +4402,7 @@
           renderSiteInfoPermRows(origin, perms);
           fitPopoverToView('site-info', 'view-site-info');
         }
-      } catch (_) {}
+      } catch (_) { }
       refreshSiteInfoCookieCount(origin);
       if (isHttps && certEl) {
         try {
@@ -4207,7 +4436,7 @@
       if (permPreviewStream) {
         try {
           permPreviewStream.getTracks().forEach((t) => t.stop());
-        } catch (_) {}
+        } catch (_) { }
         permPreviewStream = null;
       }
       const video = document.getElementById('permPreviewVideo');
@@ -4286,7 +4515,7 @@
         if (!wantVideo) {
           try {
             stream.getAudioTracks().forEach((t) => t.stop());
-          } catch (_) {}
+          } catch (_) { }
           if (permPreviewStream === stream) permPreviewStream = null;
         }
         fitPopoverToView('permission-prompt', 'view-permission-prompt');
@@ -4311,7 +4540,7 @@
         if (permPreviewStream) {
           try {
             permPreviewStream.getTracks().forEach((t) => t.stop());
-          } catch (_) {}
+          } catch (_) { }
         }
         permPreviewStream = stream;
         const video = document.getElementById('permPreviewVideo');
@@ -4361,28 +4590,28 @@
       const items =
         currentShareTab === 'tab'
           ? (data.tabs || []).map((t) => ({
-              kind: 'tab',
-              id: t.tabId,
-              tabId: t.tabId,
-              name: t.title || 'Tab',
-              sub: t.url || '',
-              thumbnail: t.thumbnail || ''
-            }))
+            kind: 'tab',
+            id: t.tabId,
+            tabId: t.tabId,
+            name: t.title || 'Tab',
+            sub: t.url || '',
+            thumbnail: t.thumbnail || ''
+          }))
           : currentShareTab === 'window'
             ? (data.windows || []).map((w) => ({
-                kind: 'window',
-                id: w.id,
-                name: w.name || 'Window',
-                sub: '',
-                thumbnail: w.thumbnail || ''
-              }))
+              kind: 'window',
+              id: w.id,
+              name: w.name || 'Window',
+              sub: '',
+              thumbnail: w.thumbnail || ''
+            }))
             : (data.screens || []).map((s) => ({
-                kind: 'screen',
-                id: s.id,
-                name: s.name || 'Screen',
-                sub: '',
-                thumbnail: s.thumbnail || ''
-              }));
+              kind: 'screen',
+              id: s.id,
+              name: s.name || 'Screen',
+              sub: '',
+              thumbnail: s.thumbnail || ''
+            }));
       if (items.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'share-empty';
@@ -5753,7 +5982,7 @@
         ta.select();
         try {
           document.execCommand('copy');
-        } catch (_) {}
+        } catch (_) { }
         ta.remove();
       }
       window.gxAPI.closePopover();
@@ -5783,22 +6012,22 @@
           : addrCtxView && !addrCtxView.classList.contains('hidden')
             ? addrCtxView
             : grpCtxView && !grpCtxView.classList.contains('hidden')
-            ? grpCtxView
-            : wsCtxView && !wsCtxView.classList.contains('hidden')
-              ? wsCtxView
-              : bmFolderView && !bmFolderView.classList.contains('hidden')
-                ? bmFolderView
-                : mainMenuView && !mainMenuView.classList.contains('hidden')
-                  ? mainMenuView
-                  : shotView && !shotView.classList.contains('hidden')
-                    ? shotView
-                    : extDdView && !extDdView.classList.contains('hidden')
-                      ? extDdView
-                      : profView && !profView.classList.contains('hidden')
-                        ? profView
-                        : railCtxView && !railCtxView.classList.contains('hidden')
-                          ? railCtxView
-                          : null;
+              ? grpCtxView
+              : wsCtxView && !wsCtxView.classList.contains('hidden')
+                ? wsCtxView
+                : bmFolderView && !bmFolderView.classList.contains('hidden')
+                  ? bmFolderView
+                  : mainMenuView && !mainMenuView.classList.contains('hidden')
+                    ? mainMenuView
+                    : shotView && !shotView.classList.contains('hidden')
+                      ? shotView
+                      : extDdView && !extDdView.classList.contains('hidden')
+                        ? extDdView
+                        : profView && !profView.classList.contains('hidden')
+                          ? profView
+                          : railCtxView && !railCtxView.classList.contains('hidden')
+                            ? railCtxView
+                            : null;
       if (!activeMenu) return;
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
       const items = Array.from(
@@ -5891,6 +6120,23 @@
       window.gxAPI.triggerMenuAction('downloads');
     });
 
+    function formatPopBytes(bytes) {
+      const n = Number(bytes) || 0;
+      if (n >= 1024 * 1024 * 1024) return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+      if (n >= 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+      if (n >= 1024) return `${Math.round(n / 1024)} KB`;
+      return `${n} B`;
+    }
+
+    function formatPopEta(sec) {
+      const s = Math.max(0, Math.round(Number(sec) || 0));
+      if (!s) return '';
+      if (s < 60) return `${s}s left`;
+      const m = Math.floor(s / 60);
+      const r = s % 60;
+      return `${m}m ${r}s left`;
+    }
+
     function renderMiniDownloads(list) {
       const el = document.getElementById('popDlList');
       el.innerHTML = '';
@@ -5901,21 +6147,78 @@
       }
       for (const d of recent) {
         const isDone = d.state === 'completed';
+        const isActive = d.state === 'progressing' || d.state === 'paused';
+        const isPaused = d.state === 'paused' || Boolean(d.isPaused);
         const hasTotal = Number(d.totalBytes) > 0;
         const pct = hasTotal ? Math.min(100, Math.round((d.receivedBytes / d.totalBytes) * 100)) : isDone ? 100 : null;
         const statusLabel = pct !== null ? `${d.state} (${pct}%)` : `${d.state} (${Math.round((d.receivedBytes || 0) / 1024)} KB)`;
+        const sizeStr = hasTotal
+          ? `${formatPopBytes(d.receivedBytes)} / ${formatPopBytes(d.totalBytes)}`
+          : formatPopBytes(d.receivedBytes);
+        const speedStr = d.state === 'progressing' && d.speedBytesPerSec > 0 ? `${formatPopBytes(d.speedBytesPerSec)}/s` : '';
+        const etaStr = d.state === 'progressing' ? formatPopEta(d.etaSeconds) : '';
+
+        const leftMeta = isActive
+          ? [pct !== null ? `${pct}%` : 'Downloading', sizeStr, speedStr].filter(Boolean).join(' · ')
+          : isDone
+            ? `Completed · ${sizeStr}`
+            : `${d.state || 'Stopped'}`;
+        const rightMeta = isPaused ? 'Paused' : etaStr;
+
         const card = document.createElement('div');
         card.className = 'dl-mini-card';
+        card.className = isActive ? 'dl-mini-card active' : 'dl-mini-card';
         card.innerHTML = `
           <div class="dl-mini-top">
             <span class="dl-name">${escapeHtml(d.filename)}</span>
             <button class="mini-btn open-btn" ${isDone && d.savePath ? '' : 'disabled'}>Open</button>
+            <span class="dl-name" title="${escapeHtml(d.filename)}">${escapeHtml(d.filename)}</span>
+            <span class="dl-mini-actions">
+              ${isActive
+            ? `<button class="mini-btn toggle-pause-btn">${isPaused ? 'Resume' : 'Pause'}</button>
+                   <button class="mini-btn cancel-btn">✕</button>`
+            : `<button class="mini-btn folder-btn" ${isDone && d.savePath ? '' : 'disabled'} title="Show in folder">📁</button>
+                   <button class="mini-btn open-btn" ${isDone && d.savePath ? '' : 'disabled'}>Open</button>`
+          }
+            </span>
           </div>
           <div style="font-size:10.5px;color:var(--muted);">${escapeHtml(statusLabel)}</div>
+          ${isActive
+            ? `<div class="dl-mini-progress-track"><div class="dl-mini-progress-fill ${isPaused ? '' : (pct !== null ? 'flowing' : 'indeterminate')}" style="width:${pct !== null ? pct : 42}%;"></div></div>`
+            : ''}
+          <div class="dl-mini-meta">
+            <span>${escapeHtml(leftMeta)}</span>
+            <span>${escapeHtml(rightMeta)}</span>
+          </div>
         `;
         card.querySelector('.open-btn').addEventListener('click', () => {
           if (isDone && d.savePath) window.gxAPI.openDownloadItem(d.savePath);
         });
+        const openBtn = card.querySelector('.open-btn');
+        if (openBtn) {
+          openBtn.addEventListener('click', () => {
+            if (isDone && d.savePath) window.gxAPI.openDownloadItem(d.savePath);
+          });
+        }
+        const folderBtn = card.querySelector('.folder-btn');
+        if (folderBtn) {
+          folderBtn.addEventListener('click', () => {
+            if (isDone && d.savePath) window.gxAPI.showDownloadInFolder(d.savePath);
+          });
+        }
+        const pauseBtn = card.querySelector('.toggle-pause-btn');
+        if (pauseBtn) {
+          pauseBtn.addEventListener('click', () => {
+            if (isPaused) window.gxAPI.resumeDownload(d.id);
+            else window.gxAPI.pauseDownload(d.id);
+          });
+        }
+        const cancelBtn = card.querySelector('.cancel-btn');
+        if (cancelBtn) {
+          cancelBtn.addEventListener('click', () => {
+            window.gxAPI.cancelDownload(d.id);
+          });
+        }
         el.appendChild(card);
       }
     }
@@ -6018,8 +6321,8 @@
           currentBmFolderName === 'All Bookmarks'
             ? (list || []).filter(Boolean)
             : (list || []).filter(
-                (b) => b && typeof b.folder === 'string' && b.folder.trim() === currentBmFolderName
-              );
+              (b) => b && typeof b.folder === 'string' && b.folder.trim() === currentBmFolderName
+            );
         if (!items.length) {
           window.gxAPI.closePopover();
         } else {

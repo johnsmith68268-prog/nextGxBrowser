@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="gx-violet">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file: https: http:; font-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none';" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Welcome to nextGx Browser</title>
+  <link rel="stylesheet" href="theme.css" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+
+    body {
+      min-height: 100vh;
+      background-color: #090811;
+      color: var(--text-main, #f4f5fc);
+      font-family: var(--nx-font-sans, "Segoe UI", system-ui, sans-serif);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 28px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .ob-bg {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      background-image: url("assets/default-wallpaper.jpg");
+      background-size: cover;
+      background-position: center;
+      filter: blur(8px) brightness(0.42);
+      transform: scale(1.06);
+      transition: background-image 280ms ease;
+    }
+
+    .ob-scrim {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      background:
+        radial-gradient(circle at 50% 18%, color-mix(in srgb, var(--accent, #9d4edd) 22%, transparent), transparent 60%),
+        linear-gradient(180deg, rgba(8, 7, 16, 0.55) 0%, rgba(8, 7, 16, 0.85) 100%);
+    }
+
+    .ob-card {
+      position: relative;
+      z-index: 2;
+      width: 100%;
+      max-width: 760px;
+      background: rgba(16, 14, 27, 0.86);
+      backdrop-filter: blur(22px) saturate(1.25);
+      -webkit-backdrop-filter: blur(22px) saturate(1.25);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-top: 2px solid var(--accent-bright, #c084fc);
+      border-radius: 16px;
+      box-shadow: 0 28px 80px rgba(0, 0, 0, 0.68), 0 0 40px color-mix(in srgb, var(--accent, #9d4edd) 16%, transparent);
+      padding: 28px 34px 26px;
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+      animation: obFadeIn 260ms ease;
+    }
+
+    @keyframes obFadeIn {
+      from { opacity: 0; transform: translateY(12px) scale(0.985); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .ob-stepper {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .ob-dots {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .ob-dot {
+      width: 28px;
+      height: 4px;
+      border-radius: 99px;
+      background: rgba(255, 255, 255, 0.12);
+      transition: background 180ms ease, width 180ms ease;
+    }
+
+    .ob-dot.done {
+      background: color-mix(in srgb, var(--accent, #9d4edd) 55%, #fff);
+    }
+
+    .ob-dot.active {
+      width: 44px;
+      background: var(--accent-bright, #c084fc);
+      box-shadow: 0 0 10px var(--accent, #9d4edd);
+    }
+
+    .ob-skip-btn {
+      background: transparent;
+      border: none;
+      color: rgba(215, 220, 240, 0.56);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: color 140ms ease, background 140ms ease;
+    }
+
+    .ob-skip-btn:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .ob-step {
+      display: none;
+      flex-direction: column;
+      gap: 18px;
+      min-height: 350px;
+      justify-content: center;
+    }
+
+    .ob-step.active {
+      display: flex;
+      animation: obStepIn 200ms ease;
+    }
+
+    @keyframes obStepIn {
+      from { opacity: 0; transform: translateX(10px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    .ob-hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 14px;
+      padding: 16px 0;
+    }
+
+    .ob-logo-ring {
+      width: 92px;
+      height: 92px;
+      border-radius: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 16px 40px rgba(139, 92, 246, 0.35);
+      overflow: hidden;
+    }
+
+    .ob-logo-ring img {
+      width: 92px;
+      height: 92px;
+      object-fit: cover;
+      display: block;
+    }
+
+    .ob-title {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: #ffffff;
+    }
+
+    .ob-sub {
+      font-size: 13.5px;
+      line-height: 1.55;
+      color: rgba(220, 224, 244, 0.68);
+      max-width: 520px;
+    }
+
+    .ob-step-head {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .ob-step-head h2 {
+      font-size: 20px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .ob-step-head p {
+      font-size: 13px;
+      color: rgba(220, 224, 244, 0.65);
+    }
+
+    .ob-label {
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: rgba(220, 224, 244, 0.54);
+      margin-bottom: 8px;
+    }
+
+    .ob-theme-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .ob-theme-btn {
+      background: rgba(11, 10, 19, 0.85);
+      border: 1.5px solid rgba(255, 255, 255, 0.08);
+      border-radius: 9px;
+      padding: 8px 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: rgba(238, 240, 252, 0.9);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: border-color 140ms ease, transform 140ms ease, background 140ms ease;
+    }
+
+    .ob-theme-btn:hover {
+      transform: translateY(-1px);
+      border-color: var(--sw);
+    }
+
+    .ob-theme-btn.active {
+      border-color: var(--sw);
+      background: color-mix(in srgb, var(--sw) 16%, rgba(12, 11, 22, 0.9));
+      box-shadow: 0 0 14px color-mix(in srgb, var(--sw) 30%, transparent);
+    }
+
+    .ob-swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--sw);
+      flex-shrink: 0;
+    }
+
+    .ob-wp-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .ob-wp-btn {
+      height: 76px;
+      border-radius: 9px;
+      border: 2px solid rgba(255, 255, 255, 0.08);
+      background-size: cover;
+      background-position: center;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 140ms ease, transform 140ms ease;
+    }
+
+    .ob-wp-btn:hover {
+      transform: translateY(-1px);
+      border-color: rgba(255, 255, 255, 0.32);
+    }
+
+    .ob-wp-btn.active {
+      border-color: var(--accent-bright, #c084fc);
+      box-shadow: 0 0 14px color-mix(in srgb, var(--accent, #9d4edd) 45%, transparent);
+    }
+
+    .ob-wp-btn span {
+      position: absolute;
+      inset: auto 0 0 0;
+      padding: 4px 6px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #fff;
+      background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.84));
+      text-align: left;
+    }
+
+    .ob-preset-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .ob-preset-card {
+      background: rgba(12, 11, 22, 0.78);
+      border: 1.5px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 16px;
+      text-align: left;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      color: #fff;
+      transition: border-color 150ms ease, transform 150ms ease, background 150ms ease;
+    }
+
+    .ob-preset-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(255, 255, 255, 0.22);
+    }
+
+    .ob-preset-card.active {
+      border-color: var(--accent-bright, #c084fc);
+      background: color-mix(in srgb, var(--accent, #9d4edd) 15%, rgba(14, 13, 25, 0.92));
+      box-shadow: 0 0 20px color-mix(in srgb, var(--accent, #9d4edd) 24%, transparent);
+    }
+
+    .ob-preset-title {
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .ob-preset-desc {
+      font-size: 12px;
+      line-height: 1.45;
+      color: rgba(220, 224, 244, 0.66);
+    }
+
+    .ob-chip-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 9px;
+    }
+
+    .ob-app-chip {
+      height: 40px;
+      padding: 0 12px;
+      border-radius: 8px;
+      background: rgba(12, 11, 22, 0.8);
+      border: 1.5px solid rgba(255, 255, 255, 0.08);
+      color: rgba(235, 238, 252, 0.78);
+      font-size: 12.5px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
+    }
+
+    .ob-app-chip.active {
+      border-color: var(--accent-bright, #c084fc);
+      background: color-mix(in srgb, var(--accent, #9d4edd) 18%, rgba(14, 13, 25, 0.9));
+      color: #fff;
+    }
+
+    .ob-engine-row {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 9px;
+    }
+
+    .ob-action-card {
+      background: rgba(12, 11, 22, 0.78);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 11px;
+      padding: 15px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+    }
+
+    .ob-action-copy strong {
+      display: block;
+      font-size: 14px;
+      margin-bottom: 3px;
+    }
+
+    .ob-action-copy span {
+      font-size: 12px;
+      line-height: 1.45;
+      color: rgba(220, 224, 244, 0.65);
+    }
+
+    .ob-guide-note {
+      font-size: 12px;
+      line-height: 1.5;
+      color: rgba(220, 224, 244, 0.78);
+      background: color-mix(in srgb, var(--accent, #9d4edd) 12%, rgba(12, 11, 22, 0.85));
+      border: 1px solid color-mix(in srgb, var(--accent, #9d4edd) 42%, transparent);
+      border-radius: 9px;
+      padding: 10px 14px;
+    }
+
+    .ob-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 8px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .ob-btn {
+      height: 38px;
+      padding: 0 20px;
+      border-radius: 9px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.05);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 140ms ease, border-color 140ms ease, transform 140ms ease, box-shadow 140ms ease;
+    }
+
+    .ob-btn:hover {
+      background: rgba(255, 255, 255, 0.10);
+      border-color: rgba(255, 255, 255, 0.24);
+    }
+
+    .ob-btn.primary {
+      background: var(--accent, #9d4edd);
+      border-color: var(--accent-bright, #c084fc);
+      box-shadow: 0 6px 22px color-mix(in srgb, var(--accent, #9d4edd) 38%, transparent);
+    }
+
+    .ob-btn.primary:hover {
+      filter: brightness(1.08);
+      transform: translateY(-1px);
+    }
+
+    .ob-btn.hidden {
+      visibility: hidden;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="ob-bg" id="obBg"></div>
+  <div class="ob-scrim"></div>
+
+  <main class="ob-card" aria-label="nextGx First-Run Setup">
+    <div class="ob-stepper">
+      <div class="ob-dots" id="obDots">
+        <span class="ob-dot active"></span>
+        <span class="ob-dot"></span>
+        <span class="ob-dot"></span>
+        <span class="ob-dot"></span>
+        <span class="ob-dot"></span>
+      </div>
+      <button type="button" class="ob-skip-btn" id="btnSkipSetup">Skip Setup</button>
+    </div>
+
+    <!-- Step 1: Welcome -->
+    <section class="ob-step active" data-step="0">
+      <div class="ob-hero">
+        <div class="ob-logo-ring">
+          <img src="assets/nextgx-emblem.png" alt="nextGx Browser" />
+        </div>
+        <h1 class="ob-title">Welcome to nextGx Browser</h1>
+        <p class="ob-sub">
+          Fast, distraction-free, and built for power users. Let&apos;s personalize your theme, wallpaper, privacy level, and sidebar apps in under 30 seconds.
+        </p>
+      </div>
+    </section>
+
+    <!-- Step 2: Theme & Wallpaper -->
+    <section class="ob-step" data-step="1">
+      <div class="ob-step-head">
+        <h2>Choose your look</h2>
+        <p>Click any theme or curated dark wallpaper to preview it live.</p>
+      </div>
+      <div>
+        <div class="ob-label">Accent Theme</div>
+        <div class="ob-theme-grid" id="obThemeGrid">
+          <button type="button" class="ob-theme-btn active" data-theme="gx-violet" style="--sw:#9d4edd;"><span class="ob-swatch"></span>Ultraviolet</button>
+          <button type="button" class="ob-theme-btn" data-theme="crimson" style="--sw:#fa1e4e;"><span class="ob-swatch"></span>GX Crimson</button>
+          <button type="button" class="ob-theme-btn" data-theme="cyan" style="--sw:#00d4ff;"><span class="ob-swatch"></span>Sub Zero</button>
+          <button type="button" class="ob-theme-btn" data-theme="emerald" style="--sw:#10b981;"><span class="ob-swatch"></span>Matrix</button>
+          <button type="button" class="ob-theme-btn" data-theme="amber" style="--sw:#f59e0b;"><span class="ob-swatch"></span>Solar Gold</button>
+          <button type="button" class="ob-theme-btn" data-theme="magenta" style="--sw:#ec4899;"><span class="ob-swatch"></span>Neon Pink</button>
+          <button type="button" class="ob-theme-btn" data-theme="lime" style="--sw:#84cc16;"><span class="ob-swatch"></span>Acid Lime</button>
+          <button type="button" class="ob-theme-btn" data-theme="ice" style="--sw:#60a5fa;"><span class="ob-swatch"></span>Frost Ice</button>
+        </div>
+      </div>
+      <div>
+        <div class="ob-label">Start Page Wallpaper</div>
+        <div class="ob-wp-grid" id="obWpGrid">
+          <button type="button" class="ob-wp-btn active" data-wp="obsidian-wave" data-img="assets/default-wallpaper.jpg" style="background-image:url('assets/default-wallpaper.jpg')"><span>Obsidian Wave</span></button>
+          <button type="button" class="ob-wp-btn" data-wp="midnight-alpine" data-img="assets/wallpapers/midnight-alpine.jpg" style="background-image:url('assets/wallpapers/midnight-alpine.jpg')"><span>Midnight Alpine</span></button>
+          <button type="button" class="ob-wp-btn" data-wp="crimson-eclipse" data-img="assets/wallpapers/crimson-eclipse.jpg" style="background-image:url('assets/wallpapers/crimson-eclipse.jpg')"><span>Crimson Eclipse</span></button>
+          <button type="button" class="ob-wp-btn" data-wp="cyber-dusk" data-img="assets/wallpapers/cyber-dusk.jpg" style="background-image:url('assets/wallpapers/cyber-dusk.jpg')"><span>Cyber Dusk</span></button>
+          <button type="button" class="ob-wp-btn" data-wp="violet-aurora" data-img="assets/wallpapers/violet-aurora.jpg" style="background-image:url('assets/wallpapers/violet-aurora.jpg')"><span>Violet Aurora</span></button>
+          <button type="button" class="ob-wp-btn" data-wp="emerald-nebula" data-img="assets/wallpapers/emerald-nebula.jpg" style="background-image:url('assets/wallpapers/emerald-nebula.jpg')"><span>Emerald Nebula</span></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Step 3: Browsing Experience Preset -->
+    <section class="ob-step" data-step="2">
+      <div class="ob-step-head">
+        <h2>Pick your browsing experience</h2>
+        <p>You can fine-tune every single option anytime inside Settings.</p>
+      </div>
+      <div class="ob-preset-grid" id="obPresetGrid">
+        <button type="button" class="ob-preset-card active" data-preset="classic">
+          <span class="ob-preset-title">Classic &amp; Minimal</span>
+          <span class="ob-preset-desc">Quiet, uncluttered interface with built-in ad &amp; tracker shield, clean Start Page clock, and snappy multi-tab hibernation.</span>
+        </button>
+        <button type="button" class="ob-preset-card" data-preset="gaming">
+          <span class="ob-preset-title">Gaming &amp; Power</span>
+          <span class="ob-preset-desc">Enables GX UI sounds, 4 GB RAM Limiter, aggressive tab memory saver, and full sidebar media tools.</span>
+        </button>
+        <button type="button" class="ob-preset-card" data-preset="privacy">
+          <span class="ob-preset-title">Privacy First</span>
+          <span class="ob-preset-desc">Strict ad &amp; tracker shield, DNS-over-HTTPS encryption, third-party cookie blocking, and WebRTC IP leak protection.</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Step 4: Sidebar Apps & Search Engine -->
+    <section class="ob-step" data-step="3">
+      <div class="ob-step-head">
+        <h2>Sidebar apps &amp; Search engine</h2>
+        <p>Pick the quick-access apps you want on your left rail and your preferred search engine.</p>
+      </div>
+      <div>
+        <div class="ob-label">Sidebar Quick Apps</div>
+        <div class="ob-chip-grid" id="obAppsGrid">
+          <button type="button" class="ob-app-chip active" data-app="youtubeMusic"><span>YouTube Music</span><span>✓</span></button>
+          <button type="button" class="ob-app-chip active" data-app="spotify"><span>Spotify</span><span>✓</span></button>
+          <button type="button" class="ob-app-chip active" data-app="chatgpt"><span>ChatGPT</span><span>✓</span></button>
+          <button type="button" class="ob-app-chip active" data-app="gemini"><span>Gemini</span><span>✓</span></button>
+          <button type="button" class="ob-app-chip" data-app="claude"><span>Claude</span><span></span></button>
+          <button type="button" class="ob-app-chip active" data-app="whatsapp"><span>WhatsApp</span><span>✓</span></button>
+          <button type="button" class="ob-app-chip" data-app="discord"><span>Discord</span><span></span></button>
+          <button type="button" class="ob-app-chip active" data-app="twitch"><span>Twitch</span><span>✓</span></button>
+        </div>
+      </div>
+      <div>
+        <div class="ob-label">Default Search Engine</div>
+        <div class="ob-engine-row" id="obEngineGrid">
+          <button type="button" class="ob-app-chip active" data-engine="google"><span>Google</span><span>✓</span></button>
+          <button type="button" class="ob-app-chip" data-engine="duckduckgo"><span>DuckDuckGo</span><span></span></button>
+          <button type="button" class="ob-app-chip" data-engine="bing"><span>Bing</span><span></span></button>
+          <button type="button" class="ob-app-chip" data-engine="brave"><span>Brave Search</span><span></span></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Step 5: Default Browser & Import -->
+    <section class="ob-step" data-step="4">
+      <div class="ob-step-head">
+        <h2>Ready to launch</h2>
+        <p>Make nextGx your default browser or bring your existing bookmarks along.</p>
+      </div>
+      <div class="ob-action-card">
+        <div class="ob-action-copy">
+          <strong>Set nextGx as your Default Browser</strong>
+          <span>Open web links from any Windows app straight into nextGx Browser.</span>
+        </div>
+        <button type="button" class="ob-btn primary" id="btnObDefaultBrowser">Make Default</button>
+      </div>
+      <div class="ob-guide-note" id="obDefaultGuide">
+        How it works on Windows 10/11: clicking <strong>Make Default</strong> opens Windows Default Apps &rarr; select <strong>nextGx Browser</strong> &rarr; click <strong>Set default</strong>.
+      </div>
+      <div class="ob-action-card">
+        <div class="ob-action-copy">
+          <strong>Import Bookmarks</strong>
+          <span id="obImportStatus">Bring bookmarks from Chrome, Edge, Brave, or Opera via HTML export.</span>
+        </div>
+        <button type="button" class="ob-btn" id="btnObImportBookmarks">Import HTML</button>
+      </div>
+    </section>
+
+    <div class="ob-footer">
+      <button type="button" class="ob-btn hidden" id="btnObBack">&larr; Back</button>
+      <button type="button" class="ob-btn primary" id="btnObNext">Get Started &rarr;</button>
+    </div>
+  </main>
+
+  <script>
+    const TOTAL_STEPS = 5;
+    let step = 0;
+    let selectedTheme = 'gx-violet';
+    let selectedWp = 'obsidian-wave';
+    let selectedPreset = 'classic';
+    let selectedEngine = 'google';
+    const selectedApps = {
+      youtubeMusic: true,
+      spotify: true,
+      chatgpt: true,
+      gemini: true,
+      claude: false,
+      whatsapp: true,
+      discord: false,
+      twitch: true
+    };
+
+    const steps = Array.from(document.querySelectorAll('.ob-step'));
+    const dots = Array.from(document.querySelectorAll('.ob-dot'));
+    const btnBack = document.getElementById('btnObBack');
+    const btnNext = document.getElementById('btnObNext');
+    const obBg = document.getElementById('obBg');
+
+    function renderStep() {
+      steps.forEach((s, idx) => s.classList.toggle('active', idx === step));
+      dots.forEach((d, idx) => {
+        d.classList.toggle('active', idx === step);
+        d.classList.toggle('done', idx < step);
+      });
+      btnBack.classList.toggle('hidden', step === 0);
+      if (step === 0) btnNext.textContent = 'Get Started →';
+      else if (step === TOTAL_STEPS - 1) btnNext.textContent = 'Finish & Start Browsing →';
+      else btnNext.textContent = 'Continue →';
+    }
+
+    function applyThemePreview(theme) {
+      selectedTheme = theme || 'gx-violet';
+      document.documentElement.setAttribute('data-theme', selectedTheme);
+      document.querySelectorAll('#obThemeGrid .ob-theme-btn').forEach((b) => {
+        b.classList.toggle('active', b.dataset.theme === selectedTheme);
+      });
+    }
+
+    document.querySelectorAll('#obThemeGrid .ob-theme-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        applyThemePreview(btn.dataset.theme);
+        window.gxOnboardingAPI?.updateSettings({ theme: selectedTheme });
+      });
+    });
+
+    document.querySelectorAll('#obWpGrid .ob-wp-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        selectedWp = btn.dataset.wp;
+        document.querySelectorAll('#obWpGrid .ob-wp-btn').forEach((b) => b.classList.toggle('active', b === btn));
+        if (obBg && btn.dataset.img) obBg.style.backgroundImage = `url("${btn.dataset.img}")`;
+        window.gxOnboardingAPI?.updateSettings({ wallpaper: { type: 'preset', preset: selectedWp, file: '' } });
+      });
+    });
+
+    document.querySelectorAll('#obPresetGrid .ob-preset-card').forEach((card) => {
+      card.addEventListener('click', () => {
+        selectedPreset = card.dataset.preset;
+        document.querySelectorAll('#obPresetGrid .ob-preset-card').forEach((c) => c.classList.toggle('active', c === card));
+      });
+    });
+
+    document.querySelectorAll('#obAppsGrid .ob-app-chip').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const key = chip.dataset.app;
+        selectedApps[key] = !selectedApps[key];
+        chip.classList.toggle('active', selectedApps[key]);
+        chip.lastElementChild.textContent = selectedApps[key] ? '✓' : '';
+      });
+    });
+
+    document.querySelectorAll('#obEngineGrid .ob-app-chip').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        selectedEngine = chip.dataset.engine;
+        document.querySelectorAll('#obEngineGrid .ob-app-chip').forEach((c) => {
+          const on = c.dataset.engine === selectedEngine;
+          c.classList.toggle('active', on);
+          c.lastElementChild.textContent = on ? '✓' : '';
+        });
+      });
+    });
+
+    document.getElementById('btnObDefaultBrowser').addEventListener('click', async () => {
+      const guide = document.getElementById('obDefaultGuide');
+      const res = await window.gxOnboardingAPI?.setDefaultBrowser?.();
+      if (guide) {
+        guide.innerHTML = res?.openedSystemSettings
+          ? 'Windows Default Apps is now open — select <strong>nextGx Browser</strong> and click <strong>Set default</strong>.'
+          : res?.ok
+            ? 'Registered nextGx Browser for http and https links!'
+            : 'Open Windows Settings &rarr; Apps &rarr; Default apps &rarr; select <strong>nextGx Browser</strong>.';
+      }
+    });
+
+    document.getElementById('btnObImportBookmarks').addEventListener('click', async () => {
+      const status = document.getElementById('obImportStatus');
+      const res = await window.gxOnboardingAPI?.importBookmarksHtml?.();
+      if (status && res && !res.canceled) {
+        status.textContent = res.ok
+          ? `Imported ${res.imported || 0} bookmarks cleanly!`
+          : (res.error || 'Import did not complete.');
+      }
+    });
+
+    async function completeSetup({ skipped = false } = {}) {
+      if (window.gxOnboardingAPI?.updateSettings) {
+        if (skipped) {
+          await window.gxOnboardingAPI.updateSettings({ onboardingCompleted: true });
+        } else {
+          const presetPayload =
+            selectedPreset === 'gaming'
+              ? { uiSoundsEnabled: true, gxRamLimiterEnabled: true, gxRamLimitMB: 4096, autoSleepEnabled: true, adblockEnabled: true, trackerBlockEnabled: true }
+              : selectedPreset === 'privacy'
+                ? { adblockEnabled: true, trackerBlockEnabled: true, dnsOverHttps: true, thirdPartyCookies: 'block', webrtcPolicy: 'default_public_interface_only' }
+                : { uiSoundsEnabled: false, keyboardSoundsEnabled: false, adblockEnabled: true, trackerBlockEnabled: true, startPageShowClock: true };
+
+          await window.gxOnboardingAPI.updateSettings({
+            theme: selectedTheme,
+            wallpaper: { type: 'preset', preset: selectedWp, file: '' },
+            searchEngine: selectedEngine,
+            sidebarItems: { ...selectedApps },
+            ...presetPayload,
+            onboardingCompleted: true
+          });
+        }
+      }
+      window.gxOnboardingAPI?.navigate?.('nextgx://newtab');
+    }
+
+    document.getElementById('btnSkipSetup').addEventListener('click', () => completeSetup({ skipped: true }));
+    btnBack.addEventListener('click', () => {
+      if (step > 0) {
+        step -= 1;
+        renderStep();
+      }
+    });
+    btnNext.addEventListener('click', () => {
+      if (step < TOTAL_STEPS - 1) {
+        step += 1;
+        renderStep();
+      } else {
+        completeSetup({ skipped: false });
+      }
+    });
+
+    (async function init() {
+      const s = await window.gxOnboardingAPI?.getSettings?.().catch(() => null);
+      if (s?.theme) applyThemePreview(s.theme);
+      renderStep();
+    })();
+  </script>
+</body>
+</html>

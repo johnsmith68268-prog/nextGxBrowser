@@ -159,24 +159,24 @@ const POPOVER_KIND_SPECS = {
     align: 'left',
     noFocus: true,
     keepSidebarOpen: true,
-    defaultW: 520,
-    defaultH: 160,
-    minW: 320,
-    maxW: 640,
-    minH: 48,
-    maxH: 360
+    defaultW: 860,
+    defaultH: 220,
+    minW: 400,
+    maxW: 1800,
+    minH: 52,
+    maxH: 520
   },
   'omnibox-suggest-alt': {
     isMenu: false,
     align: 'left',
     noFocus: true,
     keepSidebarOpen: true,
-    defaultW: 520,
-    defaultH: 160,
-    minW: 320,
-    maxW: 640,
-    minH: 48,
-    maxH: 360
+    defaultW: 860,
+    defaultH: 220,
+    minW: 400,
+    maxW: 1800,
+    minH: 52,
+    maxH: 520
   },
   'tab-search': {
     isMenu: true,

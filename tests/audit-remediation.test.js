@@ -309,7 +309,9 @@ test('LIVE-UX: sidebar hover never slices behind webview, panic hidden in toolba
   assert.match(indexHtml, /id="panicToolbarSlot"[^>]*|class="nx-toolbar-slot hidden" id="panicToolbarSlot"/);
 
   const css = read('src/ui/styles.css');
-  assert.match(css, /\.nx-address-capsule\s*\{[^}]*height:\s*34px;[^}]*border-radius:\s*17px;/);
+  assert.match(css, /\.nx-address-capsule\s*\{[^}]*height:\s*31px;[^}]*border-radius:\s*7px;/);
+  assert.match(css, /\.nx-top-chrome\s*\{[^}]*box-shadow:\s*none;/);
+  assert.match(css, /\.nx-sidebar\s*\{[^}]*box-shadow:\s*none;/);
   assert.match(css, /\.nav-icon-btn\.is-stop::after\s*\{[^}]*animation:\s*nxSpin/);
   assert.ok(!css.includes('.nx-sidebar.rail-hover-expand:hover,'), 'hover-expanding 184px rail over WebContentsView must be disabled');
 
@@ -364,4 +366,129 @@ test('LIVE-EXT: extension loader auto-descends nested manifests, sanitizes Chrom
   zipPayload.copy(crx3, 12 + headerPayload.length);
   const extractedZip = extractCrxToZipBuffer(crx3);
   assert.deepEqual(extractedZip, zipPayload);
+});
+
+test('GX-POLISH-ROUND2: tab favicons, domain-only omnibox elision, nextGx branding, 38px sidebar icons, sweeping tab gradient, and bundled AdGuard', () => {
+  const indexHtml = read('src/ui/index.html');
+  const css = read('src/ui/styles.css');
+  const renderer = read('src/ui/renderer.js');
+  const tabsJs = read('src/main/tabs.js');
+  const ctxMenuJs = read('src/main/context-menu.js');
+  const pkg = JSON.parse(read('package.json'));
+
+  // 1. Orbital corner icon restored in #btnBrandHome + positioned nGX badge in left dock + hidden profile/workspace pills
+  assert.match(indexHtml, /id="btnBrandHome"[\s\S]*?<ellipse cx="12" cy="12" rx="4\.2" ry="8\.5"\s*\/>/);
+  assert.match(indexHtml, /class="sidebar-brand-ngx">nGX<\/span>/);
+  assert.match(indexHtml, /class="nx-workspace-pills hidden" id="workspacePills"/);
+  assert.match(indexHtml, /class="toolbar-icon-btn profile-avatar-btn hidden" id="btnProfileMenu"/);
+
+  // 2. Enlarged 38x38 sidebar buttons + 20x20 SVGs
+  assert.match(css, /\.sidebar-btn\s*\{[^}]*width:\s*38px;[^}]*height:\s*38px;/);
+  assert.match(css, /\.sidebar-btn svg\s*\{[^}]*width:\s*20px;[^}]*height:\s*20px;/);
+
+  // 3. Tab favicon IMG check & origin /favicon.ico fallback
+  assert.ok(renderer.includes("existingIcon && existingIcon.tagName === 'IMG'"), 'patchTabElementInPlace must check IMG tag before setting .src');
+  assert.ok(!renderer.includes('<img class="tab-favicon" draggable="false" src="${escapeHtml(tab.favicon)}" alt="" onerror='), 'buildTabElement must not hide broken tab favicons inline');
+  assert.ok(tabsJs.includes('`${nextOrigin}/favicon.ico`'), 'tabs.js must provide origin /favicon.ico fallback');
+
+  // 4. Domain-only URL bar elision when unfocused (no www. or path clutter)
+  const fnMatch = renderer.match(/function elideUrlForDisplay\(rawUrl\) \{[\s\S]*?\n\}/);
+  assert.ok(fnMatch, 'elideUrlForDisplay must exist');
+  // eslint-disable-next-line no-new-func
+  const elideFn = new Function('rawUrl', fnMatch[0] + '\nreturn elideUrlForDisplay(rawUrl);');
+  assert.equal(elideFn('https://www.youtube.com/watch?v=dQw4w9WgXcQ'), 'youtube.com');
+  assert.equal(elideFn('https://github.com/johnsmith68268-prog/nextGxBrowser'), 'github.com');
+  assert.equal(elideFn('http://localhost:3000/dashboard?tab=1'), 'localhost:3000');
+  assert.equal(elideFn('nextgx://settings'), 'nextgx://settings');
+
+  // 5. Opera GX outer far-left dynamic tab-tracking gradient + matching active tab + Maximize/Restore icon sync
+  assert.match(css, /body:not\(\.is-drawer-overlay\)::before/);
+  assert.match(css, /width:\s*var\(--nx-top-glow-w/);
+  assert.match(css, /@keyframes nxTabGradientSweep/);
+  assert.match(css, /\.nx-tab\.active::before\s*\{[\s\S]*?animation:\s*nxTabGradientSweep/);
+  assert.match(css, /\.nx-address-input\s*\{[\s\S]*?outline:\s*none !important;/);
+  assert.ok(renderer.includes('updateTopContourWidth'), 'renderer.js must expand top gradient dynamically with open tabs');
+  assert.ok(renderer.includes('syncWindowMaximizeIcon'), 'renderer.js must swap Maximize single-square vs Restore double-square icon');
+  assert.equal(fs.existsSync(path.join(ROOT, 'build/icon.svg')), true, 'orbital ring build/icon.svg master must exist');
+
+  // 6. Bundled AdGuard MV3 archive + auto-provision loader
+  assert.equal(fs.existsSync(path.join(ROOT, 'build/adguard-mv3.zip')), true, 'build/adguard-mv3.zip must exist');
+  assert.ok((pkg.build?.files || []).includes('build/adguard-mv3.zip'), 'build/adguard-mv3.zip must be in build.files');
+  assert.ok((pkg.build?.asarUnpack || []).includes('build/adguard-mv3.zip'), 'build/adguard-mv3.zip must be in build.asarUnpack');
+  const adguardMod = require('../src/main/adguard-extension');
+  assert.ok(adguardMod.resolveBundledAdguardZip().endsWith('adguard-mv3.zip'));
+
+  // 7. Open in New Tab stays on current tab (active: false), background tab load queue, & zero-resize floating drawer overlay
+  assert.match(ctxMenuJs, /label:\s*'Open link in new tab'[\s\S]*?active:\s*false/);
+  assert.ok(tabsJs.includes('MAX_CONCURRENT_BG_LOADS = 2'), 'tabs.js must throttle concurrent background tab loads');
+  assert.ok(fs.existsSync(path.join(ROOT, 'src/main/drawer-overlay.js')), 'drawer-overlay.js must exist for zero-resize floating drawers');
+  assert.ok(renderer.includes('IS_DRAWER_OVERLAY'), 'renderer.js must support floating overlay mode without resizing webpage');
+
+  // 8. Opera GX full-width expanded omnibox suggestions (Suggestions + History + Switch to tab + inline autocomplete)
+  const popoversJs = read('src/main/popovers.js');
+  const popoverHtml = read('src/ui/popover.html');
+  assert.match(popoversJs, /'omnibox-suggest':[\s\S]*?maxW:\s*1800/);
+  assert.ok(popoverHtml.includes('Switch to tab'), 'omnibox dropdown must support Switch to tab action');
+  assert.ok(popoverHtml.includes('os-inline-text'), 'omnibox dropdown must render single-line expanded rows');
+  assert.ok(renderer.includes('getRemoteSuggestions'), 'omnibox must support live search suggestions');
+
+  // 9. Clean & classic smoked-glass Start Page, 75% sidebar panel resize + quick wide toggle, and purple orbital ring icon
+  const newtabHtml = read('src/ui/newtab.html');
+  const sidebarChromeHtml = read('src/ui/sidebar-panel-chrome.html');
+  const iconSvg = read('build/icon.svg');
+  assert.ok(newtabHtml.includes('TILE_BRANDS'), 'Start Page must render smoked-glass brand icons');
+  assert.ok(newtabHtml.includes('suggestion-chip'), 'Start Page must render clean single-line suggestion chips');
+  assert.ok(newtabHtml.includes('IGNORED_SUGGESTION_HOST_RE'), 'Start Page must filter auth/system subdomains from suggestions');
+  assert.ok(sidebarChromeHtml.includes('btnSidebarWide'), 'Sidebar panel chrome must offer quick 70% wide toggle');
+  assert.ok(iconSvg.includes('#a855f7'), 'App icon master SVG must use the purple orbital ring palette');
+});
+
+test('ENTERPRISE-UX: AI wallpapers, live download progress ring/wave, Easy Setup & Settings redesign, and One-Time Onboarding Wizard', () => {
+  const indexHtml = read('src/ui/index.html');
+  const stylesCss = read('src/ui/styles.css');
+  const renderer = read('src/ui/renderer.js');
+  const popoverHtml = read('src/ui/popover.html');
+  const webuiHtml = read('src/ui/chrome-webui.html');
+  const webuiJs = read('src/ui/chrome-webui.js');
+  const onboardingHtml = read('src/ui/onboarding.html');
+  const { resolveNavigateInput, formatDisplayUrl } = require('../src/main/navigation');
+  const { ONBOARDING_FILE_URL } = require('../src/main/core');
+
+  // 1. All 5 AI curated wallpapers bundled cleanly
+  for (const name of [
+    'midnight-alpine.jpg',
+    'crimson-eclipse.jpg',
+    'cyber-dusk.jpg',
+    'violet-aurora.jpg',
+    'emerald-nebula.jpg'
+  ]) {
+    const p = path.join(ROOT, 'src/ui/assets/wallpapers', name);
+    assert.equal(fs.existsSync(p), true, `wallpaper ${name} must exist`);
+    assert.ok(fs.statSync(p).size > 50000, `wallpaper ${name} must be a real image`);
+  }
+
+  // 2. Live toolbar download progress ring + wave & popover shimmer bar
+  assert.ok(indexHtml.includes('id="dlRingArc"') && indexHtml.includes('id="dlWaveFill"'));
+  assert.ok(stylesCss.includes('@keyframes nxDlWavePulse'));
+  assert.ok(renderer.includes('updateToolbarDownloadProgress'));
+  assert.ok(popoverHtml.includes('dl-mini-progress-fill') && popoverHtml.includes('nxDlWaveBar'));
+
+  // 3. Redesigned Easy Setup drawer & Opera GX minimalist Settings layout
+  assert.ok(indexHtml.includes('es-themes-strip') && indexHtml.includes('easyWallpaperGrid'));
+  assert.ok(webuiHtml.includes('.settings-gx-hero') && webuiHtml.includes('.settings-gx-shell'));
+  assert.ok(webuiJs.includes('settingsWallpapersCard') && webuiJs.includes('settingsStartPageCard'));
+  assert.ok(webuiJs.includes('setDnsOverHttpsChk') && webuiJs.includes('setWebrtcPolicyGroup') && webuiJs.includes('btnLaunchOnboarding'));
+  for (const cat of [
+    'appearance', 'gx', 'video', 'autofill', 'privacy', 'search',
+    'default-browser', 'startup', 'languages', 'downloads',
+    'accessibility', 'system', 'reset', 'about'
+  ]) {
+    assert.ok(webuiJs.includes(`data-settings-cat="${cat}"`), `Settings must have dedicated section for ${cat}`);
+  }
+
+  // 4. One-Time Onboarding Wizard with CSP and nextgx://welcome route
+  assert.match(onboardingHtml, /Content-Security-Policy/);
+  assert.ok(onboardingHtml.includes('Welcome to nextGx Browser') && onboardingHtml.includes('btnObDefaultBrowser'));
+  assert.equal(resolveNavigateInput('nextgx://welcome'), ONBOARDING_FILE_URL);
+  assert.equal(formatDisplayUrl(ONBOARDING_FILE_URL), 'nextgx://welcome');
 });

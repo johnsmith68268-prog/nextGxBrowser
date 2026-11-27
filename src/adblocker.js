@@ -53,7 +53,29 @@ const AD_DOMAINS = [
   'unityads.unity3d.com',
   'applovin.com',
   'vungle.com',
-  'inmobi.com'
+  'inmobi.com',
+  'admicro.vn',
+  'adhigh.net',
+  'adkernel.com',
+  'admixer.net',
+  'adsco.re',
+  'adskeeper.com',
+  'adtng.com',
+  'a-ads.com',
+  'bidvertiser.com',
+  'clickadu.com',
+  'clickaine.com',
+  'galaksion.com',
+  'kadam.net',
+  'monetag.com',
+  'onclkds.com',
+  'onclickalgo.com',
+  'pushground.com',
+  'richads.com',
+  'rollerads.com',
+  'trafficjunky.net',
+  'trafficstars.com',
+  'TripleLift.com'.toLowerCase()
 ];
 
 const TRACKER_DOMAINS = [
@@ -207,10 +229,51 @@ const COSMETIC_AD_CSS = `
   }
 `;
 
+function fastParseHttpUrl(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  const schemeIdx = raw.indexOf('://');
+  if (schemeIdx < 4 || schemeIdx > 5) return null;
+  const proto = raw.slice(0, schemeIdx).toLowerCase();
+  if (proto !== 'http' && proto !== 'https') return null;
+  const restStart = schemeIdx + 3;
+  let pathStart = raw.indexOf('/', restStart);
+  const queryStart = raw.indexOf('?', restStart);
+  const hashStart = raw.indexOf('#', restStart);
+  let authorityEnd = raw.length;
+  if (pathStart !== -1 && pathStart < authorityEnd) authorityEnd = pathStart;
+  if (queryStart !== -1 && queryStart < authorityEnd) authorityEnd = queryStart;
+  if (hashStart !== -1 && hashStart < authorityEnd) authorityEnd = hashStart;
+
+  let authority = raw.slice(restStart, authorityEnd);
+  const atIdx = authority.lastIndexOf('@');
+  if (atIdx !== -1) authority = authority.slice(atIdx + 1);
+  let host = authority;
+  if (host.startsWith('[')) {
+    const closeBracket = host.indexOf(']');
+    if (closeBracket !== -1) host = host.slice(0, closeBracket + 1);
+  } else {
+    const colonIdx = host.indexOf(':');
+    if (colonIdx !== -1) host = host.slice(0, colonIdx);
+  }
+  host = host.toLowerCase();
+  if (!host) return null;
+
+  let pathname = '/';
+  if (pathStart !== -1 && pathStart === authorityEnd) {
+    let pathEnd = raw.length;
+    if (queryStart !== -1 && queryStart < pathEnd) pathEnd = queryStart;
+    if (hashStart !== -1 && hashStart < pathEnd) pathEnd = hashStart;
+    pathname = raw.slice(pathStart, pathEnd).toLowerCase() || '/';
+  }
+  return { proto, host, origin: `${proto}://${authority.toLowerCase()}`, pathname };
+}
+
 function extractOrigin(raw) {
   if (!raw || typeof raw !== 'string') return '';
   const trimmed = raw.trim();
   if (!trimmed || trimmed === 'null') return '';
+  const fast = fastParseHttpUrl(trimmed);
+  if (fast) return fast.origin;
   try {
     const u = new URL(trimmed);
     if (u.protocol === 'http:' || u.protocol === 'https:') {
@@ -334,14 +397,17 @@ class AdBlocker {
       return false;
     }
 
+    const fastParsed = fastParseHttpUrl(urlStr);
     let parsedUrl = null;
-    try {
-      parsedUrl = new URL(urlStr);
-    } catch (_) {}
+    if (!fastParsed) {
+      try {
+        parsedUrl = new URL(urlStr);
+      } catch (_) {}
+    }
 
-    if (parsedUrl) {
-      const host = parsedUrl.hostname.toLowerCase();
-      const pathname = parsedUrl.pathname.toLowerCase();
+    if (fastParsed || parsedUrl) {
+      const host = fastParsed ? fastParsed.host : parsedUrl.hostname.toLowerCase();
+      const pathname = fastParsed ? fastParsed.pathname : parsedUrl.pathname.toLowerCase();
 
       // Check tracker domains first so tracker domains are never blocked when trackerBlockEnabled is off
       const trackerHit = matchHostInIndex(host, pathname, TRACKER_INDEX);
@@ -431,10 +497,13 @@ class AdBlocker {
           this._recordSiteBlocked(initiatorOrigin);
         }
 
-        let host = match.reason;
-        try {
-          host = new URL(details.url).hostname;
-        } catch (_) {}
+        const fastHost = fastParseHttpUrl(details.url);
+        let host = fastHost ? fastHost.host : match.reason;
+        if (!fastHost) {
+          try {
+            host = new URL(details.url).hostname;
+          } catch (_) {}
+        }
 
         this.recentBlocked.unshift({
           host,
@@ -449,7 +518,7 @@ class AdBlocker {
 
         if (typeof this.onBlockedCallback === 'function') {
           this.onBlockedCallback({
-            ...this.getStats(),
+            _deltaOnly: true,
             totalBlocked: total,
             lastBlockedHost: host,
             lastBlockedOrigin: initiatorOrigin || ''

@@ -11,7 +11,7 @@ const SIDEBAR_PANEL_HEADER_HEIGHT = 44; // Keep in sync with .sidebar-panel-head
 const SIDEBAR_PANEL_RESIZER_WIDTH = 12; // 11px drag hit-area + 1px neon right border (UX phase: was 7px, too hard to grab)
 const SIDEBAR_PANEL_DEFAULT_WIDTH = 380;
 const SIDEBAR_PANEL_MIN_WIDTH = 260;
-const SIDEBAR_PANEL_MAX_WIDTH = 800;
+const SIDEBAR_PANEL_MAX_WIDTH = 1600;
 // Rail expand width (labels shown) — see src/ui/styles.css .nx-sidebar.expanded
 const SIDEBAR_ICON_WIDTH_EXPANDED = 184;
 const PRIVATE_WINDOW_TITLE = 'nextGx Private';
@@ -34,6 +34,8 @@ const CORNER_FILE = path.join(UI_DIR, 'corner.html');
 const CORNER_FILE_URL = pathToFileURL(CORNER_FILE).toString();
 const WEBUI_FILE = path.join(UI_DIR, 'chrome-webui.html');
 const WEBUI_FILE_URL = pathToFileURL(WEBUI_FILE).toString();
+const ONBOARDING_FILE = path.join(UI_DIR, 'onboarding.html');
+const ONBOARDING_FILE_URL = pathToFileURL(ONBOARDING_FILE).toString();
 const ERROR_PAGE_FILE = path.join(UI_DIR, 'error.html');
 const ERROR_PAGE_FILE_URL = pathToFileURL(ERROR_PAGE_FILE).toString();
 const POPOVER_FILE = path.join(UI_DIR, 'popover.html');
@@ -102,6 +104,8 @@ module.exports = {
   CORNER_FILE_URL,
   WEBUI_FILE,
   WEBUI_FILE_URL,
+  ONBOARDING_FILE,
+  ONBOARDING_FILE_URL,
   ERROR_PAGE_FILE,
   ERROR_PAGE_FILE_URL,
   POPOVER_FILE,

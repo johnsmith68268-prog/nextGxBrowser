@@ -167,6 +167,18 @@ if (internalPageKind === 'newtab') {
   });
 }
 
+if (internalPageKind === 'onboarding') {
+  contextBridge.exposeInMainWorld('gxOnboardingAPI', {
+    getSettings: () => ipcRenderer.invoke('settings:get'),
+    updateSettings: (partial) => ipcRenderer.invoke('settings:update', partial),
+    setDefaultBrowser: () => ipcRenderer.invoke('app:set-default-browser'),
+    importBookmarksHtml: () => ipcRenderer.invoke('import-export:bookmarks-import'),
+    saveCustomWallpaper: (payload) => ipcRenderer.invoke('newtab:save-wallpaper', payload),
+    getWallpaperImage: () => ipcRenderer.invoke('newtab:get-wallpaper-image'),
+    navigate: (url) => ipcRenderer.invoke('tabs:navigate', url)
+  });
+}
+
 if (internalPageKind === 'webui') {
   contextBridge.exposeInMainWorld('gxChromePagesAPI', {
     navigate: (url) => ipcRenderer.invoke('tabs:navigate', url),
@@ -299,6 +311,11 @@ if (internalPageKind === 'webui') {
     resetSettings: () => ipcRenderer.invoke('settings:reset'),
     getAppVersion: () => ipcRenderer.invoke('app:version'),
     setDefaultBrowser: () => ipcRenderer.invoke('app:set-default-browser'),
+    openProxySettings: () => ipcRenderer.invoke('system:open-proxy-settings'),
+    openOnboarding: () => ipcRenderer.invoke('system:open-onboarding'),
+    saveCustomWallpaper: (payload) => ipcRenderer.invoke('newtab:save-wallpaper', payload),
+    removeCustomWallpaper: () => ipcRenderer.invoke('newtab:remove-wallpaper'),
+    getWallpaperImage: () => ipcRenderer.invoke('newtab:get-wallpaper-image'),
     // [Fix2 integration] GX Features: Panic button, local Mod packs, sounds
     // status. The shell (gxAPI in preload.js) already exposes panic + mods;
     // the Settings page runs under this preload, so it needs them here too.
@@ -771,6 +788,11 @@ if (internalPageKind === 'player') {
           injectEarlyStyle();
           handlePlayerAdState();
           let scheduled = false;
+          let attachedPlayer = null;
+          let attachedAdModule = null;
+          let playerMo = null;
+          let adModMo = null;
+          let bootstrapMo = null;
           const schedule = () => {
             if (scheduled) return;
             scheduled = true;
@@ -779,21 +801,64 @@ if (internalPageKind === 'player') {
               handlePlayerAdState();
             });
           };
-          const mo = new MutationObserver(schedule);
-          const root = document.documentElement;
-          if (root) {
-            mo.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+          const bindAdModuleObserver = (p) => {
+            if (!p) return;
+            const mod = p.querySelector('.ytp-ad-module');
+            if (!mod || mod === attachedAdModule) return;
+            attachedAdModule = mod;
+            if (adModMo) {
+              try { adModMo.disconnect(); } catch (_) {}
+            }
+            adModMo = new MutationObserver(schedule);
+            adModMo.observe(mod, { childList: true, subtree: true });
+          };
+          const bindPlayerObserver = () => {
+            const p = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+            if (!p) return false;
+            if (p !== attachedPlayer) {
+              attachedPlayer = p;
+              if (playerMo) {
+                try { playerMo.disconnect(); } catch (_) {}
+              }
+              playerMo = new MutationObserver(() => {
+                bindAdModuleObserver(p);
+                schedule();
+              });
+              playerMo.observe(p, { attributes: true, attributeFilter: ['class'] });
+            }
+            bindAdModuleObserver(p);
+            if (bootstrapMo) {
+              try { bootstrapMo.disconnect(); bootstrapMo = null; } catch (_) {}
+            }
+            schedule();
+            return true;
+          };
+          if (!bindPlayerObserver() && document.documentElement) {
+            bootstrapMo = new MutationObserver(() => {
+              bindPlayerObserver();
+            });
+            bootstrapMo.observe(document.documentElement, { childList: true, subtree: true });
           }
-          document.addEventListener('yt-navigate-finish', schedule, true);
-          // Lightweight watcher catches Skip buttons revealed via style="display:none" -> ""
+          document.addEventListener('yt-navigate-finish', () => {
+            bindPlayerObserver();
+            schedule();
+          }, true);
+          // O(1) lightweight check on #movie_player before querying skip buttons
           setInterval(() => {
             if (document.hidden) return;
+            const p = attachedPlayer || document.getElementById('movie_player');
+            if (!p && bindPlayerObserver()) return;
             if (
-              document.querySelector('.ad-showing, .ad-interrupting, .ytp-ad-action-interstitial, ' + SKIP_SELECTORS)
+              p &&
+              (p.classList.contains('ad-showing') ||
+                p.classList.contains('ad-interrupting') ||
+                (p.querySelector('.ytp-ad-module') && p.querySelector('.ytp-ad-module').childElementCount > 0))
             ) {
               handlePlayerAdState();
+            } else if (document.querySelector('ytd-enforcement-message-view-model')) {
+              handlePlayerAdState();
             }
-          }, 300);
+          }, 350);
         };
         if (document.documentElement) startObservers();
         else document.addEventListener('DOMContentLoaded', startObservers, { once: true });
@@ -1164,19 +1229,6 @@ if (internalPageKind === 'player') {
     return docs;
   }
 
-  function collectMediaRoots(root, out, depth = 0) {
-    if (!root || depth > 4) return;
-    out.push(root);
-    try {
-      const els = root.querySelectorAll('*');
-      for (let i = 0; i < Math.min(els.length, 250); i++) {
-        if (els[i].shadowRoot) {
-          collectMediaRoots(els[i].shadowRoot, out, depth + 1);
-        }
-      }
-    } catch (_) {}
-  }
-
   function collectAllMediaElements() {
     for (const el of Array.from(trackedMedia)) {
       if (!el) {
@@ -1188,13 +1240,10 @@ if (internalPageKind === 'player') {
         trackedMedia.delete(el);
       }
     }
-    const roots = [];
+    // Fast native tag-name bloom-filter query (never walk querySelectorAll('*') across 20k DOM nodes!)
     for (const doc of getMediaDocs()) {
-      collectMediaRoots(doc, roots, 0);
-    }
-    for (const root of roots) {
       try {
-        const found = root.querySelectorAll('video, audio');
+        const found = doc.querySelectorAll('video, audio');
         for (let i = 0; i < Math.min(found.length, 64); i++) {
           trackedMedia.add(found[i]);
         }

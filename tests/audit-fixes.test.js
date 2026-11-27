@@ -287,6 +287,7 @@ test('SEC-3 / BUG-9: Every active internal UI HTML file has a CSP meta tag with 
   const IMG_SRC_BY_FILE = {
     'chrome-webui.html': ["'self'", 'data:', 'file:', 'https:', 'http:'],
     'newtab.html': ["'self'", 'data:', 'file:', 'https:', 'http:'],
+    'onboarding.html': ["'self'", 'data:', 'file:', 'https:', 'http:'],
     'corner.html': ["'self'", 'data:', 'https:', 'http:'],
     'index.html': ["'self'", 'data:', 'https:', 'http:'],
     'player.html': ["'self'", 'data:', 'https:', 'http:'],

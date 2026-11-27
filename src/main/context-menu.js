@@ -49,6 +49,24 @@ async function savePageWithType(ctx, wc, pageTitle, saveType) {
   }
 }
 
+function getNextBackgroundInsertIndex(ctx, wc) {
+  if (!ctx || !Array.isArray(ctx.tabOrder)) return undefined;
+  let sourceIdx = -1;
+  if (wc) {
+    for (let i = 0; i < ctx.tabOrder.length; i++) {
+      const t = ctx.tabs?.get(ctx.tabOrder[i]);
+      if (t && t.view && t.view.webContents === wc) {
+        sourceIdx = i;
+        break;
+      }
+    }
+  }
+  if (sourceIdx === -1 && ctx.activeTabId) {
+    sourceIdx = ctx.tabOrder.indexOf(ctx.activeTabId);
+  }
+  return sourceIdx >= 0 ? sourceIdx + 1 : undefined;
+}
+
 function attachWebContentsContextMenu(ctx, wc, { isSidebar = false } = {}) {
   if (!ctx || !wc) return;
 
@@ -85,7 +103,13 @@ function attachWebContentsContextMenu(ctx, wc, { isSidebar = false } = {}) {
       template.push(
         {
           label: 'Open link in new tab',
-          click: () => tabsMod().createTab(ctx, { url: linkUrl, incognito: ctx.incognito, active: true })
+          click: () =>
+            tabsMod().createTab(ctx, {
+              url: linkUrl,
+              incognito: ctx.incognito,
+              active: false,
+              insertIndex: getNextBackgroundInsertIndex(ctx, wc)
+            })
         },
         {
           label: 'Open link in new window',
@@ -119,7 +143,13 @@ function attachWebContentsContextMenu(ctx, wc, { isSidebar = false } = {}) {
       template.push(
         {
           label: 'Open image in new tab',
-          click: () => tabsMod().createTab(ctx, { url: srcUrl, incognito: ctx.incognito, active: true })
+          click: () =>
+            tabsMod().createTab(ctx, {
+              url: srcUrl,
+              incognito: ctx.incognito,
+              active: false,
+              insertIndex: getNextBackgroundInsertIndex(ctx, wc)
+            })
         },
         {
           label: 'Save image as...',

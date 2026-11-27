@@ -1,61 +1,77 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="gx-violet">
+
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; font-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none';" />
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; font-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none';" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>nextGx Browser</title>
   <link rel="stylesheet" href="theme.css" />
   <link rel="stylesheet" href="styles.css" />
 </head>
+
 <body>
   <!-- TOP CHROME (82px base + 30px slim Bookmarks Bar when enabled) -->
   <header class="nx-top-chrome has-bookmarks-bar" id="topChrome">
-    <!-- Row 1: Titlebar + Brand + Workspace Switcher + GX Corner + Pill Tabs -->
+    <!-- Row 1: Titlebar + Orbital Corner Icon + Opera GX Contour Tabs + Top-Right Controls -->
     <div class="nx-titlebar">
       <div class="nx-brand" id="btnBrandHome" title="nextGx Browser — Start Page">
-        <span class="nx-brand-text">next<strong>Gx</strong></span>
+        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2.05">
+          <circle cx="12" cy="12" r="8.5" />
+          <ellipse cx="12" cy="12" rx="4.2" ry="8.5" />
+        </svg>
       </div>
 
-      <!-- Real Workspace Switcher (hidden in Private windows) -->
-      <div class="nx-workspace-pills" id="workspacePills" role="tablist" aria-label="Workspaces">
+      <!-- Workspace Switcher kept hidden for minimalist single-profile UX -->
+      <div class="nx-workspace-pills hidden" id="workspacePills" role="tablist" aria-label="Workspaces">
         <div class="ws-pills-list" id="workspacePillsList"></div>
         <button type="button" class="ws-add-btn" id="btnAddWorkspace" title="New Workspace" aria-label="New Workspace">
-          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4"
+            stroke-linecap="round">
             <path d="M12 5v14M5 12h14" />
           </svg>
         </button>
       </div>
 
-      <!-- Permanent Opera GX-Style GX Corner Tab beside Tabs -->
-      <button type="button" class="nx-corner-tab" id="btnGxCornerTab" title="GX Corner — Gaming News, Releases &amp; Deals" aria-label="GX Corner" aria-pressed="false">
-        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="2" y="6" width="20" height="12" rx="4" />
-          <path d="M6 12h4M8 10v4" />
-          <circle cx="15.5" cy="11" r="1" fill="currentColor" stroke="none" />
-          <circle cx="18" cy="13" r="1" fill="currentColor" stroke="none" />
-        </svg>
-      </button>
+      <div class="nx-tabs-contour" id="tabsContour">
+        <!-- Permanent Opera GX-Style GX Corner Tab beside Tabs -->
+        <button type="button" class="nx-corner-tab" id="btnGxCornerTab"
+          title="GX Corner — Gaming News, Releases &amp; Deals" aria-label="GX Corner" aria-pressed="false">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9"
+            stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="6" width="20" height="12" rx="3.5" />
+            <path d="M6 12h4M8 10v4" />
+            <circle cx="15.5" cy="11" r="1" fill="currentColor" stroke="none" />
+            <circle cx="18" cy="13" r="1" fill="currentColor" stroke="none" />
+          </svg>
+        </button>
 
-      <div class="nx-tabs-strip" id="tabsStrip">
-        <!-- [TABS-W2] Gap 8.1 — tab search chevron (opens the tab search dropdown) -->
-        <button class="nx-tab-search-btn" id="btnTabSearch" title="Search tabs (Ctrl+Shift+A)" aria-label="Search tabs">
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-        </button>
-        <button class="nx-tab-scroll-btn hidden" id="btnTabsScrollLeft" title="Scroll tabs left" aria-label="Scroll tabs left">
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-        </button>
-        <div class="nx-tabs-container" id="tabsContainer"></div>
-        <button class="nx-tab-scroll-btn hidden" id="btnTabsScrollRight" title="Scroll tabs right" aria-label="Scroll tabs right">
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+        <div class="nx-tabs-strip" id="tabsStrip">
+          <button class="nx-tab-scroll-btn hidden" id="btnTabsScrollLeft" title="Scroll tabs left"
+            aria-label="Scroll tabs left">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
+          </button>
+          <div class="nx-tabs-container" id="tabsContainer"></div>
+          <button class="nx-tab-scroll-btn hidden" id="btnTabsScrollRight" title="Scroll tabs right"
+            aria-label="Scroll tabs right">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 18l6-6-6-6" />
+            </svg>
+          </button>
+        </div>
+
+        <button class="nx-newtab-btn" id="btnNewTab" title="New Tab (Ctrl+T)">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"
+            stroke-linecap="round">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
         </button>
       </div>
-
-      <button class="nx-newtab-btn" id="btnNewTab" title="New Tab (Ctrl+T)">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2">
-          <path d="M12 5v14M5 12h14" />
-        </svg>
-      </button>
 
       <div class="nx-window-drag-spacer"></div>
 
@@ -63,14 +79,30 @@
       <div class="nx-toast hidden" id="topToast"></div>
 
       <div class="nx-window-controls">
-        <button class="win-btn" id="btnWinMin" title="Minimize">
-          <svg viewBox="0 0 12 12" width="10" height="10"><path d="M1.5 6h9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        <!-- Opera GX top-right Search Tabs magnifying glass beside window controls -->
+        <button class="win-btn win-search-btn" id="btnTabSearch" title="Search tabs (Ctrl+Shift+A)"
+          aria-label="Search tabs">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"
+            stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="10.5" cy="10.5" r="6.5" />
+            <line x1="15.5" y1="15.5" x2="20.5" y2="20.5" />
+          </svg>
         </button>
-        <button class="win-btn" id="btnWinMax" title="Maximize">
-          <svg viewBox="0 0 12 12" width="10" height="10"><rect x="2" y="2" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
+        <button class="win-btn" id="btnWinMin" title="Minimize">
+          <svg viewBox="0 0 12 12" width="11" height="11">
+            <path d="M2 9.5h8" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" />
+          </svg>
+        </button>
+        <button class="win-btn" id="btnWinMax" title="Maximize" aria-label="Maximize">
+          <svg viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3">
+            <rect x="2" y="2" width="8" height="8" rx="1.2" />
+          </svg>
         </button>
         <button class="win-btn win-close" id="btnWinClose" title="Close">
-          <svg viewBox="0 0 12 12" width="10" height="10"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          <svg viewBox="0 0 12 12" width="11" height="11">
+            <path d="M2.2 2.2l7.6 7.6M9.8 2.2l-7.6 7.6" stroke="currentColor" stroke-width="1.35"
+              stroke-linecap="round" />
+          </svg>
         </button>
       </div>
     </div>
@@ -79,126 +111,198 @@
     <div class="nx-navbar">
       <div class="nx-nav-buttons">
         <button class="nav-icon-btn" id="btnBack" title="Back">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
         </button>
         <button class="nav-icon-btn" id="btnForward" title="Forward">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 18l6-6-6-6" />
+          </svg>
         </button>
         <button class="nav-icon-btn" id="btnReload" title="Reload (Ctrl+R)">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+            <polyline points="21 3 21 9 15 9" />
+          </svg>
         </button>
         <button class="nav-icon-btn" id="btnHome" title="Start Page">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1V9.5z"/></svg>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1V9.5z" />
+          </svg>
         </button>
       </div>
 
       <!-- Address Capsule -->
       <form class="nx-address-capsule" id="addressForm">
         <button type="button" class="address-lead-btn" id="btnSiteSecurity" title="View Site Security & Permissions">
-          <svg id="secLockSvg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <svg id="secLockSvg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor"
+            stroke-width="2">
+            <rect x="3" y="11" width="18" height="11" rx="2" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </svg>
           <span id="secNotSecureLabel" class="hidden">Not Secure</span>
         </button>
 
-        <input
-          type="text"
-          id="addressInput"
-          class="nx-address-input"
-          placeholder="Search or enter website name"
-          autocomplete="off"
-          spellcheck="false"
-        />
+        <input type="text" id="addressInput" class="nx-address-input" placeholder="Enter search or web address"
+          autocomplete="off" spellcheck="false" />
 
         <span class="private-pill hidden" id="incognitoIndicator">Incognito</span>
 
-        <!-- Reader Mode Button inside Address Bar (Safari style) -->
+        <!-- Reader Mode Button inside Address Bar -->
         <button type="button" class="capsule-btn" id="btnReaderMode" title="Toggle Reader View">
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+          </svg>
         </button>
 
-        <!-- Privacy Shield Pill inside Address Bar -->
-        <button type="button" class="capsule-btn shield-capsule" id="btnAddressShield" title="nextGx Privacy Shield — Ads & Trackers Blocked">
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-          <span id="topBlockedCount">0</span>
+        <!-- Opera GX Snapshot Icon (dashed crop box + plus) inside Address Bar -->
+        <button type="button" class="capsule-btn" id="btnScreenshot" title="Snapshot — Capture Page Screenshot">
+          <svg viewBox="0 0 24 24" width="14.5" height="14.5" fill="none" stroke="currentColor" stroke-width="1.8"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 8V6a2 2 0 0 1 2-2h2M4 16v2a2 2 0 0 0 2 2h2M16 4h2a2 2 0 0 1 2 2v2M14 20H10M10 4h4M20 10v3" />
+            <path d="M18 15v5M15.5 17.5h5" />
+          </svg>
+        </button>
+
+        <!-- Opera GX Privacy Shield Icon (shield + checkmark, clean minimal look) -->
+        <button type="button" class="capsule-btn shield-capsule" id="btnAddressShield"
+          title="nextGx Privacy Shield — Ads & Trackers Blocked">
+          <svg viewBox="0 0 24 24" width="14.5" height="14.5" fill="none" stroke="currentColor" stroke-width="1.85"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 21s7-3.6 7-9.5V5.4L12 3 5 5.4v6.1C5 17.4 12 21 12 21z" />
+            <polyline points="9 12 11.2 14.2 15.3 9.8" />
+          </svg>
+          <span id="topBlockedCount" class="hidden">0</span>
         </button>
 
         <!-- [URLBAR-3.5] Zoom magnifier — shown only when page zoom is not 100% -->
-        <button type="button" class="capsule-btn zoom-indicator hidden" id="btnZoomIndicator" title="Page zoom — click to change">
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><line x1="15.5" y1="15.5" x2="21" y2="21"/><line x1="8" y1="10.5" x2="13" y2="10.5"/><line x1="10.5" y1="8" x2="10.5" y2="13"/></svg>
+        <button type="button" class="capsule-btn zoom-indicator hidden" id="btnZoomIndicator"
+          title="Page zoom — click to change">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round">
+            <circle cx="10.5" cy="10.5" r="6.5" />
+            <line x1="15.5" y1="15.5" x2="21" y2="21" />
+            <line x1="8" y1="10.5" x2="13" y2="10.5" />
+            <line x1="10.5" y1="8" x2="10.5" y2="13" />
+          </svg>
           <span id="zoomIndicatorText">100%</span>
         </button>
 
-        <!-- [TABS-W2] Gap 1.5 — persistent site-permission icons (after a
-             decision) + permission chip (while a prompt is open) -->
         <span class="perm-site-icons" id="permSiteIcons"></span>
         <button type="button" class="perm-chip hidden" id="permChip" title="A site is asking for permission"></button>
 
-        <!-- Bookmark Star -->
+        <!-- Opera GX Heart Bookmark Icon -->
         <button type="button" class="capsule-btn" id="btnBookmarkStar" title="Bookmark this page (Ctrl+D)">
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          <svg viewBox="0 0 24 24" width="14.5" height="14.5" fill="none" stroke="currentColor" stroke-width="1.8"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path
+              d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+          </svg>
         </button>
       </form>
 
-      <!-- Right Action Toolbar -->
+      <!-- Right Action Toolbar (Opera GX Minimalist Group with Vertical Accent Bars) -->
       <div class="nx-right-toolbar">
-        <!-- Fix2-shell A7: each button sits in its own fixed 29 px slot, so
-             the split toggle never shifts when the PiP button appears. -->
-        <span class="nx-toolbar-slot">
-        <button class="toolbar-icon-btn" id="btnSplitView" title="Split View — Open current tab side by side with a new tab" aria-label="Split View" aria-pressed="false">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="4" width="18" height="16" rx="2" />
-            <line x1="12" y1="4" x2="12" y2="20" />
+        <span class="toolbar-v-sep" aria-hidden="true"></span>
+
+        <button class="toolbar-icon-btn" id="btnTopExtensions" title="Extensions">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path
+              d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5a2.5 2.5 0 0 0-5 0V5H4c-1.1 0-2 .9-2 2v3.8h1.5c1.5 0 2.7 1.2 2.7 2.7S5 16.2 3.5 16.2H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.5 1.2-2.7 2.7-2.7s2.7 1.2 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5a2.5 2.5 0 0 0 0-5z" />
           </svg>
-        </button>
-        </span>
-
-        <span class="nx-toolbar-slot">
-        <button class="toolbar-icon-btn" id="btnPopOutVideo" title="Pop out video — play a video in this tab to enable" aria-label="Pop out video" disabled>
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="2" y="4" width="20" height="15" rx="2" />
-            <rect x="11.5" y="10.5" width="8.5" height="6.5" rx="1.2" fill="currentColor" stroke="none" />
-          </svg>
-        </button>
-        </span>
-
-        <span class="nx-toolbar-slot hidden" id="panicToolbarSlot">
-        <button class="toolbar-icon-btn" id="btnPanic" title="Panic button — instantly hide all tabs (Ctrl+Shift+P), press again to restore" aria-label="Panic button" aria-pressed="false">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 9v4" />
-            <path d="M12 17h.01" />
-            <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
-          </svg>
-        </button>
-        </span>
-
-        <button class="toolbar-icon-btn" id="btnScreenshot" title="Capture Full Page Screenshot">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-        </button>
-
-        <button class="toolbar-icon-btn" id="btnTopDownloads" title="Pro Download Manager (Ctrl+J)">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          <span class="dl-active-dot hidden" id="dlActiveDot"></span>
         </button>
 
         <div class="nx-pinned-extensions" id="pinnedExtensions"></div>
 
-        <button class="toolbar-icon-btn" id="btnTopExtensions" title="Extensions">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5a2.5 2.5 0 0 0-5 0V5H4c-1.1 0-2 .9-2 2v3.8h1.5c1.5 0 2.7 1.2 2.7 2.7S5 16.2 3.5 16.2H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.5 1.2-2.7 2.7-2.7s2.7 1.2 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5a2.5 2.5 0 0 0 0-5z"/></svg>
+        <button class="toolbar-icon-btn dl-toolbar-btn" id="btnTopDownloads" title="Downloads (Ctrl+J)">
+          <span class="dl-wave-fill" id="dlWaveFill" aria-hidden="true"></span>
+          <svg class="dl-ring-svg" viewBox="0 0 28 28" width="26" height="26" aria-hidden="true">
+            <circle class="dl-ring-track" cx="14" cy="14" r="11.5" />
+            <circle class="dl-ring-arc" id="dlRingArc" cx="14" cy="14" r="11.5" />
+          </svg>
+          <svg class="dl-arrow-svg" viewBox="0 0 24 24" width="14.5" height="14.5" fill="none" stroke="currentColor" stroke-width="1.8"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          <span class="dl-active-dot hidden" id="dlActiveDot"></span>
         </button>
 
-        <!-- Apple Control Center Button -->
-        <button class="toolbar-icon-btn" id="btnEasySetup" title="nextGx Control Center — Theme, Privacy Shield & Memory">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="6" rx="3"/><circle cx="16" cy="7" r="1.5" fill="currentColor"/><rect x="3" y="14" width="18" height="6" rx="3"/><circle cx="8" cy="17" r="1.5" fill="currentColor"/></svg>
+        <!-- Fix2-shell A7: fixed 29px slots preserved -->
+        <span class="nx-toolbar-slot">
+          <button class="toolbar-icon-btn" id="btnSplitView"
+            title="Split View — Open current tab side by side with a new tab" aria-label="Split View"
+            aria-pressed="false">
+            <svg viewBox="0 0 24 24" width="14.5" height="14.5" fill="none" stroke="currentColor" stroke-width="1.7"
+              stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <line x1="12" y1="4" x2="12" y2="20" />
+            </svg>
+          </button>
+        </span>
+
+        <span class="nx-toolbar-slot">
+          <button class="toolbar-icon-btn" id="btnPopOutVideo"
+            title="Pop out video — play a video in this tab to enable" aria-label="Pop out video" disabled>
+            <svg viewBox="0 0 24 24" width="14.5" height="14.5" fill="none" stroke="currentColor" stroke-width="1.7"
+              stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="4" width="20" height="15" rx="2" />
+              <rect x="11.5" y="10.5" width="8.5" height="6.5" rx="1.2" fill="currentColor" stroke="none" />
+            </svg>
+          </button>
+        </span>
+
+        <span class="nx-toolbar-slot hidden" id="panicToolbarSlot">
+          <button class="toolbar-icon-btn" id="btnPanic"
+            title="Panic button — instantly hide all tabs (Ctrl+Shift+P), press again to restore"
+            aria-label="Panic button" aria-pressed="false">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 9v4" />
+              <path d="M12 17h.01" />
+              <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
+            </svg>
+          </button>
+        </span>
+
+        <!-- Opera GX Easy Setup (3 horizontal equalizer sliders) -->
+        <button class="toolbar-icon-btn" id="btnEasySetup" title="Easy Setup — Theme, Privacy Shield & Memory">
+          <svg viewBox="0 0 24 24" width="15.5" height="15.5" fill="none" stroke="currentColor" stroke-width="1.75"
+            stroke-linecap="round">
+            <line x1="4" y1="6.5" x2="20" y2="6.5" />
+            <line x1="15" y1="4.3" x2="15" y2="8.7" />
+            <line x1="4" y1="12" x2="20" y2="12" />
+            <line x1="9" y1="9.8" x2="9" y2="14.2" />
+            <line x1="4" y1="17.5" x2="20" y2="17.5" />
+            <line x1="16" y1="15.3" x2="16" y2="19.7" />
+          </svg>
         </button>
 
-        <!-- Local Profile Avatar Button -->
-        <button class="toolbar-icon-btn profile-avatar-btn" id="btnProfileMenu" title="Profile: Default" aria-label="Profiles" data-profile-color="gx-violet">
+        <!-- Profile Switcher hidden per single-profile minimalist design -->
+        <button class="toolbar-icon-btn profile-avatar-btn hidden" id="btnProfileMenu" title="Profile: Default"
+          aria-label="Profiles" data-profile-color="gx-violet">
           <span class="profile-avatar-circle" id="profileAvatarLetter">D</span>
         </button>
 
-        <!-- Main Menu Button (⋮) -->
+        <!-- Main Menu Button -->
         <button class="toolbar-icon-btn" id="btnChromeMenu" title="Browser Menu">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
+            <circle cx="12" cy="5.5" r="1.5" />
+            <circle cx="12" cy="12" r="1.5" />
+            <circle cx="12" cy="18.5" r="1.5" />
+          </svg>
         </button>
+
+        <span class="toolbar-v-sep" aria-hidden="true"></span>
       </div>
     </div>
 
@@ -206,7 +310,11 @@
     <nav class="nx-bookmarks-bar" id="bookmarksBar" aria-label="Bookmarks Bar">
       <div class="nx-bookmarks-items" id="bookmarksBarItems"></div>
       <button type="button" class="bm-manager-btn" id="btnBookmarksManager" title="Bookmarks Manager">
-        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <polygon
+            points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+        </svg>
       </button>
     </nav>
   </header>
@@ -236,66 +344,109 @@
     <aside class="nx-sidebar">
       <div class="sidebar-group">
         <!-- Visible by default: YouTube, YouTube Music, Spotify, Twitch, ChatGPT -->
-        <button class="sidebar-btn" data-label="YouTube" data-service-url="https://www.youtube.com" data-sidebar-item="youtube" title="YouTube"><span class="sidebar-label">YouTube</span></button>
-        <button class="sidebar-btn" data-label="YouTube Music" data-service-url="https://music.youtube.com" data-sidebar-item="youtubeMusic" title="YouTube Music"><span class="sidebar-label">YouTube Music</span></button>
-        <button class="sidebar-btn" data-label="Spotify" data-service-url="https://open.spotify.com" data-sidebar-item="spotify" title="Spotify"><span class="sidebar-label">Spotify</span></button>
+        <button class="sidebar-btn" data-label="YouTube" data-service-url="https://www.youtube.com"
+          data-sidebar-item="youtube" title="YouTube"><span class="sidebar-label">YouTube</span></button>
+        <button class="sidebar-btn" data-label="YouTube Music" data-service-url="https://music.youtube.com"
+          data-sidebar-item="youtubeMusic" title="YouTube Music"><span class="sidebar-label">YouTube
+            Music</span></button>
+        <button class="sidebar-btn" data-label="Spotify" data-service-url="https://open.spotify.com"
+          data-sidebar-item="spotify" title="Spotify"><span class="sidebar-label">Spotify</span></button>
 
         <!-- Hidden by default music services (toggleable in Customize Dock) -->
-        <button class="sidebar-btn hidden" data-label="Apple Music" data-service-url="https://music.apple.com" data-sidebar-item="appleMusic" title="Apple Music"><span class="sidebar-label">Apple Music</span></button>
-        <button class="sidebar-btn hidden" data-label="SoundCloud" data-service-url="https://soundcloud.com" data-sidebar-item="soundcloud" title="SoundCloud"><span class="sidebar-label">SoundCloud</span></button>
-        <button class="sidebar-btn hidden" data-label="Deezer" data-service-url="https://www.deezer.com" data-sidebar-item="deezer" title="Deezer"><span class="sidebar-label">Deezer</span></button>
-        <button class="sidebar-btn hidden" data-label="Tidal" data-service-url="https://listen.tidal.com" data-sidebar-item="tidal" title="Tidal"><span class="sidebar-label">Tidal</span></button>
+        <button class="sidebar-btn hidden" data-label="Apple Music" data-service-url="https://music.apple.com"
+          data-sidebar-item="appleMusic" title="Apple Music"><span class="sidebar-label">Apple Music</span></button>
+        <button class="sidebar-btn hidden" data-label="SoundCloud" data-service-url="https://soundcloud.com"
+          data-sidebar-item="soundcloud" title="SoundCloud"><span class="sidebar-label">SoundCloud</span></button>
+        <button class="sidebar-btn hidden" data-label="Deezer" data-service-url="https://www.deezer.com"
+          data-sidebar-item="deezer" title="Deezer"><span class="sidebar-label">Deezer</span></button>
+        <button class="sidebar-btn hidden" data-label="Tidal" data-service-url="https://listen.tidal.com"
+          data-sidebar-item="tidal" title="Tidal"><span class="sidebar-label">Tidal</span></button>
 
-        <button class="sidebar-btn" data-label="Twitch" data-service-url="https://www.twitch.tv" data-sidebar-item="twitch" title="Twitch"><span class="sidebar-label">Twitch</span></button>
-        <button class="sidebar-btn" data-label="ChatGPT" data-service-url="https://chatgpt.com" data-sidebar-item="chatgpt" title="ChatGPT"><span class="sidebar-label">ChatGPT</span></button>
+        <button class="sidebar-btn" data-label="Twitch" data-service-url="https://www.twitch.tv"
+          data-sidebar-item="twitch" title="Twitch"><span class="sidebar-label">Twitch</span></button>
+        <button class="sidebar-btn" data-label="ChatGPT" data-service-url="https://chatgpt.com"
+          data-sidebar-item="chatgpt" title="ChatGPT"><span class="sidebar-label">ChatGPT</span></button>
 
         <!-- Hidden by default AI & messaging services (toggleable in Customize Dock) -->
-        <button class="sidebar-btn hidden" data-label="Claude" data-service-url="https://claude.ai" data-sidebar-item="claude" title="Claude"><span class="sidebar-label">Claude</span></button>
-        <button class="sidebar-btn hidden" data-label="Gemini" data-service-url="https://gemini.google.com" data-sidebar-item="gemini" title="Gemini"><span class="sidebar-label">Gemini</span></button>
-        <button class="sidebar-btn hidden" data-label="Perplexity" data-service-url="https://www.perplexity.ai" data-sidebar-item="perplexity" title="Perplexity"><span class="sidebar-label">Perplexity</span></button>
-        <button class="sidebar-btn hidden" data-label="WhatsApp" data-service-url="https://web.whatsapp.com" data-sidebar-item="whatsapp" title="WhatsApp"><span class="sidebar-label">WhatsApp</span></button>
-        <button class="sidebar-btn hidden" data-label="Discord" data-service-url="https://discord.com/app" data-sidebar-item="discord" title="Discord"><span class="sidebar-label">Discord</span></button>
+        <button class="sidebar-btn hidden" data-label="Claude" data-service-url="https://claude.ai"
+          data-sidebar-item="claude" title="Claude"><span class="sidebar-label">Claude</span></button>
+        <button class="sidebar-btn hidden" data-label="Gemini" data-service-url="https://gemini.google.com"
+          data-sidebar-item="gemini" title="Gemini"><span class="sidebar-label">Gemini</span></button>
+        <button class="sidebar-btn hidden" data-label="Perplexity" data-service-url="https://www.perplexity.ai"
+          data-sidebar-item="perplexity" title="Perplexity"><span class="sidebar-label">Perplexity</span></button>
+        <button class="sidebar-btn hidden" data-label="WhatsApp" data-service-url="https://web.whatsapp.com"
+          data-sidebar-item="whatsapp" title="WhatsApp"><span class="sidebar-label">WhatsApp</span></button>
+        <button class="sidebar-btn hidden" data-label="Discord" data-service-url="https://discord.com/app"
+          data-sidebar-item="discord" title="Discord"><span class="sidebar-label">Discord</span></button>
 
         <div class="sidebar-divider"></div>
 
         <!-- GX Corner Gaming Hub (opens full page in a new tab) -->
-        <button class="sidebar-btn" data-label="GX Corner" data-sidebar-tab="nextgx://corner" data-sidebar-item="gxCorner" id="btnSidebarCorner" title="GX Corner — Gaming News, Releases &amp; Deals" aria-label="GX Corner">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+        <button class="sidebar-btn" data-label="GX Corner" data-sidebar-tab="nextgx://corner"
+          data-sidebar-item="gxCorner" id="btnSidebarCorner" title="GX Corner — Gaming News, Releases &amp; Deals"
+          aria-label="GX Corner">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.85"
+            stroke-linecap="round" stroke-linejoin="round">
             <rect x="2" y="6" width="20" height="12" rx="4" />
             <path d="M6 12h4M8 10v4" />
             <circle cx="15.5" cy="11" r="1" fill="currentColor" stroke="none" />
             <circle cx="18" cy="13" r="1" fill="currentColor" stroke="none" />
           </svg>
-        <span class="sidebar-label">GX Corner</span></button>
+          <span class="sidebar-label">GX Corner</span></button>
 
         <!-- Unified Media Player Panel -->
-        <button class="sidebar-btn" data-label="Player" data-sidebar-panel="player" data-sidebar-item="player" id="btnSidebarPlayer" title="Player — Unified Media Controls" aria-label="Player">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+        <button class="sidebar-btn" data-label="Player" data-sidebar-panel="player" data-sidebar-item="player"
+          id="btnSidebarPlayer" title="Player — Unified Media Controls" aria-label="Player">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.85"
+            stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="9" />
             <polygon points="10 8.5 16 12 10 15.5 10 8.5" fill="currentColor" stroke="none" />
           </svg>
-        <span class="sidebar-label">Player</span></button>
+          <span class="sidebar-label">Player</span></button>
 
         <!-- System Memory & Performance (GX Control) -->
-        <button class="sidebar-btn" data-label="GX Control" data-left-tool="gxControl" data-sidebar-item="gxControl" title="GX Control — RAM, CPU & Network Limiters">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>
-        <span class="sidebar-label">GX Control</span></button>
+        <button class="sidebar-btn" data-label="GX Control" data-left-tool="gxControl" data-sidebar-item="gxControl"
+          title="GX Control — RAM, CPU & Network Limiters">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.85">
+            <rect x="4" y="4" width="16" height="16" rx="2" />
+            <rect x="9" y="9" width="6" height="6" />
+            <path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3" />
+          </svg>
+          <span class="sidebar-label">GX Control</span></button>
 
         <!-- Privacy Cleaner -->
-        <button class="sidebar-btn" data-label="GX Cleaner" data-left-tool="gxCleaner" data-sidebar-item="gxCleaner" title="Instant Cache & Privacy Cleaner">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
-        <span class="sidebar-label">GX Cleaner</span></button>
+        <button class="sidebar-btn" data-label="GX Cleaner" data-left-tool="gxCleaner" data-sidebar-item="gxCleaner"
+          title="Instant Cache & Privacy Cleaner">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.85">
+            <path
+              d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+          </svg>
+          <span class="sidebar-label">GX Cleaner</span></button>
       </div>
 
-      <!-- Bottom Dock Setup -->
+      <!-- Bottom Dock Setup (Opera GX layout: nGX badge cleanly above Expand & Customize) -->
       <div class="sidebar-group bottom">
-        <button class="sidebar-btn" id="btnRailExpand" title="Expand sidebar — show labels" aria-label="Expand sidebar" aria-pressed="false" data-label="Expand">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+        <div class="sidebar-divider"></div>
+        <div class="sidebar-brand-foot" title="nextGx Browser">
+          <span class="sidebar-brand-ngx">nGX</span>
+          <span class="sidebar-label">nextGx Browser</span>
+        </div>
+        <button class="sidebar-btn" id="btnRailExpand" title="Expand sidebar — show labels" aria-label="Expand sidebar"
+          aria-pressed="false" data-label="Expand">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
           <span class="sidebar-label">Expand</span>
         </button>
-        <button class="sidebar-btn" data-label="Customize Dock" data-left-tool="sidebarSetup" title="Customize Dock Icons">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>
-        <span class="sidebar-label">Customize Dock</span></button>
+        <button class="sidebar-btn" data-label="Customize Dock" data-left-tool="sidebarSetup"
+          title="Customize Dock Icons">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor">
+            <circle cx="5" cy="12" r="1.7" />
+            <circle cx="12" cy="12" r="1.7" />
+            <circle cx="19" cy="12" r="1.7" />
+          </svg>
+          <span class="sidebar-label">Customize Dock</span></button>
       </div>
     </aside>
 
@@ -307,27 +458,36 @@
           <h2 class="nx-heading sidebar-panel-title" id="sidebarPanelTitle">Service</h2>
         </div>
         <div class="sidebar-panel-actions">
-          <button type="button" class="panel-hdr-btn" id="btnSidebarPin" title="Pin panel beside tab" aria-label="Pin panel" aria-pressed="false">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <button type="button" class="panel-hdr-btn" id="btnSidebarPin" title="Pin panel beside tab"
+            aria-label="Pin panel" aria-pressed="false">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 17v5" />
-              <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 1 1 0 0 0 1-1V4a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1 1 1 0 0 1 1 1v3.76z" />
+              <path
+                d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 1 1 0 0 0 1-1V4a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1 1 1 0 0 1 1 1v3.76z" />
             </svg>
           </button>
-          <button type="button" class="panel-hdr-btn" id="btnSidebarReload" title="Reload panel" aria-label="Reload panel">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <button type="button" class="panel-hdr-btn" id="btnSidebarReload" title="Reload panel"
+            aria-label="Reload panel">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 12a9 9 0 1 1-2.64-6.36" />
               <polyline points="21 3 21 9 15 9" />
             </svg>
           </button>
-          <button type="button" class="panel-hdr-btn" id="btnSidebarOpenTab" title="Open in new tab" aria-label="Open in new tab">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <button type="button" class="panel-hdr-btn" id="btnSidebarOpenTab" title="Open in new tab"
+            aria-label="Open in new tab">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
               <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
               <polyline points="15 3 21 3 21 9" />
               <line x1="10" y1="14" x2="21" y2="3" />
             </svg>
           </button>
-          <button type="button" class="panel-hdr-btn" id="btnSidebarClose" title="Close panel (Esc)" aria-label="Close panel">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <button type="button" class="panel-hdr-btn" id="btnSidebarClose" title="Close panel (Esc)"
+            aria-label="Close panel">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
               <path d="M18 6L6 18M6 6l12 12" />
             </svg>
           </button>
@@ -357,13 +517,17 @@
               <span class="gx-gauge-val" id="perfRamGaugeText">--</span>
             </div>
             <strong class="bento-val" id="perfBrowserRam">-- MB</strong>
-            <div class="nx-meter"><div class="nx-meter-fill" id="perfBrowserRamBar"></div></div>
+            <div class="nx-meter">
+              <div class="nx-meter-fill" id="perfBrowserRamBar"></div>
+            </div>
             <span class="bento-sub" id="perfBrowserRamSub">Cap: Off</span>
           </div>
           <div class="bento-box">
             <span class="bento-label">System CPU</span>
             <strong class="bento-val" id="perfCpuPercent">0%</strong>
-            <div class="nx-meter"><div class="nx-meter-fill cyan" id="perfCpuBar"></div></div>
+            <div class="nx-meter">
+              <div class="nx-meter-fill cyan" id="perfCpuBar"></div>
+            </div>
             <span class="bento-sub" id="perfBrowserCpuInline">Browser: 0.0%</span>
           </div>
         </div>
@@ -392,7 +556,8 @@
               </label>
             </div>
             <div class="gx-slider-row is-disabled" id="gxRamSliderRow">
-              <input type="range" class="nx-range" id="rngGxRamLimit" min="512" max="16384" step="512" value="4096" disabled />
+              <input type="range" class="nx-range" id="rngGxRamLimit" min="512" max="16384" step="512" value="4096"
+                disabled />
               <span class="gx-slider-val nx-mono" id="valGxRamLimit">4 GB</span>
             </div>
             <div class="gx-limiter-meta" id="gxRamLimiterMeta">Live: -- MB • Cap off • Hibernated by limiter: 0</div>
@@ -518,13 +683,15 @@
             <span>Cache currently using</span>
             <strong id="cleanerCacheSizeText" style="font-size:12.5px;">—</strong>
           </div>
-          <div class="card-sub">Measured from this profile&apos;s network cache. Cleaning frees this space immediately.</div>
+          <div class="card-sub">Measured from this profile&apos;s network cache. Cleaning frees this space immediately.
+          </div>
         </div>
 
         <div class="nx-card">
           <div class="card-title">What Gets Cleaned</div>
           <div class="card-sub" style="line-height:1.6;">
-            <strong>Cached images &amp; files</strong> — temporary copies of sites you visited; safe to clear, sites just reload them.<br />
+            <strong>Cached images &amp; files</strong> — temporary copies of sites you visited; safe to clear, sites
+            just reload them.<br />
             <strong>Cookies &amp; website storage</strong> — signs you out of sites and clears saved site data.<br />
             <strong>Browsing history</strong> — removes visited pages from History and from address-bar suggestions.
           </div>
@@ -538,76 +705,94 @@
 
           <div class="setting-item">
             <span>YouTube</span>
-            <label class="nx-switch"><input type="checkbox" data-sb-toggle="youtube" checked /><span class="nx-slider"></span></label>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="youtube" checked /><span
+                class="nx-slider"></span></label>
           </div>
           <div class="setting-item">
             <span>YouTube Music</span>
-            <label class="nx-switch"><input type="checkbox" data-sb-toggle="youtubeMusic" checked /><span class="nx-slider"></span></label>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="youtubeMusic" checked /><span
+                class="nx-slider"></span></label>
           </div>
           <div class="setting-item">
             <span>Spotify</span>
-            <label class="nx-switch"><input type="checkbox" data-sb-toggle="spotify" checked /><span class="nx-slider"></span></label>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="spotify" checked /><span
+                class="nx-slider"></span></label>
           </div>
           <div class="setting-item">
             <span>Apple Music</span>
-            <label class="nx-switch"><input type="checkbox" data-sb-toggle="appleMusic" /><span class="nx-slider"></span></label>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="appleMusic" /><span
+                class="nx-slider"></span></label>
           </div>
           <div class="setting-item">
             <span>SoundCloud</span>
-            <label class="nx-switch"><input type="checkbox" data-sb-toggle="soundcloud" /><span class="nx-slider"></span></label>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="soundcloud" /><span
+                class="nx-slider"></span></label>
           </div>
           <div class="setting-item">
             <span>Deezer</span>
-            <label class="nx-switch"><input type="checkbox" data-sb-toggle="deezer" /><span class="nx-slider"></span></label>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="deezer" /><span
+                class="nx-slider"></span></label>
           </div>
           <div class="setting-item">
             <span>Tidal</span>
-            <label class="nx-switch"><input type="checkbox" data-sb-toggle="tidal" /><span class="nx-slider"></span></label>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="tidal" /><span
+                class="nx-slider"></span></label>
           </div>
           <div class="setting-item">
             <span>Twitch</span>
-            <label class="nx-switch"><input type="checkbox" data-sb-toggle="twitch" checked /><span class="nx-slider"></span></label>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="twitch" checked /><span
+                class="nx-slider"></span></label>
           </div>
           <div class="setting-item">
             <span>ChatGPT</span>
-            <label class="nx-switch"><input type="checkbox" data-sb-toggle="chatgpt" checked /><span class="nx-slider"></span></label>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="chatgpt" checked /><span
+                class="nx-slider"></span></label>
           </div>
           <div class="setting-item">
             <span>Claude</span>
-            <label class="nx-switch"><input type="checkbox" data-sb-toggle="claude" /><span class="nx-slider"></span></label>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="claude" /><span
+                class="nx-slider"></span></label>
           </div>
           <div class="setting-item">
             <span>Gemini</span>
-            <label class="nx-switch"><input type="checkbox" data-sb-toggle="gemini" /><span class="nx-slider"></span></label>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="gemini" /><span
+                class="nx-slider"></span></label>
           </div>
           <div class="setting-item">
             <span>Perplexity</span>
-            <label class="nx-switch"><input type="checkbox" data-sb-toggle="perplexity" /><span class="nx-slider"></span></label>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="perplexity" /><span
+                class="nx-slider"></span></label>
           </div>
           <div class="setting-item">
             <span>WhatsApp</span>
-            <label class="nx-switch"><input type="checkbox" data-sb-toggle="whatsapp" /><span class="nx-slider"></span></label>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="whatsapp" /><span
+                class="nx-slider"></span></label>
           </div>
           <div class="setting-item">
             <span>Discord</span>
-            <label class="nx-switch"><input type="checkbox" data-sb-toggle="discord" /><span class="nx-slider"></span></label>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="discord" /><span
+                class="nx-slider"></span></label>
           </div>
           <div class="menu-sep"></div>
           <div class="setting-item">
             <span>GX Corner</span>
-            <label class="nx-switch"><input type="checkbox" data-sb-toggle="gxCorner" checked /><span class="nx-slider"></span></label>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="gxCorner" checked /><span
+                class="nx-slider"></span></label>
           </div>
           <div class="setting-item">
             <span>Media Player</span>
-            <label class="nx-switch"><input type="checkbox" data-sb-toggle="player" checked /><span class="nx-slider"></span></label>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="player" checked /><span
+                class="nx-slider"></span></label>
           </div>
           <div class="setting-item">
             <span>GX Control (Limiters)</span>
-            <label class="nx-switch"><input type="checkbox" data-sb-toggle="gxControl" checked /><span class="nx-slider"></span></label>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="gxControl" checked /><span
+                class="nx-slider"></span></label>
           </div>
           <div class="setting-item">
             <span>Instant Privacy Cleaner</span>
-            <label class="nx-switch"><input type="checkbox" data-sb-toggle="gxCleaner" checked /><span class="nx-slider"></span></label>
+            <label class="nx-switch"><input type="checkbox" data-sb-toggle="gxCleaner" checked /><span
+                class="nx-slider"></span></label>
           </div>
         </div>
       </div>
@@ -615,18 +800,9 @@
 
     <!-- CENTER VIEWPORT PLACEHOLDER -->
     <main class="nx-viewport-placeholder" id="viewportPlaceholder">
-      <div
-        class="nx-split-divider hidden"
-        id="splitDivider"
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize split view panes"
-        aria-valuemin="20"
-        aria-valuemax="80"
-        aria-valuenow="50"
-        tabindex="0"
-        title="Drag to resize split panes • Double-click to reset 50/50"
-      >
+      <div class="nx-split-divider hidden" id="splitDivider" role="separator" aria-orientation="vertical"
+        aria-label="Resize split view panes" aria-valuemin="20" aria-valuemax="80" aria-valuenow="50" tabindex="0"
+        title="Drag to resize split panes • Double-click to reset 50/50">
         <span class="nx-split-divider-grip" aria-hidden="true"></span>
       </div>
     </main>
@@ -705,130 +881,189 @@
       </div>
     </section>
 
-    <!-- RIGHT-SIDE BENTO CONTROL CENTER & PRO DOWNLOAD MANAGER DRAWER -->
+    <!-- RIGHT-SIDE EASY SETUP & CONTROL DRAWER -->
     <aside class="nx-right-drawer hidden" id="rightDrawer">
       <div class="drawer-header">
-        <h2 class="nx-heading" id="rightDrawerTitle">Control Center</h2>
-        <button class="panel-hdr-btn" id="btnCloseRightDrawer">✕</button>
+        <h2 class="nx-heading" id="rightDrawerTitle">Easy Setup</h2>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button type="button" class="panel-hdr-btn" id="btnEasyGearSettings" title="Open Full Settings">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </button>
+          <button class="panel-hdr-btn" id="btnCloseRightDrawer">✕</button>
+        </div>
       </div>
 
-      <!-- Right Panel 1: Apple Bento Control Center (Themes, Privacy Shield, Dark Web, Search) -->
-      <div class="tool-body hidden" id="right-panel-easySetup">
-        <div class="bento-grid-two">
-          <div class="bento-box highlight">
-            <span class="bento-label">Session Blocked</span>
-            <strong class="bento-val" id="adPanelSessionCount">0</strong>
-            <span class="card-sub">Ads & Trackers</span>
-          </div>
-          <div class="bento-box">
-            <span class="bento-label">Lifetime Shield</span>
-            <strong class="bento-val" id="adPanelTotalCount">0</strong>
-            <span class="card-sub">Total Blocked</span>
-          </div>
+      <!-- Right Panel 1: Opera GX-Inspired Minimalist Easy Setup -->
+      <div class="tool-body hidden easy-setup-body" id="right-panel-easySetup">
+        <!-- THEMES -->
+        <div class="es-section-head">
+          <span class="es-section-label">Themes</span>
         </div>
-
-        <div class="nx-card">
-          <div class="setting-item">
-            <div>
-              <div class="setting-title">nextGx Privacy Shield</div>
-              <div class="card-sub">Blocks ads, trackers & fingerprinting</div>
-            </div>
-            <label class="nx-switch">
-              <input type="checkbox" id="chkAdblockEnabled" checked />
-              <span class="nx-slider"></span>
-            </label>
-          </div>
-
-          <div class="setting-item">
-            <div>
-              <div class="setting-title">Show Bookmarks Bar</div>
-              <div class="card-sub">Slim bookmarks strip beneath the toolbar</div>
-            </div>
-            <label class="nx-switch">
-              <input type="checkbox" id="chkBookmarksBar" checked />
-              <span class="nx-slider"></span>
-            </label>
-          </div>
-
-          <div class="setting-item">
-            <div>
-              <div class="setting-title">Force Dark Mode on Websites</div>
-              <div class="card-sub">Applies dark appearance to bright pages</div>
-            </div>
-            <label class="nx-switch">
-              <input type="checkbox" id="chkForceDarkWeb" />
-              <span class="nx-slider"></span>
-            </label>
-          </div>
-
-          <div class="setting-item">
-            <div>
-              <div class="setting-title">UI Sound Effects</div>
-              <div class="card-sub">Subtle clicks, tab open/close & panel sounds</div>
-            </div>
-            <label class="nx-switch">
-              <input type="checkbox" id="chkUiSounds" checked />
-              <span class="nx-slider"></span>
-            </label>
-          </div>
-
-          <div class="setting-item">
-            <div>
-              <div class="setting-title">Close Window on Last Tab</div>
-              <div class="card-sub">Closes browser when the final tab is closed</div>
-            </div>
-            <label class="nx-switch">
-              <input type="checkbox" id="chkCloseLastTab" />
-              <span class="nx-slider"></span>
-            </label>
-          </div>
-        </div>
-
-        <div class="nx-card">
-          <div class="card-title">nextGx Theme Presets</div>
-          <div class="theme-grid">
-            <button class="theme-chip" data-theme-choice="gx-violet">
-              <span class="dot"></span> nextGx Violet
+        <div class="nx-card es-card">
+          <div class="es-themes-strip" id="easyThemesStrip">
+            <button type="button" class="es-theme-card" data-theme-choice="gx-violet" style="--es-swatch:#9d4edd;">
+              <span class="es-theme-mock"><i class="d1"></i><i class="d2"></i><i class="d3"></i></span>
+              <span class="es-theme-foot"><span>Ultraviolet</span><span class="es-radio"></span></span>
             </button>
-            <button class="theme-chip" data-theme-choice="crimson">
-              <span class="dot"></span> Crimson Red
+            <button type="button" class="es-theme-card" data-theme-choice="crimson" style="--es-swatch:#fa1e4e;">
+              <span class="es-theme-mock"><i class="d1"></i><i class="d2"></i><i class="d3"></i></span>
+              <span class="es-theme-foot"><span>GX Crimson</span><span class="es-radio"></span></span>
             </button>
-            <button class="theme-chip" data-theme-choice="cyan">
-              <span class="dot"></span> Cyber Cyan
+            <button type="button" class="es-theme-card" data-theme-choice="cyan" style="--es-swatch:#00d4ff;">
+              <span class="es-theme-mock"><i class="d1"></i><i class="d2"></i><i class="d3"></i></span>
+              <span class="es-theme-foot"><span>Sub Zero</span><span class="es-radio"></span></span>
             </button>
-            <button class="theme-chip" data-theme-choice="emerald">
-              <span class="dot"></span> Matrix Emerald
+            <button type="button" class="es-theme-card" data-theme-choice="emerald" style="--es-swatch:#10b981;">
+              <span class="es-theme-mock"><i class="d1"></i><i class="d2"></i><i class="d3"></i></span>
+              <span class="es-theme-foot"><span>Matrix</span><span class="es-radio"></span></span>
             </button>
-            <button class="theme-chip" data-theme-choice="magenta">
-              <span class="dot"></span> Neon Magenta
+            <button type="button" class="es-theme-card" data-theme-choice="amber" style="--es-swatch:#f59e0b;">
+              <span class="es-theme-mock"><i class="d1"></i><i class="d2"></i><i class="d3"></i></span>
+              <span class="es-theme-foot"><span>Solar Gold</span><span class="es-radio"></span></span>
             </button>
-            <button class="theme-chip" data-theme-choice="amber">
-              <span class="dot"></span> Solar Amber
+            <button type="button" class="es-theme-card" data-theme-choice="magenta" style="--es-swatch:#ec4899;">
+              <span class="es-theme-mock"><i class="d1"></i><i class="d2"></i><i class="d3"></i></span>
+              <span class="es-theme-foot"><span>Neon Pink</span><span class="es-radio"></span></span>
             </button>
-            <button class="theme-chip" data-theme-choice="lime">
-              <span class="dot"></span> Acid Lime
+            <button type="button" class="es-theme-card" data-theme-choice="lime" style="--es-swatch:#84cc16;">
+              <span class="es-theme-mock"><i class="d1"></i><i class="d2"></i><i class="d3"></i></span>
+              <span class="es-theme-foot"><span>Acid Lime</span><span class="es-radio"></span></span>
             </button>
-            <button class="theme-chip" data-theme-choice="ice">
-              <span class="dot"></span> Frost Ice
+            <button type="button" class="es-theme-card" data-theme-choice="ice" style="--es-swatch:#60a5fa;">
+              <span class="es-theme-mock"><i class="d1"></i><i class="d2"></i><i class="d3"></i></span>
+              <span class="es-theme-foot"><span>Frost Ice</span><span class="es-radio"></span></span>
             </button>
           </div>
         </div>
 
-        <div class="nx-card">
-          <div class="card-title">Default Search Engine</div>
+        <!-- WALLPAPERS -->
+        <div class="es-section-head">
+          <span class="es-section-label">Wallpapers</span>
+          <label class="nx-switch es-mini-switch" title="Enable Start Page Wallpaper">
+            <input type="checkbox" id="chkEasyWallpaperEnabled" checked />
+            <span class="nx-slider"></span>
+          </label>
+        </div>
+        <div class="nx-card es-card">
+          <div class="es-wp-grid" id="easyWallpaperGrid">
+            <button type="button" class="es-wp-thumb" data-easy-wp="obsidian-wave" title="Obsidian Wave" style="background-image:url('assets/default-wallpaper.jpg')"></button>
+            <button type="button" class="es-wp-thumb" data-easy-wp="midnight-alpine" title="Midnight Alpine" style="background-image:url('assets/wallpapers/midnight-alpine.jpg')"></button>
+            <button type="button" class="es-wp-thumb" data-easy-wp="crimson-eclipse" title="Crimson Eclipse" style="background-image:url('assets/wallpapers/crimson-eclipse.jpg')"></button>
+            <button type="button" class="es-wp-thumb" data-easy-wp="cyber-dusk" title="Cyber Dusk" style="background-image:url('assets/wallpapers/cyber-dusk.jpg')"></button>
+            <button type="button" class="es-wp-thumb" data-easy-wp="violet-aurora" title="Violet Aurora" style="background-image:url('assets/wallpapers/violet-aurora.jpg')"></button>
+            <button type="button" class="es-wp-thumb" data-easy-wp="emerald-nebula" title="Emerald Nebula" style="background-image:url('assets/wallpapers/emerald-nebula.jpg')"></button>
+          </div>
+          <input type="file" id="easyWallpaperFileInput" class="hidden" accept=".png,.jpg,.jpeg,.webp,.gif,image/png,image/jpeg,image/webp,image/gif" />
+          <button type="button" class="es-add-wp-btn" id="btnEasyAddWallpaper">Add your wallpaper</button>
+        </div>
+
+        <!-- APPEARANCE -->
+        <div class="es-section-head"><span class="es-section-label">Appearance</span></div>
+        <div class="nx-card es-card">
+          <div class="setting-item">
+            <span class="setting-title">Colorize sidebar icons</span>
+            <label class="nx-switch"><input type="checkbox" id="chkEasyColorizeSidebar" /><span class="nx-slider"></span></label>
+          </div>
+          <div class="setting-item">
+            <span class="setting-title">Show bookmarks bar</span>
+            <label class="nx-switch"><input type="checkbox" id="chkBookmarksBar" checked /><span class="nx-slider"></span></label>
+          </div>
+          <div class="setting-item">
+            <span class="setting-title">Reduce animations</span>
+            <label class="nx-switch"><input type="checkbox" id="chkEasyReduceAnimations" /><span class="nx-slider"></span></label>
+          </div>
+        </div>
+
+        <!-- GX FEATURES -->
+        <div class="es-section-head"><span class="es-section-label">GX Features</span></div>
+        <div class="nx-card es-card">
+          <div class="setting-item">
+            <span class="setting-title">Browser sounds</span>
+            <label class="nx-switch"><input type="checkbox" id="chkUiSounds" checked /><span class="nx-slider"></span></label>
+          </div>
+          <div class="setting-item">
+            <span class="setting-title">Keyboard sounds</span>
+            <label class="nx-switch"><input type="checkbox" id="chkEasyKeyboardSounds" /><span class="nx-slider"></span></label>
+          </div>
+          <div class="setting-item">
+            <span class="setting-title">Show sidebar</span>
+            <label class="nx-switch"><input type="checkbox" id="chkEasyShowSidebar" checked /><span class="nx-slider"></span></label>
+          </div>
+          <div class="setting-item">
+            <span class="setting-title">Force dark pages</span>
+            <label class="nx-switch"><input type="checkbox" id="chkForceDarkWeb" /><span class="nx-slider"></span></label>
+          </div>
+          <div class="setting-item">
+            <span class="setting-title">Close window on last tab</span>
+            <label class="nx-switch"><input type="checkbox" id="chkCloseLastTab" /><span class="nx-slider"></span></label>
+          </div>
+        </div>
+
+        <!-- START PAGE -->
+        <div class="es-section-head"><span class="es-section-label">Start Page</span></div>
+        <div class="nx-card es-card">
+          <div class="setting-item">
+            <span class="setting-title">Show clock</span>
+            <label class="nx-switch"><input type="checkbox" id="chkEasySpClock" checked /><span class="nx-slider"></span></label>
+          </div>
+          <div class="setting-item">
+            <span class="setting-title">Show Speed Dial names</span>
+            <label class="nx-switch"><input type="checkbox" id="chkEasySpNames" checked /><span class="nx-slider"></span></label>
+          </div>
+          <div class="setting-item">
+            <span class="setting-title">Use bigger Speed Dial tiles</span>
+            <label class="nx-switch"><input type="checkbox" id="chkEasySpBigger" /><span class="nx-slider"></span></label>
+          </div>
+          <div class="setting-item">
+            <span class="setting-title">Show Speed Dial suggestions</span>
+            <label class="nx-switch"><input type="checkbox" id="chkEasySpSuggestions" checked /><span class="nx-slider"></span></label>
+          </div>
+          <div class="setting-item">
+            <span class="setting-title">Hide search box</span>
+            <label class="nx-switch"><input type="checkbox" id="chkEasySpHideSearch" /><span class="nx-slider"></span></label>
+          </div>
+        </div>
+
+        <!-- PRIVACY & SECURITY -->
+        <div class="es-section-head"><span class="es-section-label">Privacy &amp; Security</span></div>
+        <div class="nx-card es-card">
+          <div class="bento-grid-two" style="margin-bottom:8px;">
+            <div class="bento-box highlight">
+              <span class="bento-label">Session</span>
+              <strong class="bento-val" id="adPanelSessionCount">0</strong>
+            </div>
+            <div class="bento-box">
+              <span class="bento-label">Lifetime</span>
+              <strong class="bento-val" id="adPanelTotalCount">0</strong>
+            </div>
+          </div>
+          <div class="setting-item">
+            <span class="setting-title">Block ads</span>
+            <label class="nx-switch"><input type="checkbox" id="chkAdblockEnabled" checked /><span class="nx-slider"></span></label>
+          </div>
+          <div class="setting-item">
+            <span class="setting-title">Block trackers</span>
+            <label class="nx-switch"><input type="checkbox" id="chkEasyTrackerBlock" checked /><span class="nx-slider"></span></label>
+          </div>
+          <div class="setting-item">
+            <span class="setting-title">Browsing data</span>
+            <button type="button" class="mini-action-btn" id="btnEasyClearData">Clear</button>
+          </div>
+        </div>
+
+        <!-- SEARCH ENGINE & FULL SETTINGS -->
+        <div class="nx-card es-card">
+          <div class="card-title">Search Engine</div>
           <div class="nx-segmented" id="searchEngineSegments">
             <button type="button" class="seg-btn active" data-engine="google">Google</button>
             <button type="button" class="seg-btn" data-engine="duckduckgo">DuckDuckGo</button>
             <button type="button" class="seg-btn" data-engine="bing">Bing</button>
           </div>
-        </div>
-
-        <div class="nx-card">
-          <div class="card-row">
-            <span class="card-title">Blocked Tracker Domains</span>
-            <button class="mini-action-btn accent" id="btnOpenFullSettings">All Settings ↗</button>
+          <div class="card-row" style="margin-top:8px;">
+            <span class="card-sub">Need more controls?</span>
+            <button class="mini-action-btn accent" id="btnOpenFullSettings">Go to Full Settings ↗</button>
           </div>
-          <div class="scroll-list" id="recentBlockedList"></div>
+          <div class="scroll-list hidden" id="recentBlockedList"></div>
         </div>
       </div>
 
@@ -890,12 +1125,15 @@
        toolbar avatar menu, Settings, and the profile popover via
        gxAPI.openCreateProfileModal(). -->
   <div class="nx-modal-backdrop hidden" id="profileModalBackdrop">
-    <div class="nx-modal nx-profile-modal" id="profileModal" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle" tabindex="-1">
+    <div class="nx-modal nx-profile-modal" id="profileModal" role="dialog" aria-modal="true"
+      aria-labelledby="profileModalTitle" tabindex="-1">
       <div class="nx-modal-header">
         <h2 class="nx-heading" id="profileModalTitle">Create a new profile</h2>
-        <button type="button" class="panel-hdr-btn" id="btnProfileModalClose" title="Close (Esc)" aria-label="Close">✕</button>
+        <button type="button" class="panel-hdr-btn" id="btnProfileModalClose" title="Close (Esc)"
+          aria-label="Close">✕</button>
       </div>
-      <p class="nx-modal-sub">Profiles keep cookies, history, bookmarks, passwords and themes separate — all on this device, nothing is synced.</p>
+      <p class="nx-modal-sub">Profiles keep cookies, history, bookmarks, passwords and themes separate — all on this
+        device, nothing is synced.</p>
       <div class="nx-profile-preview">
         <span class="nx-profile-preview-avatar" id="profileModalAvatar" data-profile-color="gx-violet">P</span>
         <div class="nx-profile-preview-text">
@@ -905,13 +1143,16 @@
       </div>
       <form id="profileModalForm" novalidate>
         <label class="nx-field-label" for="profileModalName">Profile name</label>
-        <input type="text" id="profileModalName" class="nx-input" placeholder="e.g. Work, Gaming" maxlength="40" autocomplete="off" />
+        <input type="text" id="profileModalName" class="nx-input" placeholder="e.g. Work, Gaming" maxlength="40"
+          autocomplete="off" />
         <div class="nx-field-hint"><span id="profileModalCount">0 / 40</span></div>
         <div class="nx-modal-error hidden" id="profileModalError" role="alert"></div>
         <div class="nx-field-label" id="profileModalColorLabel">Colour</div>
-        <div class="nx-profile-swatches" id="profileModalSwatches" role="radiogroup" aria-labelledby="profileModalColorLabel"></div>
+        <div class="nx-profile-swatches" id="profileModalSwatches" role="radiogroup"
+          aria-labelledby="profileModalColorLabel"></div>
         <div class="nx-field-label" id="profileModalAvatarLabel">Avatar</div>
-        <div class="nx-profile-avatars" id="profileModalAvatars" role="radiogroup" aria-labelledby="profileModalAvatarLabel"></div>
+        <div class="nx-profile-avatars" id="profileModalAvatars" role="radiogroup"
+          aria-labelledby="profileModalAvatarLabel"></div>
         <label class="nx-check-row">
           <input type="checkbox" id="profileModalSwitchAfter" checked />
           <span>Switch to this profile after creating it</span>
@@ -930,14 +1171,27 @@
        first launch (dismissing persists firstRunSeen via updateSettings);
        never in Private windows. -->
   <div class="nx-first-run-card hidden" id="firstRunCard" role="dialog" aria-label="Welcome to nextGx">
-    <button type="button" class="panel-hdr-btn nx-first-run-close" id="btnFirstRunClose" title="Dismiss" aria-label="Dismiss">✕</button>
+    <button type="button" class="panel-hdr-btn nx-first-run-close" id="btnFirstRunClose" title="Dismiss"
+      aria-label="Dismiss">✕</button>
     <h2 class="nx-heading">Welcome to nextGx</h2>
     <p>Your gaming browser, ready to go. Four things worth knowing:</p>
     <ul class="nx-first-run-list">
-      <li><span class="nx-first-run-dot" aria-hidden="true"></span><div><strong>GX Control</strong><span>Limit RAM, CPU and network from the sidebar — keep games smooth while you browse.</span></div></li>
-      <li><span class="nx-first-run-dot" aria-hidden="true"></span><div><strong>Profiles</strong><span>Keep Work and Gaming separate — cookies, history and bookmarks stay apart, all on this device.</span></div></li>
-      <li><span class="nx-first-run-dot" aria-hidden="true"></span><div><strong>Split view</strong><span>Two tabs side by side — right-click a tab, or use the split button in the toolbar.</span></div></li>
-      <li><span class="nx-first-run-dot" aria-hidden="true"></span><div><strong>Picture-in-Picture</strong><span>Playing a video? Pop it out into a floating window from the toolbar or the Player panel.</span></div></li>
+      <li><span class="nx-first-run-dot" aria-hidden="true"></span>
+        <div><strong>GX Control</strong><span>Limit RAM, CPU and network from the sidebar — keep games smooth while you
+            browse.</span></div>
+      </li>
+      <li><span class="nx-first-run-dot" aria-hidden="true"></span>
+        <div><strong>Profiles</strong><span>Keep Work and Gaming separate — cookies, history and bookmarks stay apart,
+            all on this device.</span></div>
+      </li>
+      <li><span class="nx-first-run-dot" aria-hidden="true"></span>
+        <div><strong>Split view</strong><span>Two tabs side by side — right-click a tab, or use the split button in the
+            toolbar.</span></div>
+      </li>
+      <li><span class="nx-first-run-dot" aria-hidden="true"></span>
+        <div><strong>Picture-in-Picture</strong><span>Playing a video? Pop it out into a floating window from the
+            toolbar or the Player panel.</span></div>
+      </li>
     </ul>
     <div class="nx-first-run-actions">
       <button type="button" class="nx-btn nx-btn-ghost" id="btnFirstRunGotIt">Got it</button>
@@ -948,4 +1202,5 @@
   <script src="sounds.js"></script>
   <script src="renderer.js"></script>
 </body>
+
 </html>

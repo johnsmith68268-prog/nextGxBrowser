@@ -185,6 +185,7 @@ contextBridge.exposeInMainWorld('gxAPI', {
 
   // History
   getHistory: () => ipcRenderer.invoke('history:get'),
+  getRemoteSuggestions: (query) => ipcRenderer.invoke('omnibox:remote-suggest', query),
   // [Fix2 #20] History/bookmark writes already broadcast history:update
   // from main (tabs.js / ipc.js); the shell subscribes here so the
   // omnibox suggestion cache can be invalidated on write instead of
@@ -241,6 +242,12 @@ contextBridge.exposeInMainWorld('gxAPI', {
   getAdblockSites: () => ipcRenderer.invoke('adblock:get-sites'),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   updateSettings: (partial) => ipcRenderer.invoke('settings:update', partial),
+  saveCustomWallpaper: (payload) => ipcRenderer.invoke('newtab:save-wallpaper', payload),
+  removeCustomWallpaper: () => ipcRenderer.invoke('newtab:remove-wallpaper'),
+  getWallpaperImage: () => ipcRenderer.invoke('newtab:get-wallpaper-image'),
+  setDefaultBrowser: () => ipcRenderer.invoke('app:set-default-browser'),
+  openProxySettings: () => ipcRenderer.invoke('system:open-proxy-settings'),
+  openOnboarding: () => ipcRenderer.invoke('system:open-onboarding'),
 
   // System / RAM Saver Stats & GX Control
   getSystemStats: () => ipcRenderer.invoke('system:stats'),
@@ -287,10 +294,19 @@ contextBridge.exposeInMainWorld('gxAPI', {
   // UX phase: ask main to open the ONE shared "New Profile" modal in the shell.
   openCreateProfileModal: () => ipcRenderer.invoke('profiles:open-create-modal'),
 
+  // Floating Shell Drawer Overlay (Expand Rail, GX Control, Cleaner, Customize Dock, Easy Setup)
+  openShellDrawer: (spec) => ipcRenderer.invoke('drawer:open', spec),
+  toggleShellDrawer: (spec) => ipcRenderer.invoke('drawer:toggle', spec),
+  closeShellDrawer: () => ipcRenderer.invoke('drawer:close'),
+  getShellDrawerState: () => ipcRenderer.invoke('drawer:get-state'),
+  onShellDrawerState: (cb) => ipcRenderer.on('drawer:state', (_e, data) => cb(data)),
+
   // Window Controls
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
   maximizeWindow: () => ipcRenderer.invoke('window:maximize'),
+  isWindowMaximized: () => ipcRenderer.invoke('window:is-maximized'),
   closeWindow: () => ipcRenderer.invoke('window:close'),
+  onWindowMaximizeChanged: (cb) => ipcRenderer.on('window:maximize-changed', (_e, isMax) => cb(Boolean(isMax))),
 
   // Event Listeners from Main Process
   onStateUpdate: (cb) => ipcRenderer.on('state:update', (_e, data) => cb(data)),

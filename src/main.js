@@ -44,6 +44,7 @@ const { setupDownloadListener } = require('./main/downloads');
 const { broadcastCookiesUpdate, cancelScheduledCookiesBroadcast } = require('./main/cookies');
 const { restorePersistedExtensions } = require('./main/extensions');
 const { loadBundledGxExtension } = require('./main/gx-extension');
+const { ensureBundledAdguardExtension } = require('./main/adguard-extension');
 const { configureShortcuts } = require('./main/shortcuts');
 const { closePopover } = require('./main/popovers');
 const { closeSidebarPanel } = require('./main/sidebar');
@@ -133,9 +134,15 @@ if (gotSingleInstanceLock) {
 
     // Non-blocking post-window startup tasks so first frame renders immediately
     setTimeout(() => {
-      restorePersistedExtensions().catch((err) => {
-        console.error('[Extensions] Startup restore failed:', err);
-      });
+      restorePersistedExtensions()
+        .catch((err) => {
+          console.error('[Extensions] Startup restore failed:', err);
+        })
+        .finally(() => {
+          ensureBundledAdguardExtension().catch((err) => {
+            console.error('[AdGuard] Bundled provision failed:', err);
+          });
+        });
     }, 50);
     setTimeout(() => {
       // Best-effort: load the bundled GX extension (ad-block DNR rules +

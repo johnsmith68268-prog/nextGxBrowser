@@ -1819,6 +1819,280 @@
       font-family: var(--nx-font-mono);
       font-size: 12.5px;
     }
+
+    /* Hide multiple-profiles section per single-profile minimalist design */
+    #profilesCard,
+    [data-settings-cat="profiles"],
+    .settings-card-profiles {
+      display: none !important;
+    }
+
+    /* Opera GX Minimalist Centered Settings Layout */
+    body[data-active-page="settings"] {
+      background-color: #0b0a14;
+      background-image:
+        radial-gradient(ellipse 68% 46% at 50% 45%, rgba(10, 9, 18, 0.96) 0%, rgba(11, 10, 20, 0.25) 70%, transparent 100%),
+        linear-gradient(color-mix(in srgb, var(--accent) 8%, rgba(255, 255, 255, 0.03)) 1px, transparent 1px),
+        linear-gradient(90deg, color-mix(in srgb, var(--accent) 8%, rgba(255, 255, 255, 0.03)) 1px, transparent 1px);
+      background-size: 100% 100%, 42px 42px, 42px 42px;
+    }
+
+    body[data-active-page="settings"] .webui-topbar {
+      display: none;
+    }
+
+    body[data-active-page="settings"] .webui-nav {
+      display: none;
+    }
+
+    body[data-active-page="settings"] .webui-main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 26px 24px 64px;
+      width: 100%;
+    }
+
+    .settings-gx-hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+      margin-bottom: 28px;
+    }
+
+    .settings-gx-topnav {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+
+    .settings-gx-toplink {
+      background: transparent;
+      border: none;
+      color: rgba(212, 216, 236, 0.62);
+      font-family: var(--nx-font-display);
+      font-size: 11.5px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      cursor: pointer;
+      padding: 4px 2px;
+      transition: color 140ms ease;
+    }
+
+    .settings-gx-toplink:hover {
+      color: var(--text-primary);
+    }
+
+    .settings-gx-toplink.active {
+      color: #ffffff;
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: 0.10em;
+      padding: 0 10px;
+      text-shadow: 0 0 24px color-mix(in srgb, var(--accent) 42%, transparent);
+    }
+
+    .settings-gx-searchbar {
+      width: 100%;
+      max-width: 680px;
+      height: 38px;
+      border-radius: 7px;
+      background: rgba(20, 18, 32, 0.88);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      gap: 10px;
+      color: rgba(212, 216, 236, 0.52);
+      transition: border-color 150ms ease, box-shadow 150ms ease;
+    }
+
+    .settings-gx-searchbar:focus-within {
+      border-color: color-mix(in srgb, var(--accent) 62%, transparent);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent);
+    }
+
+    .settings-gx-searchbar input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text-primary);
+      font-size: 13px;
+    }
+
+    .settings-gx-shell {
+      display: grid;
+      grid-template-columns: 224px minmax(0, 720px);
+      justify-content: center;
+      gap: 28px;
+      align-items: start;
+    }
+
+    body[data-active-page="settings"] .settings-subnav {
+      position: sticky;
+      top: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 12px 9px;
+      border-radius: 10px;
+      background: rgba(20, 18, 32, 0.86);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.42);
+      margin-bottom: 0;
+    }
+
+    .settings-subnav-sep {
+      height: 1px;
+      margin: 7px 6px;
+      background: rgba(255, 255, 255, 0.07);
+      flex-shrink: 0;
+    }
+
+    body[data-active-page="settings"] .settings-tab-pill {
+      width: 100%;
+      justify-content: flex-start;
+      text-align: left;
+      padding: 8px 11px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: rgba(220, 224, 244, 0.72);
+      font-size: 10.5px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+    }
+
+    body[data-active-page="settings"] .settings-tab-pill:hover {
+      background: rgba(255, 255, 255, 0.045);
+      color: #ffffff;
+    }
+
+    body[data-active-page="settings"] .settings-tab-pill.active {
+      background: color-mix(in srgb, var(--accent) 18%, rgba(255, 255, 255, 0.05));
+      border-color: color-mix(in srgb, var(--accent) 44%, transparent);
+      color: #ffffff;
+      box-shadow: inset 2px 0 0 var(--accent-bright);
+    }
+
+    .settings-gx-content {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      min-width: 0;
+    }
+
+    body[data-active-page="settings"] .section-card {
+      background: rgba(21, 19, 34, 0.86);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      border-radius: 10px;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.34);
+      margin-bottom: 0;
+    }
+
+    body[data-active-page="settings"] .card-header {
+      padding: 13px 20px;
+      background: rgba(255, 255, 255, 0.015);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+    }
+
+    body[data-active-page="settings"] .card-header h2 {
+      font-size: 11.5px;
+      letter-spacing: 0.11em;
+      text-transform: uppercase;
+      color: rgba(235, 238, 252, 0.78);
+    }
+
+    .set-wp-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 9px;
+      width: 100%;
+    }
+
+    .set-wp-thumb {
+      height: 58px;
+      border-radius: 7px;
+      border: 2px solid rgba(255, 255, 255, 0.08);
+      background-size: cover;
+      background-position: center;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 140ms ease, transform 140ms ease;
+    }
+
+    .set-wp-thumb:hover {
+      transform: translateY(-1px);
+      border-color: rgba(255, 255, 255, 0.3);
+    }
+
+    .set-wp-thumb.active {
+      border-color: var(--accent-bright);
+      box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 45%, transparent);
+    }
+
+    .set-wp-thumb span {
+      position: absolute;
+      inset: auto 0 0 0;
+      padding: 2px 4px;
+      font-size: 9.5px;
+      font-weight: 600;
+      color: #fff;
+      background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.82));
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .set-radio-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: 100%;
+    }
+
+    .set-radio-opt {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12.5px;
+      color: var(--text-primary);
+      cursor: pointer;
+    }
+
+    .set-radio-opt input {
+      accent-color: var(--accent-bright);
+      cursor: pointer;
+    }
+
+    @media (max-width: 900px) {
+      .settings-gx-shell {
+        grid-template-columns: 1fr;
+      }
+      body[data-active-page="settings"] .settings-subnav {
+        position: static;
+        flex-direction: row;
+        flex-wrap: wrap;
+      }
+      body[data-active-page="settings"] .settings-tab-pill {
+        width: auto;
+      }
+      .set-wp-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
   </style>
 </head>
 <body>

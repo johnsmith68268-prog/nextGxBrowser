@@ -96,6 +96,15 @@ function broadcastSystemStatsNow({ sample = null } = {}) {
     if (ctx.win && !ctx.win.isDestroyed()) {
       ctx.win.webContents.send('system:stats-update', stats);
     }
+    if (
+      ctx.shellDrawerState &&
+      ctx.shellDrawerState.open &&
+      ctx.drawerOverlayView &&
+      ctx.drawerOverlayView.webContents &&
+      !ctx.drawerOverlayView.webContents.isDestroyed()
+    ) {
+      ctx.drawerOverlayView.webContents.send('system:stats-update', stats);
+    }
     for (const tab of ctx.tabs.values()) {
       if (
         !tab ||
@@ -121,10 +130,6 @@ function shouldPollMetricsFast() {
   for (const ctx of windowContexts.values()) {
     if (!ctx || !ctx.win || ctx.win.isDestroyed()) continue;
     if (ctx.gxControlOpen) return true;
-    const activeTab = ctx.activeTabId ? ctx.tabs.get(ctx.activeTabId) : null;
-    if (activeTab && !activeTab.sleeping && isNewTabUrl(activeTab.url)) {
-      return true;
-    }
   }
   return false;
 }
@@ -266,19 +271,34 @@ function startBackgroundTimers() {
     let splitView = null;
     try { splitView = require('./splitview'); } catch (_) {}
     for (const ctx of windowContexts.values()) {
+      // Adaptive multi-tab anti-lag: when more than 6 live tabs are open in a window,
+      // hibernate the oldest idle background tabs (> 90s idle) down to 6 live tabs so
+      // opening many tabs never bogs down CPU/RAM.
+      const eligible = [];
+      let liveCount = 0;
       for (const [id, tab] of ctx.tabs.entries()) {
+        if (!tab || tab.sleeping) continue;
+        liveCount += 1;
         const pipActive = Boolean(tab?.pipActive || playerMod().getTabVideoState(tab)?.pipActive);
         const inSplit = Boolean(splitView && typeof splitView.isTabInVisibleSplit === 'function' && splitView.isTabInVisibleSplit(ctx, id));
         if (
           id !== ctx.activeTabId &&
           !inSplit &&
-          !tab.sleeping &&
           !tab.pinned &&
           !tab.audible &&
           !pipActive &&
-          now - tab.lastActiveAt >= timeoutMs
+          !tab.isLoading
         ) {
-          sleepTab(ctx, id);
+          eligible.push({ id, tab, idleMs: now - (tab.lastActiveAt || 0) });
+        }
+      }
+      eligible.sort((a, b) => b.idleMs - a.idleMs);
+      for (const item of eligible) {
+        const shouldPressureSleep = liveCount > 6 && item.idleMs >= 90 * 1000;
+        const shouldNormalSleep = item.idleMs >= timeoutMs;
+        if (shouldPressureSleep || shouldNormalSleep) {
+          sleepTab(ctx, item.id);
+          liveCount -= 1;
         }
       }
     }

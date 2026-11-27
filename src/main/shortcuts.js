@@ -132,6 +132,11 @@ function attachKeyboardShortcuts(ctx, webContents) {
           ctx.popoverOpenKind === 'omnibox-suggest-alt';
         if (!isOmnibox) event.preventDefault();
         shortcutDeps.closePopover(ctx, { restoreFocus: !isOmnibox });
+      } else if (ctx.shellDrawerState && ctx.shellDrawerState.open) {
+        event.preventDefault();
+        try {
+          require('./drawer-overlay').closeShellDrawer(ctx);
+        } catch (_) {}
       } else if (ctx.sidebarPanel && ctx.sidebarPanel.open && !ctx.sidebarPanel.pinned) {
         event.preventDefault();
         if (typeof shortcutDeps.closeSidebarPanel === 'function') {

@@ -30,6 +30,7 @@ const {
 const {
   serializeTabs,
   broadcastState,
+  scheduleBroadcastState,
   getCtxFromSender,
   notifyActiveWebUiTabShown,
   broadcastHistoryUpdate,
@@ -46,7 +47,66 @@ const gxControl = require('./gxcontrol');
 const player = require('./player');
 const splitView = require('./splitview');
 const sidebarMod = () => require('./sidebar');
+const drawerOverlayMod = () => require('./drawer-overlay');
 const TAB_AUDIO_HOLD_MS = 3000;
+const MAX_CONCURRENT_BG_LOADS = 2;
+const MAX_LIVE_TABS_SOFT_CAP = 8;
+
+function extractCleanDomainTitle(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    if (u.protocol === 'http:' || u.protocol === 'https:') {
+      return u.host.replace(/^www\.(?=[^.]+\.)/i, '') || rawUrl;
+    }
+  } catch (_) {}
+  return rawUrl || 'New Tab';
+}
+
+function countTabLoadMetrics(ctx) {
+  let bgLoadingCount = 0;
+  let liveTabCount = 0;
+  if (!ctx || !ctx.tabs) return { bgLoadingCount, liveTabCount };
+  for (const t of ctx.tabs.values()) {
+    if (!t) continue;
+    if (!t.sleeping && t.view) {
+      liveTabCount += 1;
+      if (t.id !== ctx.activeTabId && t.isLoading) {
+        bgLoadingCount += 1;
+      }
+    }
+  }
+  return { bgLoadingCount, liveTabCount };
+}
+
+function pumpQueuedBackgroundTabs(ctx) {
+  if (!ctx || !ctx.tabs || !ctx.win || ctx.win.isDestroyed()) return;
+  let { bgLoadingCount, liveTabCount } = countTabLoadMetrics(ctx);
+  if (bgLoadingCount >= MAX_CONCURRENT_BG_LOADS || liveTabCount >= MAX_LIVE_TABS_SOFT_CAP) return;
+
+  let changed = false;
+  for (const id of ctx.tabOrder || []) {
+    if (bgLoadingCount >= MAX_CONCURRENT_BG_LOADS || liveTabCount >= MAX_LIVE_TABS_SOFT_CAP) break;
+    const t = ctx.tabs.get(id);
+    if (!t || !t._queuedBgLoad || !t.sleeping) continue;
+    t._queuedBgLoad = false;
+    t.sleeping = false;
+    t.isLoading = true;
+    t.view = buildWebContentsViewForTab(ctx, t);
+    try {
+      if (typeof t.view.setVisible === 'function') t.view.setVisible(false);
+      t.view.setBounds({ x: -5000, y: -5000, width: 1, height: 1 });
+    } catch (_) {}
+    const targetUrl = appendInternalUrlParams(t.url || NEW_TAB_FILE_URL, ctx);
+    t.url = targetUrl;
+    t.view.webContents.loadURL(targetUrl).catch(() => {});
+    bgLoadingCount += 1;
+    liveTabCount += 1;
+    changed = true;
+  }
+  if (changed) {
+    scheduleBroadcastState(ctx);
+  }
+}
 
 function clearTabAudioHoldTimer(tab) {
   if (tab && tab._audioHoldTimer) {
@@ -77,12 +137,18 @@ function buildWebContentsViewForTab(ctx, tab) {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      backgroundThrottling: true,
       session: ctx.session,
       plugins: true
     }
   });
 
   const wc = view.webContents;
+  try {
+    if (typeof wc.setBackgroundThrottling === 'function') {
+      wc.setBackgroundThrottling(true);
+    }
+  } catch (_) {}
   registerWebContents(wc, ctx.win.id);
   wc.setUserAgent(wc.getUserAgent().replace(/Electron\/[^\s]+\s?/g, ''));
   attachKeyboardShortcuts(ctx, wc);
@@ -101,12 +167,20 @@ function buildWebContentsViewForTab(ctx, tab) {
   wc.on('focus', () => {
     splitView.onTabWebContentsFocused(ctx, tab.id);
     if (ctx.popoverOpenKind) closePopover(ctx);
+    drawerOverlayMod().closeShellDrawer(ctx);
     sidebarMod().closeSidebarIfUnpinned(ctx, { restoreFocus: false });
   });
 
-  wc.setWindowOpenHandler(({ url }) => {
+  wc.setWindowOpenHandler(({ url, disposition }) => {
     if (url && /^https?:\/\//i.test(url)) {
-      createTab(ctx, { url, incognito: ctx.incognito, active: true });
+      const parentIdx = Array.isArray(ctx.tabOrder) ? ctx.tabOrder.indexOf(tab.id) : -1;
+      const openInBg = disposition === 'background-tab';
+      createTab(ctx, {
+        url,
+        incognito: ctx.incognito,
+        active: !openInBg,
+        insertIndex: parentIdx >= 0 ? parentIdx + 1 : undefined
+      });
     }
     return { action: 'deny' };
   });
@@ -114,7 +188,7 @@ function buildWebContentsViewForTab(ctx, tab) {
   wc.on('did-start-loading', () => {
     tab.isLoading = true;
     gxControl.onTabNavigated(ctx, tab, { forceReapply: false });
-    broadcastState(ctx);
+    scheduleBroadcastState(ctx);
   });
 
   wc.on('did-stop-loading', () => {
@@ -135,6 +209,7 @@ function buildWebContentsViewForTab(ctx, tab) {
       wc.removeInsertedCSS?.(k).catch(() => {});
     }
     broadcastState(ctx);
+    pumpQueuedBackgroundTabs(ctx);
   });
 
   const shouldSkipHistory = (url) =>
@@ -161,13 +236,17 @@ function buildWebContentsViewForTab(ctx, tab) {
       broadcastHistoryUpdate({ profileId: ctx.profileId });
     }
     player.onTabMetadataChanged(ctx, tab);
-    broadcastState(ctx);
+    scheduleBroadcastState(ctx);
     scheduleSessionSave(ctx);
   });
 
   wc.on('page-favicon-updated', (_e, favicons) => {
     if (Array.isArray(favicons) && favicons.length > 0 && !isErrorPageUrl(tab.url)) {
-      const safeFavicon = sanitizeFaviconUrl(favicons[0]);
+      let safeFavicon = '';
+      for (let i = 0; i < favicons.length; i++) {
+        safeFavicon = sanitizeFaviconUrl(favicons[i]);
+        if (safeFavicon) break;
+      }
       if (!safeFavicon || safeFavicon === tab.favicon) return;
       tab.favicon = safeFavicon;
       if (!ctx.incognito && !shouldSkipHistory(tab.url)) {
@@ -179,12 +258,13 @@ function buildWebContentsViewForTab(ctx, tab) {
         }
       }
       player.onTabMetadataChanged(ctx, tab);
-      broadcastState(ctx);
+      scheduleBroadcastState(ctx);
     }
   });
 
   const handleUrlChange = (url) => {
     if (url && url.startsWith('chrome-error://')) return;
+    const prevOrigin = getOriginForUrl(tab.url);
     tab.url = url;
     // [TABS-W2] Mute follows the site: navigating a muted tab to another
     // origin unmutes it, navigating onto a muted origin mutes it.
@@ -231,6 +311,13 @@ function buildWebContentsViewForTab(ctx, tab) {
       } catch (_) {}
     } else {
       tab.failedUrl = '';
+      const nextOrigin = getOriginForUrl(url);
+      if (nextOrigin && prevOrigin && nextOrigin !== prevOrigin) {
+        tab.favicon = '';
+      }
+      if (!tab.favicon && nextOrigin && /^https?:\/\//i.test(url)) {
+        tab.favicon = `${nextOrigin}/favicon.ico`;
+      }
       try {
         if (wc.navigationHistory) {
           const activeIdx = wc.navigationHistory.getActiveIndex();
@@ -287,6 +374,7 @@ function buildWebContentsViewForTab(ctx, tab) {
     if (canLoadErrorPage) {
       wc.loadURL(errorPageUrl).catch(() => {});
     }
+    pumpQueuedBackgroundTabs(ctx);
   });
 
   wc.on('did-navigate', (_e, url) => {
@@ -468,13 +556,32 @@ function createTabInternal(
     }
   }
 
-  const startAsleep = Boolean(sleeping && deferActivate);
+  const startAsleepManual = Boolean(sleeping && deferActivate);
+  const isBgWebTab = Boolean(
+    !active &&
+      !deferActivate &&
+      ctx.activeTabId &&
+      /^https?:\/\//i.test(resolvedUrl) &&
+      !isErrorPageUrl(resolvedUrl)
+  );
+  const { bgLoadingCount, liveTabCount } = isBgWebTab ? countTabLoadMetrics(ctx) : { bgLoadingCount: 0, liveTabCount: 0 };
+  const shouldThrottleNewBgTab = isBgWebTab && (bgLoadingCount >= MAX_CONCURRENT_BG_LOADS || liveTabCount >= MAX_LIVE_TABS_SOFT_CAP);
+  const startAsleep = startAsleepManual || shouldThrottleNewBgTab;
+
+  const initialOrigin =
+    /^https?:\/\//i.test(resolvedUrl) && !isErrorPageUrl(resolvedUrl)
+      ? getOriginForUrl(resolvedUrl)
+      : '';
+  const effectiveInitialTitle =
+    shouldThrottleNewBgTab && initialTitle === 'Loading...'
+      ? extractCleanDomainTitle(resolvedUrl)
+      : initialTitle;
   const tab = {
     id,
-    title: initialTitle,
+    title: effectiveInitialTitle,
     url: resolvedUrl,
     failedUrl: '',
-    favicon: '',
+    favicon: initialOrigin ? `${initialOrigin}/favicon.ico` : '',
     isLoading: !startAsleep,
     canGoBack: false,
     canGoForward: false,
@@ -483,6 +590,7 @@ function createTabInternal(
     groupId: resolvedGroupId,
     incognito: Boolean(ctx.incognito),
     sleeping: startAsleep,
+    _queuedBgLoad: Boolean(shouldThrottleNewBgTab && liveTabCount < MAX_LIVE_TABS_SOFT_CAP),
     audible: false,
     // [TABS-W2] Mute-site state (gap 8.2/8.6). Not serialized by broadcast.js,
     // so the renderer learns it via the 'tabs:mute-state' event (see below).
@@ -559,6 +667,7 @@ function createTab(
 
 function wakeTab(ctx, tab) {
   if (!tab || !tab.sleeping) return;
+  tab._queuedBgLoad = false;
   tab.sleeping = false;
   tab.lastActiveAt = Date.now();
   tab.view = buildWebContentsViewForTab(ctx, tab);
@@ -608,6 +717,7 @@ function switchTab(ctx, tabId) {
   // is a no-op for them), and the grace period is bypassed here because
   // a deliberate tab switch is not an accidental click.
   sidebarMod().closeSidebarIfUnpinned(ctx, { restoreFocus: false, ignoreGrace: true });
+  drawerOverlayMod().closeShellDrawer(ctx);
   // [TABS-W2] MRU order for Ctrl+Tab (gap 5.1): most recently activated first.
   if (!Array.isArray(ctx._mruTabIds)) ctx._mruTabIds = [];
   const mruIdx = ctx._mruTabIds.indexOf(tabId);
@@ -1739,6 +1849,7 @@ function openOrFocusGxCornerTab(ctx) {
   }
   if (!ctx.win || ctx.win.isDestroyed()) return serializeTabs(ctx);
   sidebarMod().closeSidebarIfUnpinned(ctx, { restoreFocus: false, ignoreGrace: true });
+  drawerOverlayMod().closeShellDrawer(ctx);
   const activeWsId = ctx.incognito ? DEFAULT_WORKSPACE_ID : ctx.activeWorkspaceId || DEFAULT_WORKSPACE_ID;
 
   // Prefer an existing GX Corner tab in the current workspace (or pinned)

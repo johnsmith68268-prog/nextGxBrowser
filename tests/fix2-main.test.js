@@ -494,10 +494,10 @@ function makeFakeCtx() {
   };
 }
 
-test('fix2-1: clampSidebarWidth clamps to 260–800 and defaults on garbage', () => {
+test('fix2-1: clampSidebarWidth clamps to 260–1600 and defaults on garbage', () => {
   const sidebar = require('../src/main/sidebar');
   assert.equal(sidebar.clampSidebarWidth(100), 260);
-  assert.equal(sidebar.clampSidebarWidth(900), 800);
+  assert.equal(sidebar.clampSidebarWidth(2000), 1600);
   assert.equal(sidebar.clampSidebarWidth(500), 500);
   assert.equal(sidebar.clampSidebarWidth('nope'), 380);
   assert.equal(sidebar.clampSidebarWidth(undefined), 380);
@@ -562,11 +562,11 @@ test('fix2-1: setSidebarWidth persists the width on release (drag end)', () => {
   sidebar.setSidebarWidth(ctx, 500, { persist: false });
   assert.equal(storage._updateCalls.length, 0);
   // Release persists, clamped.
-  const state = sidebar.setSidebarWidth(ctx, 900, { persist: true });
+  const state = sidebar.setSidebarWidth(ctx, 2000, { persist: true });
   assert.equal(storage._updateCalls.length, 1);
-  assert.equal(storage._updateCalls[0].sidebarPanelWidth, 800);
-  assert.equal(state.width, 800);
-  assert.equal(storage.getSettings().sidebarPanelWidth, 800);
+  assert.equal(storage._updateCalls[0].sidebarPanelWidth, 1600);
+  assert.equal(state.width, 1600);
+  assert.equal(storage.getSettings().sidebarPanelWidth, 1600);
 });
 
 test('fix2-4: sidebar service meta carries a load-error state (Discord blank panel)', () => {

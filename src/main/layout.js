@@ -10,6 +10,7 @@ const {
 
 const fullscreenMod = () => require('./fullscreen');
 const splitViewMod = () => require('./splitview');
+const drawerOverlayMod = () => require('./drawer-overlay');
 
 const EFFECTIVE_PANEL_MIN_FLOOR = 240;
 const MIN_TAB_VIEWPORT_WIDTH = 160;
@@ -26,6 +27,11 @@ function hideView(view) {
   if (!view) return;
   setViewVisible(view, false);
   try {
+    if (view.webContents && typeof view.webContents.setFrameRate === 'function' && !view.webContents.isDestroyed()) {
+      view.webContents.setFrameRate(1);
+    }
+  } catch (_) {}
+  try {
     view.setBounds(PARKED_BOUNDS);
   } catch (_) {}
 }
@@ -33,6 +39,11 @@ function hideView(view) {
 function showView(view, bounds) {
   if (!view) return;
   setViewVisible(view, true);
+  try {
+    if (view.webContents && typeof view.webContents.setFrameRate === 'function' && !view.webContents.isDestroyed()) {
+      view.webContents.setFrameRate(60);
+    }
+  } catch (_) {}
   if (bounds) {
     try {
       view.setBounds(bounds);
@@ -49,20 +60,20 @@ function getMaxEffectiveSidebarPanelWidth(ctx) {
     EFFECTIVE_PANEL_MIN_FLOOR,
     Math.floor(contentWidth - SIDEBAR_ICON_WIDTH - rightOffset - MIN_TAB_VIEWPORT_WIDTH)
   );
-  // Allow dragging the sidebar panel all the way up to SIDEBAR_PANEL_MAX_WIDTH (800px)
-  // or 72% of the window (leaving at least MIN_TAB_VIEWPORT_WIDTH for the active tab).
-  const proportionalCap = Math.floor(contentWidth * 0.72);
+  // Allow dragging the sidebar panel up to 75% of the window (at least 70%+, up to SIDEBAR_PANEL_MAX_WIDTH),
+  // while leaving at least MIN_TAB_VIEWPORT_WIDTH for the active tab.
+  const proportionalCap = Math.floor(contentWidth * 0.75);
   return Math.min(SIDEBAR_PANEL_MAX_WIDTH, proportionalCap, maxAvail);
 }
 
-// Pure, unit-testable form of the 50%-of-window cap (no BrowserWindow needed).
+// Pure, unit-testable form of the 75%-of-window cap (no BrowserWindow needed).
 function clampSidebarPanelWidthForWindow(rawWidth, contentWidth) {
   const base = Math.max(
     SIDEBAR_PANEL_MIN_WIDTH,
     Math.min(SIDEBAR_PANEL_MAX_WIDTH, Math.round(Number(rawWidth) || SIDEBAR_PANEL_DEFAULT_WIDTH))
   );
   if (!Number.isFinite(contentWidth) || contentWidth <= 0) return base;
-  return Math.min(base, Math.floor(contentWidth / 2));
+  return Math.min(base, Math.floor(contentWidth * 0.75));
 }
 
 function getEffectiveSidebarPanelWidth(ctx, rawWidth) {
@@ -92,6 +103,9 @@ function bringOverlaysToFront(ctx) {
       ctx.win.contentView.addChildView(activePanelView);
     }
   }
+  if (ctx.drawerOverlayView && ctx.shellDrawerState && ctx.shellDrawerState.open) {
+    ctx.win.contentView.addChildView(ctx.drawerOverlayView);
+  }
   if (ctx.popoverView && ctx.popoverOpenKind) {
     ctx.win.contentView.addChildView(ctx.popoverView);
   }
@@ -114,6 +128,7 @@ function hideAllContentViews(ctx) {
       if (view) hideView(view);
     }
   }
+  if (ctx.drawerOverlayView) hideView(ctx.drawerOverlayView);
   if (ctx.popoverView) hideView(ctx.popoverView);
   if (ctx.extensionPopupView) hideView(ctx.extensionPopupView);
   if (ctx.screenshotView) hideView(ctx.screenshotView);
@@ -264,6 +279,12 @@ function updateActiveViewBounds(ctx) {
     } else {
       hideView(ctx.screenshotView);
     }
+  }
+
+  if (ctx.drawerOverlayView) {
+    try {
+      drawerOverlayMod().updateShellDrawerBounds(ctx);
+    } catch (_) {}
   }
 
   bringOverlaysToFront(ctx);

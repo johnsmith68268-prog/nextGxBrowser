@@ -1,5 +1,9 @@
 const SIDEBAR_ICON_WIDTH = 50;
 const RAIL_EXPANDED_WIDTH = 184;
+const IS_DRAWER_OVERLAY = new URLSearchParams(window.location.search).get('overlay') === '1';
+if (IS_DRAWER_OVERLAY && document.body) {
+  document.body.classList.add('is-drawer-overlay');
+}
 const TOP_CHROME_HEIGHT = 82;
 const BOOKMARKS_BAR_HEIGHT = 30;
 const FIND_BAR_HEIGHT = 38;
@@ -7,7 +11,7 @@ const LEFT_TOOL_WIDTH = 340;
 const RIGHT_DRAWER_WIDTH = 360;
 const SIDEBAR_PANEL_DEFAULT_WIDTH = 380;
 const SIDEBAR_PANEL_MIN_WIDTH = 260;
-const SIDEBAR_PANEL_MAX_WIDTH = 800;
+const SIDEBAR_PANEL_MAX_WIDTH = 1600;
 const SPLIT_DIVIDER_WIDTH = 6;
 const SPLIT_MIN_RATIO = 0.2;
 const SPLIT_MAX_RATIO = 0.8;
@@ -163,20 +167,17 @@ function formatBytes(bytes) {
   return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
 }
 
-// [URLBAR-3.1] Chrome-style omnibox elision: show host + path only, hide the
-// scheme for http(s) URLs. Display-only — the full URL is always kept internally
-// (navigation, copy and focus all use the real URL).
+// [URLBAR-3.1] Minimalist Opera GX / Safari omnibox elision: when unfocused,
+// show only the clean domain (e.g. "youtube.com", stripping protocol, "www.",
+// and path/query clutter). Clicking/focusing the omnibox reveals the full URL.
 function elideUrlForDisplay(rawUrl) {
   if (!rawUrl || typeof rawUrl !== 'string') return '';
   try {
     const u = new URL(rawUrl);
     if (u.protocol === 'http:' || u.protocol === 'https:') {
-      // u.host keeps hostname + port and drops any user:pass credentials.
-      const rest = u.pathname + u.search + u.hash;
-      if (rest === '/' || rest === '') return u.host;
-      return u.host + rest;
+      return u.host.replace(/^www\.(?=[^.]+\.)/i, '');
     }
-  } catch (_) {}
+  } catch (_) { }
   // Non-web schemes (nextgx://, chrome-extension://, about:blank, …) show as-is.
   return rawUrl;
 }
@@ -222,10 +223,11 @@ function getEffectiveSidebarPanelWidth(rawWidth) {
   if (!contentWidth) return base;
   const rightOffset = activeRightDrawer ? RIGHT_DRAWER_WIDTH : 0;
   const maxAvail = Math.max(240, Math.floor(contentWidth - SIDEBAR_ICON_WIDTH - rightOffset - 160));
-  return Math.min(base, maxAvail, Math.floor(contentWidth * 0.72));
+  return Math.min(base, maxAvail, Math.floor(contentWidth * 0.75));
 }
 
 function syncLayoutOffsets() {
+  if (IS_DRAWER_OVERLAY) return;
   // Fix2-shell A2: an expanded rail is a 184 px absolute overlay, so an
   // open left drawer / pinned sidebar panel must start at its edge, not at
   // the collapsed 50 px edge — otherwise the drawer slides underneath the
@@ -277,7 +279,7 @@ function getBookmarkFaviconUrl(bm) {
       if (u.protocol === 'http:' || u.protocol === 'https:') {
         return `${u.origin}/favicon.ico`;
       }
-    } catch (_) {}
+    } catch (_) { }
   }
   return '';
 }
@@ -458,9 +460,8 @@ function renderBookmarksBar(list) {
   allBtn.className = 'bm-bar-item bm-bar-folder bm-bar-all';
   if (openBookmarkFolderName === 'All Bookmarks') allBtn.classList.add('open');
   allBtn.dataset.bmFolder = 'All Bookmarks';
-  allBtn.title = `All Bookmarks (${cachedBookmarks.length} ${
-    cachedBookmarks.length === 1 ? 'bookmark' : 'bookmarks'
-  })`;
+  allBtn.title = `All Bookmarks (${cachedBookmarks.length} ${cachedBookmarks.length === 1 ? 'bookmark' : 'bookmarks'
+    })`;
   allBtn.innerHTML = `
     <span class="bm-favicon-wrap">
       <svg class="bm-fallback-svg bm-folder-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
@@ -534,10 +535,10 @@ let userScrolledTabStrip = false;
 function hasDraggedTab(e) {
   return Boolean(
     draggedTabId ||
-      (e.dataTransfer &&
-        e.dataTransfer.types &&
-        (e.dataTransfer.types.includes('application/x-nextgx-tab-id') ||
-          e.dataTransfer.types.includes('text/plain')))
+    (e.dataTransfer &&
+      e.dataTransfer.types &&
+      (e.dataTransfer.types.includes('application/x-nextgx-tab-id') ||
+        e.dataTransfer.types.includes('text/plain')))
   );
 }
 
@@ -648,14 +649,9 @@ function updateTabScrollButtons() {
 
 function renderWorkspaces(state) {
   if (!workspacePills || !workspacePillsList) return;
-  const isPrivate =
-    Boolean(state?.windowIncognito) ||
-    document.documentElement.getAttribute('data-incognito') === 'true';
-  if (isPrivate) {
-    workspacePills.classList.add('hidden');
-    return;
-  }
-  workspacePills.classList.remove('hidden');
+  // Single-profile minimalist Opera GX top bar: keep workspace pills hidden
+  workspacePills.classList.add('hidden');
+  return;
 
   const workspaces = Array.isArray(state?.workspaces) && state.workspaces.length
     ? state.workspaces
@@ -815,8 +811,8 @@ function buildTabElement(tab, group, state, activeWsGroupsList, otherClosableCou
     ? tab.id === split.leftTabId
       ? 'left'
       : tab.id === split.rightTabId
-      ? 'right'
-      : null
+        ? 'right'
+        : null
     : null;
   const isSplitVisible = Boolean(splitRole && split && split.visible);
 
@@ -848,16 +844,16 @@ function buildTabElement(tab, group, state, activeWsGroupsList, otherClosableCou
 
   // Loading indicator spins around the corner Stop (✕) button (#btnReload.is-stop)
   // rather than replacing the tab favicon in the top strip (tab-loading-spinner kept for CSS compat).
+  // Capture-phase error listener swaps broken favicons to .tab-favicon-fallback cleanly.
   const iconHtml = tab.favicon
-    ? `<img class="tab-favicon" draggable="false" src="${escapeHtml(tab.favicon)}" alt="" onerror="this.style.display='none'" />`
+    ? `<img class="tab-favicon" draggable="false" src="${escapeHtml(tab.favicon)}" alt="" />`
     : `<svg class="tab-favicon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8"/></svg>`;
 
   const splitSvg = splitRole
-    ? `<span class="tab-split-badge" title="Split view (${splitRole === 'left' ? 'Left' : 'Right'} pane)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/>${
-        splitRole === 'left'
-          ? '<rect x="4.5" y="5.5" width="7" height="13" rx="1" fill="currentColor" stroke="none"/>'
-          : '<rect x="12.5" y="5.5" width="7" height="13" rx="1" fill="currentColor" stroke="none"/>'
-      }<line x1="12" y1="4" x2="12" y2="20"/></svg></span>`
+    ? `<span class="tab-split-badge" title="Split view (${splitRole === 'left' ? 'Left' : 'Right'} pane)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/>${splitRole === 'left'
+      ? '<rect x="4.5" y="5.5" width="7" height="13" rx="1" fill="currentColor" stroke="none"/>'
+      : '<rect x="12.5" y="5.5" width="7" height="13" rx="1" fill="currentColor" stroke="none"/>'
+    }<line x1="12" y1="4" x2="12" y2="20"/></svg></span>`
     : '';
 
   // [TABS-W2] Gap 8.2/8.6 — speaker button (click to mute/unmute the site);
@@ -1022,8 +1018,8 @@ function buildTabElement(tab, group, state, activeWsGroupsList, otherClosableCou
           ? tab.id === liveState.split.leftTabId
             ? 'left'
             : tab.id === liveState.split.rightTabId
-            ? 'right'
-            : null
+              ? 'right'
+              : null
           : null,
         splitFocusedPane: liveState.split?.focusedPane || null,
         groupId: liveTab.pinned ? null : liveTab.groupId || null,
@@ -1116,9 +1112,8 @@ function buildGroupPillElement(group, groupTabs, state) {
   pill.dataset.collapsed = isCollapsed ? '1' : '0';
   pill.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
   pill.title = isCollapsed
-    ? `${group.name} (${groupTabs.length} ${groupTabs.length === 1 ? 'tab' : 'tabs'})${
-        activeTabInGroup ? ` • Active: ${activeTabInGroup.title}` : ''
-      } — Click to expand, right-click to edit`
+    ? `${group.name} (${groupTabs.length} ${groupTabs.length === 1 ? 'tab' : 'tabs'})${activeTabInGroup ? ` • Active: ${activeTabInGroup.title}` : ''
+    } — Click to expand, right-click to edit`
     : `${group.name} (${groupTabs.length} ${groupTabs.length === 1 ? 'tab' : 'tabs'}) — Click to collapse, right-click to edit`;
 
   // Market audit bug #14: a collapsed pill only showed the group name and
@@ -1127,11 +1122,10 @@ function buildGroupPillElement(group, groupTabs, state) {
   const activeTabHtml =
     isCollapsed && activeTabInGroup
       ? `<span class="group-active-tab" title="${escapeHtml(activeTabInGroup.title || '')}">
-          ${
-            activeTabInGroup.favicon
-              ? `<img class="group-active-favicon" src="${escapeHtml(activeTabInGroup.favicon)}" alt="" onerror="this.remove()" />`
-              : '<span class="group-active-dot"></span>'
-          }
+          ${activeTabInGroup.favicon
+        ? `<img class="group-active-favicon" src="${escapeHtml(activeTabInGroup.favicon)}" alt="" onerror="this.remove()" />`
+        : '<span class="group-active-dot"></span>'
+      }
           <span class="group-active-title">${escapeHtml(activeTabInGroup.title || 'Untitled')}</span>
         </span>`
       : '';
@@ -1228,8 +1222,8 @@ function patchTabElementInPlace(el, tab, group, state) {
     ? split.leftTabId === tab.id
       ? 'left'
       : split.rightTabId === tab.id
-      ? 'right'
-      : null
+        ? 'right'
+        : null
     : null;
   const isSplitFocused = Boolean(splitRole && split.focusedPane === splitRole);
 
@@ -1251,26 +1245,24 @@ function patchTabElementInPlace(el, tab, group, state) {
   const nextFav = tab.favicon || '';
   if (prevFav !== nextFav) {
     el.dataset.favicon = nextFav;
-    const oldImg = el.querySelector('.tab-favicon');
-    const oldSvg = el.querySelector('.tab-favicon-svg');
+    const existingIcon = el.querySelector('img.tab-favicon, .tab-favicon-svg, .tab-favicon-fallback');
     if (nextFav) {
-      if (oldImg) {
-        oldImg.src = nextFav;
-        oldImg.style.display = '';
+      if (existingIcon && existingIcon.tagName === 'IMG') {
+        existingIcon.src = nextFav;
+        existingIcon.style.display = '';
       } else {
         const img = document.createElement('img');
         img.className = 'tab-favicon';
         img.draggable = false;
         img.alt = '';
         img.src = nextFav;
-        img.onerror = () => { img.style.display = 'none'; };
-        if (oldSvg) oldSvg.replaceWith(img);
+        if (existingIcon) existingIcon.replaceWith(img);
         else el.prepend(img);
       }
-    } else if (oldImg) {
+    } else if (existingIcon && !existingIcon.classList.contains('tab-favicon-svg')) {
       const wrap = document.createElement('span');
       wrap.innerHTML = `<svg class="tab-favicon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8"/></svg>`;
-      oldImg.replaceWith(wrap.firstElementChild);
+      existingIcon.replaceWith(wrap.firstElementChild);
     }
   }
 
@@ -1349,17 +1341,15 @@ function scheduleTabHoverCard(tab, group, tabEl) {
     // initial as the fallback when the favicon is missing or dead.
     const thumbLetter = (tab.title || 'Start Page').match(/[A-Za-z0-9]/)?.[0].toUpperCase() || 'N';
     card.innerHTML = `
-      <div class="tab-hover-thumb"><span class="tab-hover-thumb-letter">${escapeHtml(thumbLetter)}</span>${
-        tab.favicon
-          ? `<img class="tab-hover-thumb-img" src="${escapeHtml(tab.favicon)}" alt="" onerror="this.remove()" />`
-          : ''
+      <div class="tab-hover-thumb"><span class="tab-hover-thumb-letter">${escapeHtml(thumbLetter)}</span>${tab.favicon
+        ? `<img class="tab-hover-thumb-img" src="${escapeHtml(tab.favicon)}" alt="" onerror="this.remove()" />`
+        : ''
       }</div>
       <div class="tab-hover-head">
-        ${
-          tab.favicon
-            ? `<img class="tab-hover-favicon" src="${escapeHtml(tab.favicon)}" alt="" onerror="this.style.display='none'" />`
-            : `<svg class="tab-hover-favicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8"/></svg>`
-        }
+        ${tab.favicon
+        ? `<img class="tab-hover-favicon" src="${escapeHtml(tab.favicon)}" alt="" onerror="this.style.display='none'" />`
+        : `<svg class="tab-hover-favicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8"/></svg>`
+      }
         <span class="tab-hover-title">${escapeHtml(tab.title || 'Start Page')}</span>
       </div>
       <div class="tab-hover-url">${escapeHtml(tab.url || '')}</div>
@@ -1403,11 +1393,12 @@ function openTabSearchPopover() {
   }));
   rows.sort((a, b) => b.lastSeen - a.lastSeen || a.stripIndex - b.stripIndex);
   const chevron = document.getElementById('btnTabSearch');
-  const rect = chevron ? chevron.getBoundingClientRect() : { left: 210, bottom: 40 };
+  const rect = chevron ? chevron.getBoundingClientRect() : { left: 210, right: 610, bottom: 40 };
+  const popX = Math.max(8, Math.min((window.innerWidth || 1280) - 408, Math.round((rect.right || rect.left) - 400)));
   window.gxAPI.openPopover({
     kind: 'tab-search',
-    x: Math.round(rect.left),
-    y: Math.round(rect.bottom + 6),
+    x: popX,
+    y: Math.round(rect.bottom + 4),
     width: 400,
     height: 320,
     payload: {
@@ -1457,15 +1448,61 @@ async function getHistoryForSuggestions() {
   return historyCache;
 }
 
+const OMNIBOX_TOP_SITES = [
+  { title: 'YouTube', domain: 'youtube.com', url: 'https://www.youtube.com/' },
+  { title: 'YouTube Music', domain: 'music.youtube.com', url: 'https://music.youtube.com/' },
+  { title: 'GitHub', domain: 'github.com', url: 'https://github.com/' },
+  { title: 'Google', domain: 'google.com', url: 'https://www.google.com/' },
+  { title: 'ChatGPT', domain: 'chatgpt.com', url: 'https://chatgpt.com/' },
+  { title: 'Spotify', domain: 'open.spotify.com', url: 'https://open.spotify.com/' },
+  { title: 'Twitch', domain: 'twitch.tv', url: 'https://www.twitch.tv/' },
+  { title: 'Reddit', domain: 'reddit.com', url: 'https://www.reddit.com/' },
+  { title: 'Facebook', domain: 'facebook.com', url: 'https://www.facebook.com/' },
+  { title: 'Instagram', domain: 'instagram.com', url: 'https://www.instagram.com/' },
+  { title: 'WhatsApp', domain: 'web.whatsapp.com', url: 'https://web.whatsapp.com/' },
+  { title: 'Wikipedia', domain: 'wikipedia.org', url: 'https://www.wikipedia.org/' },
+  { title: 'Gmail', domain: 'mail.google.com', url: 'https://mail.google.com/' },
+  { title: 'Netflix', domain: 'netflix.com', url: 'https://www.netflix.com/' }
+];
+
+const SEARCH_ENGINE_LABELS = {
+  google: 'Google Search',
+  brave: 'Brave Search',
+  duckduckgo: 'DuckDuckGo Search',
+  bing: 'Bing Search',
+  ecosia: 'Ecosia Search'
+};
+
+function getCleanOmniboxUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') return '';
+  return rawUrl.replace(/^https?:\/\//i, '');
+}
+
+function getOmniboxDomain(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    return u.host.replace(/^www\.(?=[^.]+\.)/i, '').toLowerCase();
+  } catch (_) {
+    return '';
+  }
+}
+
+let lastOmniboxInputWasDelete = false;
+
 function pushOmniboxSuggestPopover(items, selectedIdx) {
   omniboxSuggestKindAlt = !omniboxSuggestKindAlt;
   const rect = addressForm.getBoundingClientRect();
+  const fullW = Math.max(400, Math.round(rect.width));
+  const hasSuggestionsSec = items.some((it) => it.section === 'suggestions');
+  const hasHistorySec = items.some((it) => it.section === 'history');
+  const headerH = (hasSuggestionsSec ? 30 : 0) + (hasHistorySec ? 32 : 0);
+  const targetH = Math.min(480, Math.max(84, 18 + headerH + items.length * 36));
   window.gxAPI.openPopover({
     kind: omniboxSuggestKindAlt ? 'omnibox-suggest-alt' : 'omnibox-suggest',
     x: Math.round(rect.left),
-    y: Math.round(rect.bottom + 6),
-    width: Math.max(320, Math.min(560, Math.round(rect.width))),
-    height: Math.min(320, 54 + items.length * 36),
+    y: Math.round(rect.bottom + 2),
+    width: fullW,
+    height: targetH,
     payload: { suggestions: items, selectedIndex: selectedIdx }
   });
 }
@@ -1475,39 +1512,145 @@ async function renderOmniboxSuggestions() {
     return;
   }
   const reqId = ++omniboxSuggestReqId;
-  const q = addressInput.value.trim().toLowerCase();
-  if (!q || q.length < 2) {
+  const rawVal = addressInput.value;
+  // If inline autocomplete is highlighted, match against only the user-typed prefix
+  const selStart = addressInput.selectionStart ?? rawVal.length;
+  const selEnd = addressInput.selectionEnd ?? rawVal.length;
+  const typedRaw = selEnd === rawVal.length && selStart < selEnd ? rawVal.slice(0, selStart) : rawVal;
+  const qOrig = typedRaw.trim();
+  const q = qOrig.toLowerCase();
+  if (!q || q.length < 1) {
     hideOmniboxSuggestions();
     return;
   }
-  const history = await getHistoryForSuggestions();
+
+  const [history, remoteQueries] = await Promise.all([
+    getHistoryForSuggestions(),
+    q.length >= 2 && !q.includes('://') && window.gxAPI.getRemoteSuggestions
+      ? window.gxAPI.getRemoteSuggestions(qOrig).catch(() => [])
+      : Promise.resolve([])
+  ]);
   if (reqId !== omniboxSuggestReqId || document.activeElement !== addressInput || !document.hasFocus()) {
     return;
   }
-  const seen = new Set();
-  const matches = [];
+
+  const engineId = settingsState?.searchEngine || 'google';
+  const engineLabel = SEARCH_ENGINE_LABELS[engineId] || 'Web Search';
+
+  // 1. Find best matching open tab or top site for Opera GX top suggestion + inline autocomplete
+  const openTabs = Array.isArray(currentState.tabs) ? currentState.tabs : [];
+  let topSiteMatch = null;
+  let autocompleteDomain = '';
+
+  const checkPrefixDomain = (domain, title, url, favicon, switchTabId = null) => {
+    if (!domain) return;
+    if (domain.startsWith(q) || (title && title.toLowerCase().startsWith(q))) {
+      if (!topSiteMatch) {
+        topSiteMatch = {
+          section: 'suggestions',
+          type: 'site',
+          title: title || domain,
+          url,
+          displayUrl: getCleanOmniboxUrl(url),
+          favicon: favicon || `https://${domain}/favicon.ico`,
+          switchTabId
+        };
+      }
+      if (!autocompleteDomain && domain.startsWith(q) && domain.length > q.length) {
+        autocompleteDomain = domain;
+      }
+    }
+  };
+
+  for (const t of openTabs) {
+    if (!t || !t.url || !/^https?:\/\//i.test(t.url)) continue;
+    const dom = getOmniboxDomain(t.url);
+    const isOtherTab = t.id !== currentState.activeTabId;
+    checkPrefixDomain(dom, t.title || dom, t.url, t.favicon, isOtherTab ? t.id : null);
+  }
+  for (const bm of cachedBookmarks || []) {
+    if (!bm || !bm.url || !/^https?:\/\//i.test(bm.url)) continue;
+    const dom = getOmniboxDomain(bm.url);
+    const openMatch = openTabs.find((t) => t && t.id !== currentState.activeTabId && getOmniboxDomain(t.url) === dom);
+    checkPrefixDomain(dom, bm.title || dom, bm.url, bm.favicon, openMatch ? openMatch.id : null);
+  }
+  for (const site of OMNIBOX_TOP_SITES) {
+    const openMatch = openTabs.find((t) => t && t.id !== currentState.activeTabId && getOmniboxDomain(t.url) === site.domain);
+    checkPrefixDomain(site.domain, site.title, site.url, `https://${site.domain}/favicon.ico`, openMatch ? openMatch.id : null);
+  }
+
+  // Inline domain autocomplete (e.g. typing "you" -> "you[tube.com]") when typing forward
+  if (
+    !lastOmniboxInputWasDelete &&
+    autocompleteDomain &&
+    !qOrig.includes(' ') &&
+    !qOrig.includes('/') &&
+    selStart === typedRaw.length &&
+    typedRaw.length >= 2
+  ) {
+    const completed = qOrig + autocompleteDomain.slice(q.length);
+    if (addressInput.value !== completed) {
+      addressInput.value = completed;
+      try {
+        addressInput.setSelectionRange(qOrig.length, completed.length);
+      } catch (_) { }
+    }
+  }
+
+  // 2. Build Opera GX SUGGESTIONS section
+  const items = [];
+  if (topSiteMatch) {
+    items.push(topSiteMatch);
+  }
+  items.push({
+    section: 'suggestions',
+    type: 'search',
+    title: qOrig,
+    subtitle: engineLabel,
+    url: qOrig
+  });
+  if (Array.isArray(remoteQueries)) {
+    for (const rq of remoteQueries) {
+      if (items.length >= 5) break;
+      items.push({
+        section: 'suggestions',
+        type: 'search',
+        title: rq,
+        subtitle: engineLabel,
+        url: rq
+      });
+    }
+  }
+
+  // 3. Build Opera GX HISTORY section (single-line clean rows)
+  const seenUrls = new Set(topSiteMatch ? [topSiteMatch.url] : []);
+  let historyCount = 0;
   for (const entry of history) {
     const url = entry.url || '';
     const title = entry.title || '';
-    if (!url || seen.has(url)) continue;
+    if (!url || seenUrls.has(url) || url.toLowerCase() === q) continue;
     if (title.toLowerCase().includes(q) || url.toLowerCase().includes(q)) {
-      seen.add(url);
-      matches.push({ title, url, favicon: entry.favicon || '' });
-      if (matches.length >= 6) break;
+      seenUrls.add(url);
+      const dom = getOmniboxDomain(url);
+      items.push({
+        section: 'history',
+        type: 'history',
+        title: title || dom || url,
+        url,
+        displayUrl: getCleanOmniboxUrl(url),
+        favicon: entry.favicon || (dom ? `https://${dom}/favicon.ico` : '')
+      });
+      historyCount += 1;
+      if (historyCount >= 6) break;
     }
   }
-  const filtered = matches.filter((m) => m.url.toLowerCase() !== q);
-  const urlsKey = filtered.map((m) => m.url).join('|');
-  if (!filtered.length) {
-    hideOmniboxSuggestions();
-    return;
-  }
-  omniboxSuggestItems = filtered;
+
+  const urlsKey = items.map((m) => `${m.section}:${m.type}:${m.url}:${m.switchTabId || ''}`).join('|');
+  omniboxSuggestItems = items;
   omniboxSuggestSelectedIdx = -1;
-  // Same list as last time — don't churn the popover.
   if (urlsKey === omniboxSuggestLastUrls) return;
   omniboxSuggestLastUrls = urlsKey;
-  pushOmniboxSuggestPopover(filtered, -1);
+  pushOmniboxSuggestPopover(items, -1);
 }
 
 function hideOmniboxSuggestions() {
@@ -1568,29 +1711,11 @@ function renderPermChip() {
 async function refreshSitePermIcons() {
   const wrap = document.getElementById('permSiteIcons');
   if (!wrap) return;
-  const active = currentState.activeTab;
-  const origin = active?.origin || '';
+  // Minimalist Opera GX URL bar: keep passive camera/microphone permission icons
+  // inside the left Site Security / Lock popover (#btnSiteSecurity) rather than
+  // permanently cluttering the right side of the address bar. Active prompts still
+  // show #permChip when a site is requesting permission.
   wrap.innerHTML = '';
-  if (!origin || !/^https?:\/\//i.test(origin)) return;
-  let perms = {};
-  try {
-    perms = (await window.gxAPI.getSitePermissions?.(origin)) || {};
-  } catch (_) {
-    return;
-  }
-  for (const { key, label } of SITE_INFO_PERMS) {
-    const val = perms[key];
-    if (!val || val === 'ask') continue;
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'perm-site-icon' + (val === 'block' ? ' blocked' : '');
-    btn.title = `${label}: ${val === 'allow' ? 'Allowed' : 'Blocked'} — click to change`;
-    btn.innerHTML = PERM_ICON_SVGS[key] || '';
-    btn.addEventListener('click', () => {
-      btnSiteSecurity.click();
-    });
-    wrap.appendChild(btn);
-  }
 }
 
 // [TABS-W2] Gap 7.4 — open the bookmark bubble (popover) for the active tab
@@ -1790,6 +1915,7 @@ function renderTabs(state) {
 
   tabsContainer.scrollLeft = prevScrollLeft;
   updateTabScrollButtons();
+  updateTopContourWidth();
   const focusStripEl = activeTabEl || activeCollapsedPillEl;
   if (focusStripEl && !userScrolledTabStrip) {
     scrollActiveTabIntoView(focusStripEl);
@@ -1802,6 +1928,7 @@ function renderTabs(state) {
         scrollActiveTabIntoView(currentActive);
       }
       updateTabScrollButtons();
+      updateTopContourWidth();
     });
   }
 
@@ -1861,8 +1988,8 @@ function syncActiveTabBarControls(state, activeChanged = false) {
         nextIconState === 'warn'
           ? WARN_ICON_PATHS
           : nextIconState === 'info'
-          ? INFO_ICON_PATHS
-          : LOCK_ICON_PATHS;
+            ? INFO_ICON_PATHS
+            : LOCK_ICON_PATHS;
       secLockSvg.dataset.state = nextIconState;
     }
 
@@ -1875,9 +2002,14 @@ function syncActiveTabBarControls(state, activeChanged = false) {
         : 'Panic button — instantly hide all tabs (Ctrl+Shift+P), press again to restore';
     }
 
+    const isWebPage = Boolean(active.url && /^https?:\/\//i.test(active.url));
     incognitoIndicator.classList.toggle('hidden', !active.incognito);
+    btnBookmarkStar.classList.toggle('hidden', !isWebPage);
     btnBookmarkStar.classList.toggle('active', Boolean(active.isBookmarked));
+    btnReaderMode.classList.toggle('hidden', !isWebPage);
     btnReaderMode.classList.toggle('active', Boolean(active.readerMode));
+    const btnSnapEl = document.getElementById('btnScreenshot');
+    if (btnSnapEl) btnSnapEl.classList.toggle('hidden', !isWebPage);
     if (btnPopOutVideo) {
       const canPopOut = Boolean((active.hasPlayingVideo || active.pipActive) && !active.sleeping);
       const isPip = Boolean(active.pipActive && canPopOut);
@@ -1888,10 +2020,10 @@ function syncActiveTabBarControls(state, activeChanged = false) {
       btnPopOutVideo.title = !canPopOut
         ? 'Pop out video — play a video in this tab to enable'
         : isPip
-        ? 'Video popped out — click to exit Picture-in-Picture'
-        : active.videoTitle
-        ? `Pop out video: ${active.videoTitle}`
-        : 'Pop out video (Picture-in-Picture)';
+          ? 'Video popped out — click to exit Picture-in-Picture'
+          : active.videoTitle
+            ? `Pop out video: ${active.videoTitle}`
+            : 'Pop out video (Picture-in-Picture)';
     }
     if (zoomValueText) {
       zoomValueText.textContent = `${active.zoomPercent || 100}%`;
@@ -2134,8 +2266,30 @@ if (btnTabSearch) {
   });
 }
 
+function updateTopContourWidth() {
+  if (IS_DRAWER_OVERLAY) return;
+  const anchor = btnNewTab || document.getElementById('tabsContour');
+  if (!anchor) return;
+  const rect = anchor.getBoundingClientRect();
+  if (rect && rect.right > 0) {
+    const winControls = document.querySelector('.nx-window-controls');
+    const maxW = winControls ? Math.max(180, Math.round(winControls.getBoundingClientRect().left - 12)) : Math.max(180, (window.innerWidth || 1280) - 160);
+    const targetW = Math.min(maxW, Math.max(180, Math.round(rect.right + 14)));
+    document.documentElement.style.setProperty('--nx-top-glow-w', `${targetW}px`);
+  }
+}
+
+if (!IS_DRAWER_OVERLAY && typeof ResizeObserver === 'function') {
+  const contourEl = document.getElementById('tabsContour');
+  if (contourEl) {
+    const ro = new ResizeObserver(() => updateTopContourWidth());
+    ro.observe(contourEl);
+  }
+}
+
 window.addEventListener('resize', () => {
   updateTabScrollButtons();
+  updateTopContourWidth();
   if (sidebarPanelState.open) {
     applySidebarPanelDOMState();
   }
@@ -2336,9 +2490,10 @@ addressInput.addEventListener('mousedown', (e) => {
   }
 });
 
-// [TABS-W2] Gap 3.7 — history suggestions while typing in the omnibox.
+// [TABS-W2] Gap 3.7 — Opera GX expanded suggestions while typing in the omnibox.
 addressInput.addEventListener('input', (e) => {
   if (e && e.isComposing) return;
+  lastOmniboxInputWasDelete = Boolean(e && typeof e.inputType === 'string' && e.inputType.startsWith('delete'));
   const activeId = currentState.activeTab?.id;
   if (activeId) {
     addressDraftByTabId.set(activeId, addressInput.value);
@@ -2346,7 +2501,7 @@ addressInput.addEventListener('input', (e) => {
   clearTimeout(omniboxSuggestTimer);
   omniboxSuggestTimer = setTimeout(() => {
     renderOmniboxSuggestions();
-  }, 120);
+  }, 90);
 });
 addressInput.addEventListener('keydown', (e) => {
   if (e.isComposing || e.keyCode === 229) return;
@@ -2490,7 +2645,7 @@ function syncPerSiteZoom(state, active) {
             window.gxAPI.setZoom(factor);
           }
         })
-        .catch(() => {})
+        .catch(() => { })
         .finally(() => {
           zoomApplyInFlight = false;
         });
@@ -2605,7 +2760,7 @@ function beginSplitResize(clientX, pointerId = null) {
   if (pointerId !== null && splitDivider?.setPointerCapture) {
     try {
       splitDivider.setPointerCapture(pointerId);
-    } catch (_) {}
+    } catch (_) { }
   }
   if (typeof clientX === 'number') {
     updateSplitResize(clientX);
@@ -2629,7 +2784,7 @@ function endSplitResize({ commit = true } = {}) {
   if (activeSplitPointerId !== null && splitDivider?.releasePointerCapture) {
     try {
       splitDivider.releasePointerCapture(activeSplitPointerId);
-    } catch (_) {}
+    } catch (_) { }
   }
   activeSplitPointerId = null;
   if (commit && currentState.split?.visible) {
@@ -2755,7 +2910,7 @@ if (btnProfileMenu) {
         payload = await window.gxAPI.listProfiles();
         renderProfileAvatar(payload);
       }
-    } catch (_) {}
+    } catch (_) { }
     window.gxAPI.openPopover({
       kind: 'profiles',
       x: Math.round(rect.right - 304),
@@ -2921,14 +3076,14 @@ function openProfileModal() {
   // its view cannot sit above the modal or stay hidden-but-open afterwards.
   try {
     window.gxAPI?.closePopover?.();
-  } catch (_) {}
+  } catch (_) { }
   profileModalBackdrop.classList.remove('hidden');
   // Market audit bug #2: the shell DOM sits UNDER every WebContentsView, so
   // ask main to hide the content views while the modal is open — otherwise
   // the modal is invisible and focus stays trapped in the webview.
   try {
     window.gxAPI?.setShellModalOpen?.(true);
-  } catch (_) {}
+  } catch (_) { }
   if (profileModalName) profileModalName.focus();
   // Fix2-shell A1: if the name input did not take focus (e.g. the hidden
   // webview kept it), keyboard events never reach the shell and Escape
@@ -2945,9 +3100,9 @@ function closeProfileModal() {
   profileModalBackdrop.classList.add('hidden');
   try {
     window.gxAPI?.setShellModalOpen?.(false);
-  } catch (_) {}
+  } catch (_) { }
   if (profileModalLastFocus && typeof profileModalLastFocus.focus === 'function') {
-    try { profileModalLastFocus.focus(); } catch (_) {}
+    try { profileModalLastFocus.focus(); } catch (_) { }
   }
 }
 
@@ -3092,6 +3247,11 @@ const nxSidebarEl = document.querySelector('.nx-sidebar');
 const btnRailExpand = document.getElementById('btnRailExpand');
 
 function setRailExpanded(expanded, { persist = true } = {}) {
+  if (!IS_DRAWER_OVERLAY && window.gxAPI.toggleShellDrawer) {
+    if (expanded) window.gxAPI.openShellDrawer({ kind: 'rail' });
+    else window.gxAPI.closeShellDrawer();
+    return;
+  }
   if (!nxSidebarEl) return;
   nxSidebarEl.classList.toggle('expanded', Boolean(expanded));
   railExpandedState = Boolean(expanded);
@@ -3102,7 +3262,7 @@ function setRailExpanded(expanded, { persist = true } = {}) {
     if (label) label.textContent = expanded ? 'Collapse' : 'Expand';
   }
   if (persist) {
-    try { localStorage.setItem('nx-rail-expanded', expanded ? '1' : '0'); } catch (_) {}
+    try { localStorage.setItem('nx-rail-expanded', expanded ? '1' : '0'); } catch (_) { }
   }
   // Fix2-shell A2: expanding/collapsing the rail while a drawer or pinned
   // panel is open changes the native offset (see syncLayoutOffsets).
@@ -3112,7 +3272,13 @@ function setRailExpanded(expanded, { persist = true } = {}) {
 if (btnRailExpand) {
   btnRailExpand.addEventListener('click', () => {
     window.gxSounds?.playClick();
-    setRailExpanded(!nxSidebarEl?.classList.contains('expanded'));
+    if (IS_DRAWER_OVERLAY) {
+      window.gxAPI.closeShellDrawer?.();
+    } else if (window.gxAPI.toggleShellDrawer) {
+      window.gxAPI.toggleShellDrawer({ kind: 'rail' });
+    } else {
+      setRailExpanded(!nxSidebarEl?.classList.contains('expanded'));
+    }
   });
 }
 
@@ -3151,7 +3317,7 @@ if (nxSidebarEl) {
 
 try {
   if (localStorage.getItem('nx-rail-expanded') === '1') setRailExpanded(true, { persist: false });
-} catch (_) {}
+} catch (_) { }
 
 // ================================================================
 // Fix2-shell (item 10) — one-screen first-run card. Shown once, on the
@@ -3167,24 +3333,25 @@ function dismissFirstRunCard() {
   settingsState = { ...settingsState, firstRunSeen: true };
   try {
     window.gxAPI.updateSettings({ firstRunSeen: true });
-  } catch (_) {}
+  } catch (_) { }
   // The card is a shell overlay like the profile modal: while it is up the
   // content views are hidden so it is not occluded by the tab's webview.
   // Restore them on dismiss, unless the profile modal is open (it owns the
   // hidden-views state then).
   try {
     if (!profileModalOpen) window.gxAPI?.setShellModalOpen?.(false);
-  } catch (_) {}
+  } catch (_) { }
 }
 
 function maybeShowFirstRunCard() {
+  if (IS_DRAWER_OVERLAY) return;
   if (!firstRunCard) return;
   if (document.documentElement.dataset.incognito === 'true') return;
   if (settingsState && settingsState.firstRunSeen === true) return;
   firstRunCard.classList.remove('hidden');
   try {
     window.gxAPI?.setShellModalOpen?.(true);
-  } catch (_) {}
+  } catch (_) { }
 }
 
 // Escape dismisses the card (registered after the profile-modal capture
@@ -3233,32 +3400,50 @@ document.getElementById('btnAddressShield').addEventListener('click', () => {
   });
 });
 
-// Window Controls
+// Window Controls (sync Maximize single-square vs Restore overlapping-squares icon)
+const MAXIMIZE_ICON_SVG =
+  '<svg viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2" width="8" height="8" rx="1.2"/></svg>';
+const RESTORE_ICON_SVG =
+  '<svg viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.25"><rect x="1.8" y="3.2" width="6.8" height="6.8" rx="1"/><path d="M3.8 3.2V2.2a.8.8 0 0 1 .8-.8h5.2a.8.8 0 0 1 .8.8v5.2a.8.8 0 0 1-.8.8H8.8"/></svg>';
+
+function syncWindowMaximizeIcon(isMaximized) {
+  const btnMax = document.getElementById('btnWinMax');
+  if (!btnMax) return;
+  const max = Boolean(isMaximized);
+  btnMax.innerHTML = max ? RESTORE_ICON_SVG : MAXIMIZE_ICON_SVG;
+  btnMax.title = max ? 'Restore Down' : 'Maximize';
+  btnMax.setAttribute('aria-label', max ? 'Restore Down' : 'Maximize');
+}
+
 document.getElementById('btnWinMin').addEventListener('click', () => window.gxAPI.minimizeWindow());
 document.getElementById('btnWinMax').addEventListener('click', () => window.gxAPI.maximizeWindow());
 document.getElementById('btnWinClose').addEventListener('click', () => window.gxAPI.closeWindow());
+if (!IS_DRAWER_OVERLAY) {
+  window.gxAPI.onWindowMaximizeChanged?.((isMax) => syncWindowMaximizeIcon(isMax));
+  window.gxAPI.isWindowMaximized?.().then((isMax) => syncWindowMaximizeIcon(isMax)).catch(() => { });
+}
 
 const SERVICE_LOGOS = {
-  'https://www.youtube.com': `<svg viewBox="0 0 24 24" width="18" height="18"><rect x="2" y="5" width="20" height="14" rx="4.5" fill="#ff0000"/><polygon points="10,9 16,12 10,15" fill="#fff"/></svg>`,
-  'https://music.youtube.com': `<svg viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="10" fill="#ff0033"/><circle cx="12" cy="12" r="4.5" fill="none" stroke="#fff" stroke-width="1.3"/><polygon points="10.5,9.5 15,12 10.5,14.5" fill="#fff"/></svg>`,
-  'https://open.spotify.com': `<svg viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="10" fill="#1db954"/><path d="M7 9.5c3.5-1 7-.8 10 .5M7.5 12.5c3-.8 6-.6 8.5.4M8.2 15.5c2.2-.6 4.5-.5 6.5.3" fill="none" stroke="#0b0c10" stroke-width="1.7" stroke-linecap="round"/></svg>`,
-  'https://music.apple.com': `<svg viewBox="0 0 24 24" width="18" height="18"><rect x="2" y="2" width="20" height="20" rx="5" fill="#fa243c"/><path d="M15 7v8.2a2.2 2.2 0 1 1-1.5-2.1V9.2l-4 1v5a2.2 2.2 0 1 1-1.5-2.1V8.4L15 7z" fill="#fff"/></svg>`,
-  'https://soundcloud.com': `<svg viewBox="0 0 24 24" width="18" height="18"><path d="M11 17h7.5a3 3 0 0 0 .4-5.97A4.5 4.5 0 0 0 10 9.5V17h1z" fill="#ff5500"/><path d="M7.5 11v6M5.5 12.5v4.5M3.5 13.5v3.5" stroke="#ff5500" stroke-width="1.6" stroke-linecap="round"/></svg>`,
-  'https://www.deezer.com': `<svg viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="15" width="3.5" height="3" fill="#a238ff"/><rect x="8" y="12" width="3.5" height="6" fill="#c084fc"/><rect x="13" y="9" width="3.5" height="9" fill="#00e5ff"/><rect x="18" y="6" width="3.5" height="12" fill="#10b981"/></svg>`,
-  'https://listen.tidal.com': `<svg viewBox="0 0 24 24" width="18" height="18" fill="#fff"><polygon points="6,8 9,11 6,14 3,11"/><polygon points="12,8 15,11 12,14 9,11"/><polygon points="18,8 21,11 18,14 15,11"/><polygon points="12,14 15,17 12,20 9,17"/></svg>`,
-  'https://www.twitch.tv': `<svg viewBox="0 0 24 24" width="18" height="18"><path d="M4.5 2L3 6v14h5v2h3l2-2h3.5L21 15.5V2H4.5z" fill="#9146ff"/><polygon points="6,4 19,4 19,14.5 16,17.5 12.5,17.5 10.5,19.5 10.5,17.5 6,17.5" fill="#fff"/><rect x="10" y="7.5" width="2" height="5" fill="#9146ff"/><rect x="15" y="7.5" width="2" height="5" fill="#9146ff"/></svg>`,
-  'https://chatgpt.com': `<svg viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="10" fill="#10a37f"/><g fill="none" stroke="#fff" stroke-width="1.35" stroke-linecap="round"><path d="M10.27 13V7.6A2.4 2.4 0 0 1 14.94 8.3"/><path d="M10.27 13V7.6A2.4 2.4 0 0 1 14.94 8.3" transform="rotate(60 12 12)"/><path d="M10.27 13V7.6A2.4 2.4 0 0 1 14.94 8.3" transform="rotate(120 12 12)"/><path d="M10.27 13V7.6A2.4 2.4 0 0 1 14.94 8.3" transform="rotate(180 12 12)"/><path d="M10.27 13V7.6A2.4 2.4 0 0 1 14.94 8.3" transform="rotate(240 12 12)"/><path d="M10.27 13V7.6A2.4 2.4 0 0 1 14.94 8.3" transform="rotate(300 12 12)"/></g></svg>`,
-  'https://claude.ai': `<svg viewBox="0 0 24 24" width="18" height="18"><g stroke="#d97757" stroke-width="2" stroke-linecap="round"><line x1="12" y1="3" x2="12" y2="21"/><line x1="12" y1="3" x2="12" y2="21" transform="rotate(36 12 12)"/><line x1="12" y1="3" x2="12" y2="21" transform="rotate(72 12 12)"/><line x1="12" y1="3" x2="12" y2="21" transform="rotate(108 12 12)"/><line x1="12" y1="3" x2="12" y2="21" transform="rotate(144 12 12)"/></g><circle cx="12" cy="12" r="2.2" fill="#d97757"/></svg>`,
-  'https://gemini.google.com': `<svg viewBox="0 0 24 24" width="18" height="18"><defs><linearGradient id="nxGeminiGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#4285f4"/><stop offset="55%" stop-color="#9b72cb"/><stop offset="100%" stop-color="#d96570"/></linearGradient></defs><path d="M12 2C12 7.5 16.5 12 22 12C16.5 12 12 16.5 12 22C12 16.5 7.5 12 2 12C7.5 12 12 7.5 12 2Z" fill="url(#nxGeminiGrad)"/></svg>`,
-  'https://www.perplexity.ai': `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#20b8cd" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M6.5 8.5V4l5.5 4.5L17.5 4v4.5"/><path d="M4.5 8.5h15v7h-2.5m-10 0H4.5v-7"/><path d="M12 8.5l-5.5 5.5v6l5.5-4.5 5.5 4.5v-6L12 8.5z"/></svg>`,
-  'https://web.whatsapp.com': `<svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 2.5a9.5 9.5 0 0 0-8.2 14.3L2.5 21.5l4.9-1.3A9.5 9.5 0 1 0 12 2.5z" fill="#25d366"/><path d="M9.6 8.0c-.4-.1-.9.1-1.3.5-.5.6-.7 1.4-.4 2.3.8 2.2 2.9 4.4 5.1 5.3.9.4 1.8.2 2.4-.3.4-.4.6-.9.5-1.3-.1-.3-.4-.5-.8-.7l-1.3-.6c-.3-.2-.6-.1-.8.2l-.6.7c-.2.2-.5.2-.8.1-.8-.4-1.6-1.2-2-2-.1-.3-.1-.6.1-.8l.7-.6c.3-.2.4-.5.2-.8l-.6-1.3c-.2-.4-.4-.7-.7-.7z" fill="#fff"/></svg>`,
-  'https://discord.com/app': `<svg viewBox="0 0 24 24" width="18" height="18"><rect x="2" y="2" width="20" height="20" rx="5" fill="#5865f2"/><path d="M16.5 8.1a10.4 10.4 0 0 0-2.6-.8l-.3.7a9.7 9.7 0 0 0-3.2 0l-.3-.7a10.4 10.4 0 0 0-2.6.8C5.9 10.5 5.4 12.9 5.6 15.2a10.6 10.6 0 0 0 3.2 1.6l.6-1a6.8 6.8 0 0 1-1-.5l.2-.2a7.5 7.5 0 0 0 6.8 0l.2.2a6.8 6.8 0 0 1-1 .5l.6 1a10.6 10.6 0 0 0 3.2-1.6c.3-2.7-.5-5.1-1.9-7.1z" fill="#fff"/><circle cx="9.8" cy="12.6" r="1.2" fill="#5865f2"/><circle cx="14.2" cy="12.6" r="1.2" fill="#5865f2"/></svg>`
+  'https://www.youtube.com': `<svg viewBox="0 0 24 24" width="20" height="20"><rect x="2" y="5" width="20" height="14" rx="4.5" fill="#ff0000"/><polygon points="10,9 16,12 10,15" fill="#fff"/></svg>`,
+  'https://music.youtube.com': `<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="10" fill="#ff0033"/><circle cx="12" cy="12" r="4.5" fill="none" stroke="#fff" stroke-width="1.3"/><polygon points="10.5,9.5 15,12 10.5,14.5" fill="#fff"/></svg>`,
+  'https://open.spotify.com': `<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="10" fill="#1db954"/><path d="M7 9.5c3.5-1 7-.8 10 .5M7.5 12.5c3-.8 6-.6 8.5.4M8.2 15.5c2.2-.6 4.5-.5 6.5.3" fill="none" stroke="#0b0c10" stroke-width="1.7" stroke-linecap="round"/></svg>`,
+  'https://music.apple.com': `<svg viewBox="0 0 24 24" width="20" height="20"><rect x="2" y="2" width="20" height="20" rx="5" fill="#fa243c"/><path d="M15 7v8.2a2.2 2.2 0 1 1-1.5-2.1V9.2l-4 1v5a2.2 2.2 0 1 1-1.5-2.1V8.4L15 7z" fill="#fff"/></svg>`,
+  'https://soundcloud.com': `<svg viewBox="0 0 24 24" width="20" height="20"><path d="M11 17h7.5a3 3 0 0 0 .4-5.97A4.5 4.5 0 0 0 10 9.5V17h1z" fill="#ff5500"/><path d="M7.5 11v6M5.5 12.5v4.5M3.5 13.5v3.5" stroke="#ff5500" stroke-width="1.6" stroke-linecap="round"/></svg>`,
+  'https://www.deezer.com': `<svg viewBox="0 0 24 24" width="20" height="20"><rect x="3" y="15" width="3.5" height="3" fill="#a238ff"/><rect x="8" y="12" width="3.5" height="6" fill="#c084fc"/><rect x="13" y="9" width="3.5" height="9" fill="#00e5ff"/><rect x="18" y="6" width="3.5" height="12" fill="#10b981"/></svg>`,
+  'https://listen.tidal.com': `<svg viewBox="0 0 24 24" width="20" height="20" fill="#fff"><polygon points="6,8 9,11 6,14 3,11"/><polygon points="12,8 15,11 12,14 9,11"/><polygon points="18,8 21,11 18,14 15,11"/><polygon points="12,14 15,17 12,20 9,17"/></svg>`,
+  'https://www.twitch.tv': `<svg viewBox="0 0 24 24" width="20" height="20"><path d="M4.5 2L3 6v14h5v2h3l2-2h3.5L21 15.5V2H4.5z" fill="#9146ff"/><polygon points="6,4 19,4 19,14.5 16,17.5 12.5,17.5 10.5,19.5 10.5,17.5 6,17.5" fill="#fff"/><rect x="10" y="7.5" width="2" height="5" fill="#9146ff"/><rect x="15" y="7.5" width="2" height="5" fill="#9146ff"/></svg>`,
+  'https://chatgpt.com': `<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="10" fill="#10a37f"/><g fill="none" stroke="#fff" stroke-width="1.35" stroke-linecap="round"><path d="M10.27 13V7.6A2.4 2.4 0 0 1 14.94 8.3"/><path d="M10.27 13V7.6A2.4 2.4 0 0 1 14.94 8.3" transform="rotate(60 12 12)"/><path d="M10.27 13V7.6A2.4 2.4 0 0 1 14.94 8.3" transform="rotate(120 12 12)"/><path d="M10.27 13V7.6A2.4 2.4 0 0 1 14.94 8.3" transform="rotate(180 12 12)"/><path d="M10.27 13V7.6A2.4 2.4 0 0 1 14.94 8.3" transform="rotate(240 12 12)"/><path d="M10.27 13V7.6A2.4 2.4 0 0 1 14.94 8.3" transform="rotate(300 12 12)"/></g></svg>`,
+  'https://claude.ai': `<svg viewBox="0 0 24 24" width="20" height="20"><g stroke="#d97757" stroke-width="2" stroke-linecap="round"><line x1="12" y1="3" x2="12" y2="21"/><line x1="12" y1="3" x2="12" y2="21" transform="rotate(36 12 12)"/><line x1="12" y1="3" x2="12" y2="21" transform="rotate(72 12 12)"/><line x1="12" y1="3" x2="12" y2="21" transform="rotate(108 12 12)"/><line x1="12" y1="3" x2="12" y2="21" transform="rotate(144 12 12)"/></g><circle cx="12" cy="12" r="2.2" fill="#d97757"/></svg>`,
+  'https://gemini.google.com': `<svg viewBox="0 0 24 24" width="20" height="20"><defs><linearGradient id="nxGeminiGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#4285f4"/><stop offset="55%" stop-color="#9b72cb"/><stop offset="100%" stop-color="#d96570"/></linearGradient></defs><path d="M12 2C12 7.5 16.5 12 22 12C16.5 12 12 16.5 12 22C12 16.5 7.5 12 2 12C7.5 12 12 7.5 12 2Z" fill="url(#nxGeminiGrad)"/></svg>`,
+  'https://www.perplexity.ai': `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#20b8cd" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M6.5 8.5V4l5.5 4.5L17.5 4v4.5"/><path d="M4.5 8.5h15v7h-2.5m-10 0H4.5v-7"/><path d="M12 8.5l-5.5 5.5v6l5.5-4.5 5.5 4.5v-6L12 8.5z"/></svg>`,
+  'https://web.whatsapp.com': `<svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 2.5a9.5 9.5 0 0 0-8.2 14.3L2.5 21.5l4.9-1.3A9.5 9.5 0 1 0 12 2.5z" fill="#25d366"/><path d="M9.6 8.0c-.4-.1-.9.1-1.3.5-.5.6-.7 1.4-.4 2.3.8 2.2 2.9 4.4 5.1 5.3.9.4 1.8.2 2.4-.3.4-.4.6-.9.5-1.3-.1-.3-.4-.5-.8-.7l-1.3-.6c-.3-.2-.6-.1-.8.2l-.6.7c-.2.2-.5.2-.8.1-.8-.4-1.6-1.2-2-2-.1-.3-.1-.6.1-.8l.7-.6c.3-.2.4-.5.2-.8l-.6-1.3c-.2-.4-.4-.7-.7-.7z" fill="#fff"/></svg>`,
+  'https://discord.com/app': `<svg viewBox="0 0 24 24" width="20" height="20"><rect x="2" y="2" width="20" height="20" rx="5" fill="#5865f2"/><path d="M16.5 8.1a10.4 10.4 0 0 0-2.6-.8l-.3.7a9.7 9.7 0 0 0-3.2 0l-.3-.7a10.4 10.4 0 0 0-2.6.8C5.9 10.5 5.4 12.9 5.6 15.2a10.6 10.6 0 0 0 3.2 1.6l.6-1a6.8 6.8 0 0 1-1-.5l.2-.2a7.5 7.5 0 0 0 6.8 0l.2.2a6.8 6.8 0 0 1-1 .5l.6 1a10.6 10.6 0 0 0 3.2-1.6c.3-2.7-.5-5.1-1.9-7.1z" fill="#fff"/><circle cx="9.8" cy="12.6" r="1.2" fill="#5865f2"/><circle cx="14.2" cy="12.6" r="1.2" fill="#5865f2"/></svg>`
 };
 
 // 2. SIDEBAR OVERLAY PANEL & GX LEFT RAIL
 const SERVICE_META_BY_KEY = {};
 const INTERNAL_PANEL_ICONS = {
-  player: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="color:var(--nx-accent-bright);"><circle cx="12" cy="12" r="9"/><polygon points="10 8.5 16 12 10 15.5 10 8.5" fill="currentColor" stroke="none"/></svg>`
+  player: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="color:var(--nx-accent-bright);"><circle cx="12" cy="12" r="9"/><polygon points="10 8.5 16 12 10 15.5 10 8.5" fill="currentColor" stroke="none"/></svg>`
 };
 let playerHasPlayingMedia = false;
 
@@ -3279,6 +3464,7 @@ document.querySelectorAll('[data-service-url]').forEach((btn) => {
   }
   btn.addEventListener('click', () => {
     toggleSidebarService(key || url);
+    if (IS_DRAWER_OVERLAY) window.gxAPI.closeShellDrawer?.();
   });
 });
 
@@ -3296,6 +3482,7 @@ document.querySelectorAll('[data-sidebar-panel]').forEach((btn) => {
   }
   btn.addEventListener('click', () => {
     toggleSidebarService(key);
+    if (IS_DRAWER_OVERLAY) window.gxAPI.closeShellDrawer?.();
   });
 });
 
@@ -3310,6 +3497,7 @@ document.querySelectorAll('[data-sidebar-tab]').forEach((btn) => {
     } else {
       window.gxAPI.createTab({ url: targetUrl, active: true });
     }
+    if (IS_DRAWER_OVERLAY) window.gxAPI.closeShellDrawer?.();
   });
 });
 
@@ -3478,7 +3666,7 @@ function beginSidebarPanelResize(clientX, pointerId = null) {
   if (pointerId !== null && sidebarPanelResizer?.setPointerCapture) {
     try {
       sidebarPanelResizer.setPointerCapture(pointerId);
-    } catch (_) {}
+    } catch (_) { }
   }
 }
 
@@ -3502,7 +3690,7 @@ function endSidebarPanelResize() {
   if (activeSidebarPointerId !== null && sidebarPanelResizer?.releasePointerCapture) {
     try {
       sidebarPanelResizer.releasePointerCapture(activeSidebarPointerId);
-    } catch (_) {}
+    } catch (_) { }
   }
   activeSidebarPointerId = null;
   const finalWidth = getEffectiveSidebarPanelWidth(sidebarPanelState.width);
@@ -3606,6 +3794,10 @@ const LEFT_TOOL_TITLES = {
 function openLeftTool(toolName) {
   window.gxSounds?.playPanelOpen();
   window.gxAPI.closePopover();
+  if (!IS_DRAWER_OVERLAY && window.gxAPI.toggleShellDrawer) {
+    window.gxAPI.toggleShellDrawer({ kind: 'left-tool', tool: toolName });
+    return;
+  }
   if (activeLeftTool === toolName) {
     closeLeftTool();
     return;
@@ -3620,18 +3812,12 @@ function openLeftTool(toolName) {
   activeLeftTool = toolName;
   leftToolTitle.textContent = LEFT_TOOL_TITLES[toolName] || 'System';
   leftToolDrawer.classList.remove('hidden');
-  // Market audit bugs #15/#16: the expanded rail is a z-35 absolute overlay
-  // while the drawer is z-22, so an expanded rail covers the drawer's left
-  // edge. Collapse it and suppress hover-expand while a drawer is open
-  // (same treatment as sidebar panels in applySidebarPanelDOMState).
   if (nxSidebarEl) {
     nxSidebarEl.classList.add('nx-panel-open');
     if (nxSidebarEl.classList.contains('expanded')) {
       setRailExpanded(false);
     }
   }
-  // Market audit bug #36: refresh the live cache readout when the Cleaner
-  // drawer opens.
   if (toolName === 'gxCleaner') refreshCleanerCacheSize();
 
   document.querySelectorAll('[data-left-tool]').forEach((btn) => {
@@ -3647,12 +3833,19 @@ function openLeftTool(toolName) {
 }
 
 function closeLeftTool() {
+  if (IS_DRAWER_OVERLAY && window.gxAPI.closeShellDrawer) {
+    window.gxAPI.closeShellDrawer();
+    return;
+  }
+  if (!IS_DRAWER_OVERLAY && window.gxAPI.closeShellDrawer) {
+    activeLeftTool = null;
+    document.querySelectorAll('[data-left-tool]').forEach((btn) => btn.classList.remove('active'));
+    window.gxAPI.closeShellDrawer();
+    return;
+  }
   activeLeftTool = null;
   leftToolDrawer.classList.add('hidden');
   document.querySelectorAll('[data-left-tool]').forEach((btn) => btn.classList.remove('active'));
-  // Market audit bugs #15/#16: allow the rail to expand again now that no
-  // drawer is open (but only if no sidebar panel is open either — that state
-  // re-applies the class on its next DOM sync).
   if (nxSidebarEl && !sidebarPanelState.open) {
     nxSidebarEl.classList.remove('nx-panel-open');
   }
@@ -3722,13 +3915,17 @@ document.getElementById('btnRunCleaner').addEventListener('click', async () => {
 
 // 4. RIGHT DRAWER (Control Center & Extensions)
 const RIGHT_DRAWER_TITLES = {
-  easySetup: 'nextGx Control Center',
+  easySetup: 'Easy Setup',
   extensions: 'Extensions'
 };
 
 function openRightDrawer(panelName) {
   window.gxSounds?.playPanelOpen();
   window.gxAPI.closePopover();
+  if (!IS_DRAWER_OVERLAY && window.gxAPI.toggleShellDrawer) {
+    window.gxAPI.toggleShellDrawer({ kind: 'right-drawer', panel: panelName });
+    return;
+  }
   if (activeRightDrawer === panelName) {
     closeRightDrawer();
     return;
@@ -3747,10 +3944,86 @@ function openRightDrawer(panelName) {
 }
 
 function closeRightDrawer() {
+  if (IS_DRAWER_OVERLAY && window.gxAPI.closeShellDrawer) {
+    window.gxAPI.closeShellDrawer();
+    return;
+  }
+  if (!IS_DRAWER_OVERLAY && window.gxAPI.closeShellDrawer) {
+    activeRightDrawer = null;
+    window.gxAPI.closeShellDrawer();
+    return;
+  }
   activeRightDrawer = null;
   rightDrawer.classList.add('hidden');
   if (sidebarPanelState.open) applySidebarPanelDOMState();
   syncLayoutOffsets();
+}
+
+function applyShellDrawerOverlayState(st) {
+  const open = Boolean(st && st.open);
+  const kind = open ? st.kind : null;
+  if (!IS_DRAWER_OVERLAY) {
+    const activeTool = kind === 'left-tool' ? st.tool : null;
+    document.querySelectorAll('[data-left-tool]').forEach((btn) => {
+      btn.classList.toggle('active', Boolean(activeTool && btn.dataset.leftTool === activeTool));
+    });
+    const btnEasy = document.getElementById('btnEasySetup');
+    if (btnEasy) {
+      btnEasy.classList.toggle('active', kind === 'right-drawer' && st.panel === 'easySetup');
+    }
+    if (btnRailExpand) {
+      const railOpen = kind === 'rail';
+      btnRailExpand.classList.toggle('active', railOpen);
+      btnRailExpand.setAttribute('aria-pressed', railOpen ? 'true' : 'false');
+    }
+    return;
+  }
+
+  // Inside floating overlay WebContentsView: render ONLY the requested floating panel
+  if (nxSidebarEl) {
+    nxSidebarEl.classList.toggle('hidden', kind !== 'rail');
+    nxSidebarEl.classList.toggle('expanded', kind === 'rail');
+    if (btnRailExpand) {
+      const label = btnRailExpand.querySelector('.sidebar-label');
+      if (label) label.textContent = 'Collapse';
+    }
+  }
+  if (leftToolDrawer) {
+    const isLeft = kind === 'left-tool';
+    leftToolDrawer.classList.toggle('hidden', !isLeft);
+    if (isLeft) {
+      const toolName = st.tool || 'gxControl';
+      activeLeftTool = toolName;
+      leftToolTitle.textContent = LEFT_TOOL_TITLES[toolName] || 'System';
+      document.querySelectorAll('#leftToolDrawer .tool-body').forEach((el) => {
+        el.classList.toggle('hidden', el.id !== `left-tool-${toolName}`);
+      });
+      if (toolName === 'gxCleaner') refreshCleanerCacheSize();
+      if (toolName === 'gxControl') loadPerformancePanel();
+    } else {
+      activeLeftTool = null;
+    }
+  }
+  if (rightDrawer) {
+    const isRight = kind === 'right-drawer';
+    rightDrawer.classList.toggle('hidden', !isRight);
+    if (isRight) {
+      const panelName = st.panel || 'easySetup';
+      activeRightDrawer = panelName;
+      rightDrawerTitle.textContent = RIGHT_DRAWER_TITLES[panelName] || 'Easy Setup';
+      document.querySelectorAll('#rightDrawer .tool-body').forEach((el) => {
+        el.classList.toggle('hidden', el.id !== `right-panel-${panelName}`);
+      });
+      if (panelName === 'easySetup') loadEasySetupPanel();
+    } else {
+      activeRightDrawer = null;
+    }
+  }
+}
+
+window.gxAPI.onShellDrawerState?.((st) => applyShellDrawerOverlayState(st));
+if (IS_DRAWER_OVERLAY && window.gxAPI.getShellDrawerState) {
+  window.gxAPI.getShellDrawerState().then((st) => applyShellDrawerOverlayState(st)).catch(() => { });
 }
 
 document.getElementById('btnEasySetup').addEventListener('click', () => openRightDrawer('easySetup'));
@@ -4363,10 +4636,9 @@ function renderPerformanceTabList({ forceRebuild = false } = {}) {
         <div class="row-sub">${escapeHtml(subText)}</div>
         <div class="gx-tab-badges${badges.length ? '' : ' hidden'}">${badgesHtml}</div>
       </div>
-      ${
-        !isCurrent && !tab.sleeping
-          ? `<button class="mini-action-btn accent sleep-one">Hibernate</button>`
-          : ''
+      ${!isCurrent && !tab.sleeping
+        ? `<button class="mini-action-btn accent sleep-one">Hibernate</button>`
+        : ''
       }
     `;
     row.addEventListener('click', (e) => {
@@ -4442,19 +4714,43 @@ document.querySelectorAll('#autoSleepSegments .seg-btn').forEach((btn) => {
   });
 });
 
-// 6. CONTROL CENTER
+// 6. EASY SETUP / CONTROL CENTER
+function syncEasySetupCheckboxes(s) {
+  if (!s || typeof s !== 'object') return;
+  const setChk = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.checked = Boolean(val);
+  };
+  setChk('chkBookmarksBar', s.showBookmarksBar !== false);
+  setChk('chkForceDarkWeb', Boolean(s.forceDarkWeb));
+  setChk('chkUiSounds', s.uiSoundsEnabled !== false);
+  setChk('chkCloseLastTab', Boolean(s.closeWindowOnLastTab));
+  setChk('chkEasyWallpaperEnabled', s.wallpaper?.type !== 'none');
+  setChk('chkEasyColorizeSidebar', Boolean(s.colorizeSidebarIcons));
+  setChk('chkEasyReduceAnimations', Boolean(s.reduceAnimations));
+  setChk('chkEasyKeyboardSounds', Boolean(s.keyboardSoundsEnabled));
+  setChk('chkEasyShowSidebar', s.showSidebar !== false);
+  setChk('chkEasySpClock', s.startPageShowClock !== false);
+  setChk('chkEasySpNames', s.startPageShowNames !== false);
+  setChk('chkEasySpBigger', Boolean(s.startPageBiggerTiles));
+  setChk('chkEasySpSuggestions', s.startPageShowSuggestions !== false);
+  setChk('chkEasySpHideSearch', s.startPageShowSearch === false);
+  setChk('chkEasyTrackerBlock', s.trackerBlockEnabled !== false);
+
+  const activeWp = s.wallpaper?.type === 'preset' ? (s.wallpaper.preset || 'obsidian-wave') : '';
+  document.querySelectorAll('[data-easy-wp]').forEach((btn) => {
+    btn.classList.toggle('active', s.wallpaper?.type === 'preset' && btn.dataset.easyWp === activeWp);
+  });
+  document.querySelectorAll('#searchEngineSegments .seg-btn').forEach((b) => {
+    b.classList.toggle('active', b.dataset.engine === (s.searchEngine || 'google'));
+  });
+}
+
 async function loadEasySetupPanel() {
   const adStats = await window.gxAPI.getAdblockStats();
   renderAdblockStats(adStats);
   const s = await window.gxAPI.getSettings();
-  const chkBm = document.getElementById('chkBookmarksBar');
-  if (chkBm) chkBm.checked = s.showBookmarksBar !== false;
-  document.getElementById('chkForceDarkWeb').checked = Boolean(s.forceDarkWeb);
-  document.getElementById('chkUiSounds').checked = s.uiSoundsEnabled !== false;
-  document.getElementById('chkCloseLastTab').checked = s.closeWindowOnLastTab !== false;
-  document.querySelectorAll('#searchEngineSegments .seg-btn').forEach((b) => {
-    b.classList.toggle('active', b.dataset.engine === (s.searchEngine || 'google'));
-  });
+  syncEasySetupCheckboxes(s);
 }
 
 function updateAddressShieldAppearance() {
@@ -4534,6 +4830,84 @@ document.getElementById('chkCloseLastTab').addEventListener('change', async (e) 
   await window.gxAPI.updateSettings({ closeWindowOnLastTab: e.target.checked });
 });
 
+const bindEasySettingToggle = (id, key, invert = false) => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('change', async (e) => {
+    window.gxSounds?.playClick();
+    await window.gxAPI.updateSettings({ [key]: invert ? !e.target.checked : e.target.checked });
+  });
+};
+bindEasySettingToggle('chkEasyColorizeSidebar', 'colorizeSidebarIcons');
+bindEasySettingToggle('chkEasyReduceAnimations', 'reduceAnimations');
+bindEasySettingToggle('chkEasyKeyboardSounds', 'keyboardSoundsEnabled');
+bindEasySettingToggle('chkEasyShowSidebar', 'showSidebar');
+bindEasySettingToggle('chkEasySpClock', 'startPageShowClock');
+bindEasySettingToggle('chkEasySpNames', 'startPageShowNames');
+bindEasySettingToggle('chkEasySpBigger', 'startPageBiggerTiles');
+bindEasySettingToggle('chkEasySpSuggestions', 'startPageShowSuggestions');
+bindEasySettingToggle('chkEasySpHideSearch', 'startPageShowSearch', true);
+
+document.getElementById('chkEasyTrackerBlock')?.addEventListener('change', async (e) => {
+  window.gxSounds?.playClick();
+  await window.gxAPI.toggleTrackerBlock(e.target.checked);
+});
+
+document.getElementById('chkEasyWallpaperEnabled')?.addEventListener('change', async (e) => {
+  window.gxSounds?.playClick();
+  const cur = settingsState?.wallpaper || { type: 'preset', preset: 'obsidian-wave', file: '' };
+  await window.gxAPI.updateSettings({
+    wallpaper: e.target.checked
+      ? { ...cur, type: cur.file ? 'custom' : 'preset', preset: cur.preset || 'obsidian-wave' }
+      : { ...cur, type: 'none' }
+  });
+});
+
+document.querySelectorAll('[data-easy-wp]').forEach((btn) => {
+  btn.addEventListener('click', async () => {
+    window.gxSounds?.playClick();
+    const preset = btn.dataset.easyWp;
+    const cur = settingsState?.wallpaper || { type: 'preset', preset: '', file: '' };
+    await window.gxAPI.updateSettings({ wallpaper: { ...cur, type: 'preset', preset } });
+  });
+});
+
+const easyWpInput = document.getElementById('easyWallpaperFileInput');
+document.getElementById('btnEasyAddWallpaper')?.addEventListener('click', () => {
+  if (easyWpInput) {
+    easyWpInput.value = '';
+    easyWpInput.click();
+  }
+});
+easyWpInput?.addEventListener('change', async (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file || !window.gxAPI.saveCustomWallpaper) return;
+  try {
+    const buf = await file.arrayBuffer();
+    const res = await window.gxAPI.saveCustomWallpaper({
+      name: file.name,
+      type: file.type,
+      bytes: new Uint8Array(buf)
+    });
+    if (res?.ok) showToast('Custom wallpaper applied');
+    else showToast(res?.error || 'Could not apply wallpaper');
+  } catch (_) {
+    showToast('Could not read selected image');
+  }
+});
+
+document.getElementById('btnEasyGearSettings')?.addEventListener('click', () => {
+  window.gxSounds?.playClick();
+  closeRightDrawer();
+  window.gxAPI.createTab({ url: 'nextgx://settings', active: true });
+});
+
+document.getElementById('btnEasyClearData')?.addEventListener('click', () => {
+  window.gxSounds?.playClick();
+  closeRightDrawer();
+  window.gxAPI.createTab({ url: 'nextgx://privacy', active: true });
+});
+
 function applyTheme(theme) {
   const resolved = theme || 'gx-violet';
   document.documentElement.setAttribute('data-theme', resolved);
@@ -4605,6 +4979,10 @@ function syncSettingsUI(s) {
 
   // [Fix2 integration] Battery saver: reduce shell motion while enabled.
   document.body.classList.toggle('battery-saver', Boolean(s.batterySaverEnabled));
+  document.body.classList.toggle('reduce-animations', Boolean(s.reduceAnimations));
+  document.body.classList.toggle('colorize-sidebar-icons', Boolean(s.colorizeSidebarIcons));
+  document.body.classList.toggle('hide-left-sidebar', s.showSidebar === false);
+  syncEasySetupCheckboxes(s);
 
   applySidebarVisibility(s.sidebarItems || {});
   if (!isResizingSidebarPanel && typeof s.sidebarPanelWidth === 'number') {
@@ -4691,10 +5069,78 @@ window.gxAPI.onPopoverData?.((data) => {
   }
 });
 window.gxAPI.onAdblockUpdate((stats) => renderAdblockStats(stats));
+let prevHadActiveDownloads = false;
+let dlJustDoneTimer = null;
+
+function formatDlBytesCompact(bytes) {
+  const n = Number(bytes) || 0;
+  if (n >= 1024 * 1024 * 1024) return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  if (n >= 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  if (n >= 1024) return `${Math.round(n / 1024)} KB`;
+  return `${n} B`;
+}
+
+function updateToolbarDownloadProgress(list) {
+  const items = Array.isArray(list) ? list : [];
+  const active = items.filter((d) => d && (d.state === 'progressing' || d.state === 'paused'));
+  const progressing = items.filter((d) => d && d.state === 'progressing');
+  const btn = document.getElementById('btnTopDownloads');
+  const dot = document.getElementById('dlActiveDot');
+  const arc = document.getElementById('dlRingArc');
+  const wave = document.getElementById('dlWaveFill');
+
+  if (dot) dot.classList.toggle('hidden', progressing.length === 0);
+  if (!btn) return;
+
+  if (active.length > 0) {
+    prevHadActiveDownloads = true;
+    clearTimeout(dlJustDoneTimer);
+    btn.classList.remove('dl-just-done');
+    btn.classList.add('downloading');
+
+    let sumReceived = 0;
+    let sumTotal = 0;
+    let sumSpeed = 0;
+    for (const d of active) {
+      sumReceived += Number(d.receivedBytes) || 0;
+      sumTotal += Number(d.totalBytes) || 0;
+      if (d.state === 'progressing') sumSpeed += Number(d.speedBytesPerSec) || 0;
+    }
+
+    const circumference = 72.26;
+    if (sumTotal > 0) {
+      const pct = Math.max(2, Math.min(100, Math.round((sumReceived / sumTotal) * 100)));
+      btn.classList.remove('indeterminate');
+      if (arc) arc.style.strokeDashoffset = String(circumference * (1 - pct / 100));
+      if (wave) wave.style.setProperty('--dl-fill-pct', `${pct}%`);
+      const speedPart = sumSpeed > 0 ? ` · ${formatDlBytesCompact(sumSpeed)}/s` : '';
+      btn.title = `Downloading ${pct}% (${formatDlBytesCompact(sumReceived)} / ${formatDlBytesCompact(sumTotal)}${speedPart})`;
+    } else {
+      btn.classList.add('indeterminate');
+      if (arc) arc.style.strokeDashoffset = String(circumference * 0.65);
+      if (wave) wave.style.setProperty('--dl-fill-pct', '45%');
+      btn.title = `Downloading (${formatDlBytesCompact(sumReceived)})`;
+    }
+  } else {
+    btn.classList.remove('downloading', 'indeterminate');
+    if (arc) arc.style.strokeDashoffset = '72.26';
+    if (wave) wave.style.setProperty('--dl-fill-pct', '0%');
+    btn.title = 'Downloads (Ctrl+J)';
+    if (prevHadActiveDownloads) {
+      prevHadActiveDownloads = false;
+      const latestCompleted = items.find((d) => d && d.state === 'completed');
+      if (latestCompleted) {
+        btn.classList.add('dl-just-done');
+        clearTimeout(dlJustDoneTimer);
+        dlJustDoneTimer = setTimeout(() => btn.classList.remove('dl-just-done'), 3200);
+      }
+    }
+  }
+}
+
 window.gxAPI.onDownloadsUpdate((list) => {
   cachedDownloads = list || [];
-  const hasActive = cachedDownloads.some((d) => d.state === 'progressing');
-  document.getElementById('dlActiveDot').classList.toggle('hidden', !hasActive);
+  updateToolbarDownloadProgress(cachedDownloads);
 });
 window.gxAPI.onSystemStats((stats) => renderSystemStats(stats));
 window.gxAPI.onSettingsUpdate?.((s) => syncSettingsUI(s));
@@ -4717,8 +5163,8 @@ window.gxAPI.onPlayerUpdate?.((pState) => {
       activeSrc && activeSrc.isPlaying
         ? `Player — Playing: ${activeSrc.title || activeSrc.sourceName || 'Media'}`
         : activeSrc
-        ? `Player — Paused: ${activeSrc.title || activeSrc.sourceName || 'Media'}`
-        : 'Player — Unified Media Controls';
+          ? `Player — Paused: ${activeSrc.title || activeSrc.sourceName || 'Media'}`
+          : 'Player — Unified Media Controls';
   }
 });
 

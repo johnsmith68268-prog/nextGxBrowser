@@ -69,7 +69,7 @@ function freshModules() {
   }
 }
 
-test('UX-1: sidebar panel range is 260–800px (was 320–640) in every copy of the clamp', () => {
+test('UX-1: sidebar panel range is 260–1600px (up to 75% window width) in every copy of the clamp', () => {
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nx-ux1-'));
   const restore = installElectronMock(tmpRoot);
   try {
@@ -78,29 +78,29 @@ test('UX-1: sidebar panel range is 260–800px (was 320–640) in every copy of 
     const storage = new StorageManager({ dataDir: path.join(tmpRoot, 'data') });
     assert.equal(storage._clampSidebarPanelWidth(100), 260, 'below min clamps to 260');
     assert.equal(storage._clampSidebarPanelWidth(380), 380, 'default survives');
-    assert.equal(storage._clampSidebarPanelWidth(900), 800, 'above max clamps to 800');
-    assert.equal(storage._clampSidebarPanelWidth(700), 700, '700px is now allowed');
+    assert.equal(storage._clampSidebarPanelWidth(1800), 1600, 'above max clamps to 1600');
+    assert.equal(storage._clampSidebarPanelWidth(1344), 1344, '70% of 1920px screen is allowed');
 
     const core = require('../src/main/core');
     assert.equal(core.SIDEBAR_PANEL_MIN_WIDTH, 260);
-    assert.equal(core.SIDEBAR_PANEL_MAX_WIDTH, 800);
+    assert.equal(core.SIDEBAR_PANEL_MAX_WIDTH, 1600);
     assert.equal(core.SIDEBAR_PANEL_RESIZER_WIDTH, 12, 'resizer hit-area widened from 7px');
 
     const layout = require('../src/main/layout');
-    assert.equal(layout.clampSidebarPanelWidthForWindow(900, 2000), 800);
-    assert.equal(layout.clampSidebarPanelWidthForWindow(900, 1000), 500, '50%-of-window cap binds on a 1000px window');
+    assert.equal(layout.clampSidebarPanelWidthForWindow(1800, 2400), 1600);
+    assert.equal(layout.clampSidebarPanelWidthForWindow(1400, 1000), 750, '75%-of-window cap binds on a 1000px window');
     assert.equal(layout.clampSidebarPanelWidthForWindow(300, 1000), 300);
     assert.equal(layout.clampSidebarPanelWidthForWindow(100, 2000), 260);
 
     const renderer = fs.readFileSync(path.join(ROOT, 'src', 'ui', 'renderer.js'), 'utf8');
     assert.match(renderer, /SIDEBAR_PANEL_MIN_WIDTH = 260/);
-    assert.match(renderer, /SIDEBAR_PANEL_MAX_WIDTH = 800/);
+    assert.match(renderer, /SIDEBAR_PANEL_MAX_WIDTH = 1600/);
     const chrome = fs.readFileSync(path.join(ROOT, 'src', 'ui', 'sidebar-panel-chrome.html'), 'utf8');
     assert.match(chrome, /SIDEBAR_PANEL_MIN_WIDTH = 260/);
-    assert.match(chrome, /SIDEBAR_PANEL_MAX_WIDTH = 800/);
+    assert.match(chrome, /SIDEBAR_PANEL_MAX_WIDTH = 1600/);
     const css = fs.readFileSync(path.join(ROOT, 'src', 'ui', 'styles.css'), 'utf8');
     assert.match(css, /min-width: 260px/);
-    assert.match(css, /max-width: 800px/);
+    assert.match(css, /max-width: 1600px/);
   } finally {
     restore();
     fs.rmSync(tmpRoot, { recursive: true, force: true });

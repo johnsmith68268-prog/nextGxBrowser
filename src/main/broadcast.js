@@ -117,8 +117,21 @@ function serializeTabs(ctx) {
 
 function broadcastState(ctx) {
   if (!ctx || !ctx.win || ctx.win.isDestroyed()) return;
+  if (ctx._pendingStateTimer) {
+    clearTimeout(ctx._pendingStateTimer);
+    ctx._pendingStateTimer = null;
+  }
   const serialized = serializeTabs(ctx);
   ctx.win.webContents.send('state:update', serialized);
+  if (
+    ctx.shellDrawerState &&
+    ctx.shellDrawerState.open &&
+    ctx.drawerOverlayView &&
+    ctx.drawerOverlayView.webContents &&
+    !ctx.drawerOverlayView.webContents.isDestroyed()
+  ) {
+    ctx.drawerOverlayView.webContents.send('state:update', serialized);
+  }
   if (
     ctx.popoverOpenKind === 'menu' &&
     ctx.popoverView &&
@@ -130,6 +143,16 @@ function broadcastState(ctx) {
     }
     ctx.popoverView.webContents.send('state:update', serialized);
   }
+}
+
+// Frame-coalesced state broadcast for high-frequency tab events (title/favicon/loading ticks)
+function scheduleBroadcastState(ctx, delayMs = 16) {
+  if (!ctx || !ctx.win || ctx.win.isDestroyed()) return;
+  if (ctx._pendingStateTimer) return;
+  ctx._pendingStateTimer = setTimeout(() => {
+    ctx._pendingStateTimer = null;
+    broadcastState(ctx);
+  }, delayMs);
 }
 
 function sendToWebUiTabs(channel, payload, { profileId = null } = {}) {
@@ -173,13 +196,34 @@ let lastAdblockBroadcastAt = 0;
 let pendingAdblockPayload = null;
 
 function flushAdblockBroadcastNow(stats) {
-  const payload = stats || pendingAdblockPayload || (state.adBlocker ? state.adBlocker.getStats() : null);
+  const raw = stats || pendingAdblockPayload;
   pendingAdblockPayload = null;
-  if (!payload) return;
+  let payload = raw;
+  if (!payload || payload._deltaOnly) {
+    const base = state.adBlocker ? state.adBlocker.getStats() : null;
+    if (!base) return;
+    payload = raw && raw._deltaOnly
+      ? {
+          ...base,
+          totalBlocked: raw.totalBlocked ?? base.totalBlocked,
+          lastBlockedHost: raw.lastBlockedHost || '',
+          lastBlockedOrigin: raw.lastBlockedOrigin || ''
+        }
+      : base;
+  }
   lastAdblockBroadcastAt = Date.now();
   for (const ctx of windowContexts.values()) {
     if (ctx.win && !ctx.win.isDestroyed()) {
       ctx.win.webContents.send('adblock:update', payload);
+    }
+    if (
+      ctx.shellDrawerState &&
+      ctx.shellDrawerState.open &&
+      ctx.drawerOverlayView &&
+      ctx.drawerOverlayView.webContents &&
+      !ctx.drawerOverlayView.webContents.isDestroyed()
+    ) {
+      ctx.drawerOverlayView.webContents.send('adblock:update', payload);
     }
     if (
       ctx.popoverOpenKind &&
@@ -330,6 +374,9 @@ function broadcastSettingsUpdate(settings, { profileId = null } = {}) {
     if (ctx.win && !ctx.win.isDestroyed()) {
       ctx.win.webContents.send('settings:update', payload);
     }
+    if (ctx.drawerOverlayView && ctx.drawerOverlayView.webContents && !ctx.drawerOverlayView.webContents.isDestroyed()) {
+      ctx.drawerOverlayView.webContents.send('settings:update', payload);
+    }
     if (ctx.popoverView && ctx.popoverView.webContents && !ctx.popoverView.webContents.isDestroyed()) {
       ctx.popoverView.webContents.send('settings:update', payload);
     }
@@ -416,6 +463,7 @@ module.exports = {
   getCtxFromSender,
   serializeTabs,
   broadcastState,
+  scheduleBroadcastState,
   sendToWebUiTabs,
   sendToCornerTabs,
   notifyActiveWebUiTabShown,

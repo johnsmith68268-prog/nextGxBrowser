@@ -133,13 +133,13 @@ body {
   pointer-events: none;
 }
 
-/* TOP CHROME (82px base; 112px with 30px Bookmarks Bar) */
+/* TOP CHROME (82px base; 112px with 30px Bookmarks Bar) — Minimalist Opera GX seamless frame */
 .nx-top-chrome {
   height: 82px;
   min-height: 82px;
   background: var(--bg-deep);
-  border-bottom: 1px solid var(--nx-accent);
-  box-shadow: inset 0 -1px 0 var(--nx-accent-soft), inset 2px 0 0 var(--nx-accent);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   z-index: 30;
@@ -155,77 +155,90 @@ body {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  padding-left: 8px;
-  gap: 6px;
+  padding-left: 0;
+  gap: 0;
+  border-bottom: none;
   -webkit-app-region: drag;
 }
 
 .nx-brand {
+  width: 50px;
+  height: 40px;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 8px;
-  border-radius: var(--nx-radius-sm);
+  justify-content: center;
+  padding: 0;
+  border-radius: 0;
+  color: var(--nx-accent-bright);
   cursor: pointer;
   flex-shrink: 0;
-  transition: background var(--nx-motion-fast) var(--nx-motion-ease);
+  transition: color 140ms ease, transform 140ms ease;
   -webkit-app-region: no-drag;
 }
 
 .nx-brand:hover {
-  background: var(--bg-surface);
-}
-
-.nx-brand-mark {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: transform var(--nx-motion-fast) var(--nx-motion-ease);
-}
-
-.nx-brand-logo-img {
-  width: 22px;
-  height: 22px;
-  display: block;
-  object-fit: contain;
-  filter: var(--gx-emblem-filter, none) drop-shadow(0 0 4px var(--nx-accent-soft));
-  transition: filter var(--nx-motion-base) var(--nx-motion-ease), transform var(--nx-motion-fast) var(--nx-motion-ease);
-}
-
-.nx-brand:hover .nx-brand-mark {
-  transform: scale(1.07);
-}
-
-.nx-brand:hover .nx-brand-logo-img {
-  filter: var(--gx-emblem-filter, none) drop-shadow(0 0 10px var(--nx-accent));
-}
-
-.nx-brand-text {
-  font-family: var(--nx-font-display);
-  font-size: 13.5px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
   color: var(--text-main);
 }
 
-.nx-brand-text strong {
-  font-weight: 800;
-  color: var(--nx-accent-bright);
+.nx-brand svg {
+  transition: transform 160ms ease;
+}
+
+.nx-brand:hover svg {
+  transform: scale(1.08);
+}
+
+/* Opera GX signature outer top-left wrapping gradient: starts down the far-left
+   window edge (x = 1px), curves around the top-left corner outside the orbital
+   logo, and dynamically expands/contracts horizontally along the top edge to
+   follow open tabs up to the "+" button (--nx-top-glow-w). */
+body:not(.is-drawer-overlay)::before {
+  content: "";
+  position: fixed;
+  top: 1px;
+  left: 1px;
+  width: var(--nx-top-glow-w, 340px);
+  height: 220px;
+  border-top-left-radius: 10px;
+  padding: 1.5px 0 0 1.5px;
+  background: radial-gradient(
+    ellipse 108% 105% at 0% 0%,
+    var(--nx-accent-bright) 0%,
+    var(--nx-accent) 62%,
+    color-mix(in srgb, var(--nx-accent) 40%, transparent) 88%,
+    transparent 100%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 60;
+  transition: width 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.nx-tabs-contour {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 33px;
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 0 4px 0 2px;
+  min-width: 0;
+  flex: 0 1 auto;
+  -webkit-app-region: no-drag;
 }
 
 .nx-workspace-pills {
   display: flex;
   align-items: center;
   gap: 2px;
-  max-width: 280px;
-  background: var(--bg-chrome);
-  padding: 2px;
+  max-width: 240px;
+  background: transparent;
+  padding: 0 2px;
   border-radius: var(--nx-radius-sm);
-  border: 1px solid var(--border-glass);
+  border: none;
   flex-shrink: 0;
   -webkit-app-region: no-drag;
 }
@@ -269,8 +282,8 @@ body {
 .ws-pill.active {
   background: var(--nx-accent-soft);
   color: var(--nx-accent-bright);
-  border-color: var(--nx-accent);
-  box-shadow: var(--nx-glow-sm);
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .ws-pill.drop-target {
@@ -475,45 +488,39 @@ body {
   transform: rotate(-90deg);
 }
 
-/* Chamfered Opera GX Style Tabs */
+/* Minimalist Opera GX Tabs — borderless inactive tabs, soft seamless active tab */
 .nx-corner-tab {
-  width: 34px;
-  height: 31px;
-  flex: 0 0 34px;
-  border-radius: var(--nx-radius-sm) var(--nx-radius-sm) 0 0;
-  border: 1px solid var(--border-glass);
-  border-bottom: none;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--nx-accent) 12%, var(--bg-chrome)), var(--bg-chrome));
-  color: var(--nx-accent-bright);
+  width: 30px;
+  height: 28px;
+  flex: 0 0 30px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text-muted);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  clip-path: var(--nx-chamfer-tab);
   align-self: center;
-  margin-right: -3px;
+  margin-right: 2px;
   -webkit-app-region: no-drag;
-  transition: background var(--nx-motion-fast) var(--nx-motion-ease), border-color var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+  transition: background 140ms ease, color 140ms ease;
 }
 
 .nx-corner-tab:hover {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--nx-accent) 22%, var(--bg-surface)), var(--bg-surface));
-  border-color: var(--nx-accent);
-  color: var(--nx-accent-bright);
-  box-shadow: inset 0 2px 0 var(--nx-accent-bright), var(--nx-glow-sm);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-main);
 }
 
 .nx-corner-tab.active {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--nx-accent) 28%, var(--bg-surface)), var(--bg-chrome));
-  border-color: var(--nx-accent);
+  background: color-mix(in srgb, var(--nx-accent) 32%, var(--bg-surface));
   color: var(--nx-accent-bright);
-  box-shadow: inset 0 2px 0 var(--nx-accent-bright), var(--nx-glow-md);
 }
 
 .nx-tabs-strip {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
   flex: 0 1 auto;
   min-width: 0;
   -webkit-app-region: no-drag;
@@ -521,62 +528,56 @@ body {
 
 .nx-tab-scroll-btn {
   width: 24px;
-  height: 28px;
-  border-radius: var(--nx-radius-xs);
-  clip-path: var(--nx-chamfer-sm);
-  border: 1px solid var(--border-glass);
-  background: var(--bg-chrome);
+  height: 26px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
   color: var(--text-muted);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
-  transition: background var(--nx-motion-fast) var(--nx-motion-ease), border-color var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease), opacity var(--nx-motion-fast) var(--nx-motion-ease);
+  transition: background 140ms ease, color 140ms ease, opacity 140ms ease;
   -webkit-app-region: no-drag;
 }
 
 .nx-tab-scroll-btn:hover:not(:disabled) {
-  background: var(--nx-accent-soft);
-  border-color: var(--nx-accent);
-  color: var(--nx-accent-bright);
-  box-shadow: var(--nx-glow-sm);
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-main);
 }
 
 .nx-tab-scroll-btn:disabled {
-  opacity: 0.28;
+  opacity: 0.25;
   cursor: default;
 }
 
 /* [TABS-W2] Gap 8.1 — tab search chevron at the left of the tab strip. */
 .nx-tab-search-btn {
   width: 24px;
-  height: 28px;
-  border-radius: var(--nx-radius-xs);
-  clip-path: var(--nx-chamfer-sm);
-  border: 1px solid var(--border-glass);
-  background: var(--bg-chrome);
+  height: 26px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
   color: var(--text-muted);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
-  transition: background var(--nx-motion-fast) var(--nx-motion-ease), border-color var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+  transition: background 140ms ease, color 140ms ease;
   -webkit-app-region: no-drag;
 }
 
 .nx-tab-search-btn:hover {
-  background: var(--nx-accent-soft);
-  border-color: var(--nx-accent);
-  color: var(--nx-accent-bright);
-  box-shadow: var(--nx-glow-sm);
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-main);
 }
 
 .nx-tabs-container {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   flex: 0 1 auto;
   min-width: 0;
   overflow-x: auto;
@@ -589,26 +590,39 @@ body {
   display: none;
 }
 
+@keyframes nxTabGradientSweep {
+  0% {
+    background-position: 100% 0;
+    opacity: 0.55;
+  }
+  100% {
+    background-position: 0% 0;
+    opacity: 1;
+  }
+}
+
 .nx-tab {
-  height: 31px;
-  flex: 1 1 165px;
+  position: relative;
+  overflow: hidden;
+  height: 29px;
+  margin-bottom: 0;
+  flex: 1 1 175px;
   min-width: 68px;
-  max-width: 215px;
-  padding: 0 9px;
-  background: color-mix(in srgb, var(--bg-chrome) 75%, transparent);
-  border: 1px solid var(--border-glass);
-  border-bottom: none;
-  border-radius: var(--nx-radius-sm) var(--nx-radius-sm) 0 0;
+  max-width: 220px;
+  padding: 0 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 6px);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   font-size: 12px;
   color: var(--text-muted);
   cursor: pointer;
-  clip-path: var(--nx-chamfer-tab);
-  align-self: flex-end;
+  align-self: flex-start;
   -webkit-app-region: no-drag;
-  transition: background var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease), border-color var(--nx-motion-fast) var(--nx-motion-ease), opacity var(--nx-motion-fast) var(--nx-motion-ease);
+  transition: background 140ms cubic-bezier(0.22, 1, 0.36, 1), color 140ms ease, border-color 140ms ease, opacity 140ms ease;
 }
 
 .nx-tab.pinned {
@@ -661,17 +675,38 @@ body {
 }
 
 .nx-tab:hover {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--nx-accent) 14%, var(--bg-surface)), var(--bg-chrome));
+  background: rgba(255, 255, 255, 0.055);
   color: var(--text-main);
-  border-color: var(--nx-accent-soft);
-  box-shadow: inset 0 2px 0 var(--nx-accent-soft), var(--nx-glow-sm);
 }
 
 .nx-tab.active {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--nx-accent) 26%, var(--bg-surface)), var(--bg-chrome));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--nx-accent) 36%, var(--bg-surface)) 0%,
+    color-mix(in srgb, var(--nx-accent) 18%, var(--bg-chrome)) 100%
+  );
+  border-color: color-mix(in srgb, var(--nx-accent) 42%, rgba(255, 255, 255, 0.08));
+  border-top-color: transparent;
   color: var(--text-main);
-  border-color: var(--nx-accent);
-  box-shadow: inset 0 2px 0 var(--nx-accent-bright), var(--nx-glow-md), inset 0 0 10px var(--nx-accent-soft);
+  box-shadow: inset 0 8px 14px -8px color-mix(in srgb, var(--nx-accent-bright) 45%, transparent);
+}
+
+.nx-tab.active::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    var(--nx-accent-bright) 0%,
+    var(--nx-accent) 55%,
+    var(--nx-accent-bright) 100%
+  );
+  background-size: 220% 100%;
+  animation: nxTabGradientSweep 480ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  pointer-events: none;
 }
 
 .nx-tab.in-split {
@@ -720,16 +755,16 @@ body {
 }
 
 .tab-favicon {
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
   border-radius: 3px;
   flex-shrink: 0;
   object-fit: contain;
 }
 
 .tab-favicon-svg {
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
   color: var(--nx-accent-bright);
   flex-shrink: 0;
 }
@@ -794,9 +829,17 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  opacity: 0;
+  transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+}
+
+.nx-tab:hover .tab-close-btn,
+.nx-tab.active .tab-close-btn {
+  opacity: 0.8;
 }
 
 .tab-close-btn:hover {
+  opacity: 1 !important;
   background: var(--nx-glass-strong);
   color: var(--text-main);
 }
@@ -878,16 +921,20 @@ body {
 }
 
 .win-btn {
-  width: 40px;
+  width: 36px;
   height: 100%;
   border: none;
   background: transparent;
-  color: var(--text-muted);
+  color: color-mix(in srgb, var(--nx-accent-bright) 48%, #8b85a6);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease);
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.win-btn.win-search-btn {
+  margin-right: 2px;
 }
 
 .win-btn:hover {
@@ -900,27 +947,27 @@ body {
   color: var(--nx-white);
 }
 
-/* Row 2: Navbar (41px + 40px titlebar + 1px header border = 82px) */
+/* Row 2: Minimalist Opera GX Navbar */
 .nx-navbar {
   height: 41px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  padding: 0 10px 0 54px;
-  gap: 8px;
+  padding: 0 10px 0 50px;
+  gap: 6px;
   background: var(--bg-chrome);
 }
 
-/* Row 3: Slim Bookmarks Bar (30px, visually quiet themed strip) */
+/* Row 3: Seamless Bookmarks Bar (no harsh separator line) */
 .nx-bookmarks-bar {
   height: 30px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  padding: 0 10px 0 54px;
-  gap: 6px;
+  padding: 0 10px 0 50px;
+  gap: 4px;
   background: var(--bg-chrome);
-  border-top: 1px solid var(--border-glass);
+  border-top: none;
 }
 
 .nx-bookmarks-items {
@@ -942,9 +989,9 @@ body {
 .bm-bar-item {
   height: 22px;
   max-width: 168px;
-  padding: 0 8px;
-  border-radius: var(--nx-radius-xs);
-  border: 1px solid transparent;
+  padding: 0 7px;
+  border-radius: 5px;
+  border: none;
   background: transparent;
   color: var(--text-muted);
   font-family: inherit;
@@ -955,8 +1002,7 @@ body {
   gap: 5px;
   flex-shrink: 0;
   cursor: pointer;
-  clip-path: polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 4px 100%, 0 calc(100% - 4px));
-  transition: background var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease), border-color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+  transition: background 120ms ease, color 120ms ease;
 }
 
 /* [TABS-W2] Gap 7.5 — "All Bookmarks" folder sits at the right end of the
@@ -1070,7 +1116,21 @@ body {
 .nx-pinned-extensions {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
+}
+
+.toolbar-v-sep {
+  width: 2px;
+  height: 18px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--nx-accent) 58%, rgba(255, 255, 255, 0.16));
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+#btnBookmarkStar.active svg {
+  fill: currentColor;
+  color: var(--nx-accent-bright);
 }
 
 .pinned-ext-btn .pinned-ext-icon {
@@ -1086,8 +1146,8 @@ body {
 .toolbar-icon-btn {
   width: 29px;
   height: 29px;
-  border-radius: 50%;
-  border: 1px solid transparent;
+  border-radius: 6px;
+  border: none;
   background: transparent;
   color: var(--text-muted);
   display: flex;
@@ -1095,7 +1155,7 @@ body {
   justify-content: center;
   cursor: pointer;
   position: relative;
-  transition: background var(--nx-motion-fast) var(--nx-motion-ease), border-color var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+  transition: background 120ms ease, color 120ms ease;
 }
 
 .nav-icon-btn.is-stop {
@@ -1117,10 +1177,9 @@ body {
 .nav-icon-btn:hover:not(:disabled),
 .toolbar-icon-btn:hover:not(:disabled),
 .toolbar-icon-btn.active {
-  background: var(--bg-surface);
-  border-color: var(--nx-accent-soft);
-  color: var(--nx-accent-bright);
-  box-shadow: var(--nx-glow-sm);
+  background: rgba(255, 255, 255, 0.065);
+  color: var(--text-main);
+  box-shadow: none;
 }
 
 .toolbar-icon-btn.has-video:not(:disabled) {
@@ -1190,24 +1249,25 @@ body {
 }
 
 .address-lead-btn {
-  height: 26px;
-  padding: 0 8px;
+  height: 24px;
+  padding: 0 6px;
   border: none;
-  border-radius: 13px;
+  border-radius: 5px;
   background: transparent;
-  color: var(--success);
+  color: var(--text-muted);
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 600;
   cursor: pointer;
   flex-shrink: 0;
-  transition: background var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease);
+  transition: background 120ms ease, color 120ms ease;
 }
 
 .address-lead-btn:hover {
-  background: color-mix(in srgb, var(--bg-surface) 85%, transparent);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-main);
 }
 
 .address-lead-btn.neutral {
@@ -1216,46 +1276,127 @@ body {
 
 .address-lead-btn.insecure {
   color: var(--warning);
-  background: color-mix(in srgb, var(--warning) 15%, transparent);
-  border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
-  padding: 0 9px;
-  border-radius: 13px;
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  padding: 0 8px;
+  border-radius: 5px;
 }
 
 .dl-active-dot {
   position: absolute;
-  top: 5px;
-  right: 5px;
-  width: 7px;
-  height: 7px;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: var(--nx-accent-bright);
-  box-shadow: 0 0 6px var(--nx-accent-bright);
+  box-shadow: 0 0 8px var(--nx-accent-bright);
+  z-index: 3;
 }
 
-/* Chrome × Opera GX Omnibox pill — comfortable 34px height, crisp focus halo */
+.dl-toolbar-btn {
+  position: relative;
+  overflow: hidden;
+}
+
+.dl-wave-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--dl-fill-pct, 0%);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--nx-accent-bright) 48%, transparent), color-mix(in srgb, var(--nx-accent) 22%, transparent));
+  opacity: 0;
+  pointer-events: none;
+  z-index: 0;
+  transition: height 220ms ease, opacity 180ms ease;
+}
+
+.dl-toolbar-btn.downloading .dl-wave-fill {
+  opacity: 1;
+  animation: nxDlWavePulse 1.5s ease-in-out infinite;
+}
+
+.dl-ring-svg {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  transform: rotate(-90deg);
+  pointer-events: none;
+  opacity: 0;
+  z-index: 1;
+  transition: opacity 180ms ease;
+}
+
+.dl-toolbar-btn.downloading .dl-ring-svg,
+.dl-toolbar-btn.dl-just-done .dl-ring-svg {
+  opacity: 1;
+}
+
+.dl-ring-track {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.14);
+  stroke-width: 2;
+}
+
+.dl-ring-arc {
+  fill: none;
+  stroke: var(--nx-accent-bright);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-dasharray: 72.26;
+  stroke-dashoffset: 72.26;
+  filter: drop-shadow(0 0 4px var(--nx-accent));
+  transition: stroke-dashoffset 220ms ease, stroke 180ms ease;
+}
+
+.dl-toolbar-btn.downloading.indeterminate .dl-ring-svg {
+  animation: nxDlRingSpin 1.1s linear infinite;
+}
+
+.dl-toolbar-btn.dl-just-done .dl-ring-arc {
+  stroke: var(--success, #22c55e);
+  stroke-dashoffset: 0;
+  filter: drop-shadow(0 0 6px var(--success, #22c55e));
+}
+
+.dl-arrow-svg {
+  position: relative;
+  z-index: 2;
+}
+
+@keyframes nxDlWavePulse {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.38); }
+}
+
+@keyframes nxDlRingSpin {
+  from { transform: rotate(-90deg); }
+  to { transform: rotate(270deg); }
+}
+
+/* Minimalist Opera GX URL Bar — sleek flat dark bar with zero clutter */
 .nx-address-capsule {
   flex: 1;
-  height: 34px;
-  background: color-mix(in srgb, var(--bg-deep) 78%, var(--bg-surface));
-  border: 1.5px solid color-mix(in srgb, var(--border-glass) 130%, transparent);
-  border-radius: 17px;
+  height: 31px;
+  background: rgba(255, 255, 255, 0.026);
+  border: 1px solid transparent;
+  border-radius: 7px;
   display: flex;
   align-items: center;
   padding: 0 6px 0 8px;
-  gap: 6px;
-  transition: background var(--nx-motion-fast) var(--nx-motion-ease), border-color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+  gap: 5px;
+  transition: background 140ms ease, border-color 140ms ease;
 }
 
 .nx-address-capsule:hover {
-  background: color-mix(in srgb, var(--bg-deep) 66%, var(--bg-surface));
-  border-color: color-mix(in srgb, var(--nx-accent) 45%, var(--border-glass));
+  background: rgba(255, 255, 255, 0.055);
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 .nx-address-capsule:focus-within {
-  background: var(--bg-deep);
-  border-color: var(--nx-accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--nx-accent) 28%, transparent), var(--nx-glow-sm);
+  background: rgba(0, 0, 0, 0.32);
+  border-color: color-mix(in srgb, var(--nx-accent) 30%, rgba(255, 255, 255, 0.12));
+  box-shadow: none;
 }
 
 .address-lead-icon {
@@ -1270,17 +1411,17 @@ body {
   height: 100%;
   background: transparent;
   border: none;
-  outline: none;
+  outline: none !important;
+  box-shadow: none !important;
   color: var(--text-main);
-  font-size: 13.5px;
-  font-weight: 450;
-  letter-spacing: 0.01em;
+  font-size: 13px;
+  font-weight: 400;
   padding: 0 4px;
 }
 
 .nx-address-input::placeholder {
   color: var(--text-muted);
-  opacity: 0.8;
+  opacity: 0.72;
 }
 
 .nx-address-input::selection {
@@ -1289,39 +1430,40 @@ body {
 }
 
 .private-pill {
-  background: var(--nx-accent);
-  color: var(--nx-on-accent);
-  font-family: var(--nx-font-display);
+  background: var(--nx-accent-soft);
+  color: var(--nx-accent-bright);
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 3px 9px;
-  border-radius: 999px;
+  letter-spacing: 0.05em;
+  padding: 2px 7px;
+  border-radius: 5px;
 }
 
 .capsule-btn {
-  height: 26px;
-  padding: 0 8px;
-  border-radius: 13px;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 5px;
   border: none;
   background: transparent;
   color: var(--text-muted);
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 600;
   cursor: pointer;
   flex-shrink: 0;
-  transition: background var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+  opacity: 0.78;
+  transition: background 120ms ease, color 120ms ease, opacity 120ms ease;
 }
 
 .capsule-btn:hover,
 .capsule-btn.active {
-  background: var(--nx-accent-soft);
-  color: var(--nx-accent-bright);
-  box-shadow: var(--nx-glow-sm);
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.065);
+  color: var(--text-main);
+  box-shadow: none;
 }
 
 .shield-capsule span {
@@ -1652,13 +1794,13 @@ body {
   min-width: 50px;
   height: 100%;
   background: var(--bg-deep);
-  border-right: 1px solid var(--nx-accent);
-  box-shadow: inset -1px 0 0 var(--nx-accent-soft), inset 2px 0 0 var(--nx-accent);
+  border-right: 1px solid rgba(255, 255, 255, 0.04);
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 0;
+  padding: 8px 0;
   overflow-y: auto;
   scrollbar-width: none;
   z-index: 25;
@@ -1716,31 +1858,104 @@ body {
 }
 
 .sidebar-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  border: 1px solid transparent;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  border: none;
   background: transparent;
-  color: var(--text-muted);
+  color: #b4aec9;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   position: relative;
   flex-shrink: 0;
-  transition: background var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease), border-color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+  transition: background 130ms ease, color 130ms ease;
 }
 
-.sidebar-btn:hover,
+.sidebar-btn svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.sidebar-group.bottom .sidebar-btn svg {
+  width: 17px;
+  height: 17px;
+}
+
+.sidebar-brand-foot {
+  width: 38px;
+  height: 26px;
+  margin: 2px 0;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--nx-accent) 12%, rgba(255, 255, 255, 0.025));
+  border: 1px solid color-mix(in srgb, var(--nx-accent) 28%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--nx-font-display);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: var(--nx-accent-bright);
+  pointer-events: none;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.nx-sidebar.expanded .sidebar-brand-foot {
+  width: 100%;
+  height: 32px;
+  justify-content: flex-start;
+  padding: 0 10px;
+}
+
+/* Floating Drawer Overlay Window (index.html?overlay=1 — zero webpage resize) */
+body.is-drawer-overlay {
+  background: transparent;
+}
+
+body.is-drawer-overlay .nx-top-chrome,
+body.is-drawer-overlay .nx-find-bar,
+body.is-drawer-overlay #viewportPlaceholder,
+body.is-drawer-overlay #sidebarPanel,
+body.is-drawer-overlay #firstRunCard,
+body.is-drawer-overlay #profileModalBackdrop {
+  display: none !important;
+}
+
+body.is-drawer-overlay .nx-body {
+  width: 100vw;
+  height: 100vh;
+}
+
+body.is-drawer-overlay .nx-sidebar.expanded {
+  position: relative;
+  width: 100%;
+  min-width: 100%;
+  height: 100%;
+  border-right: 1px solid color-mix(in srgb, var(--nx-accent) 34%, rgba(255, 255, 255, 0.08));
+}
+
+body.is-drawer-overlay .nx-left-tool-drawer,
+body.is-drawer-overlay .nx-right-drawer {
+  width: 100%;
+  min-width: 100%;
+  height: 100%;
+}
+
+.sidebar-btn:hover {
+  background: rgba(255, 255, 255, 0.065);
+  color: var(--text-main);
+  box-shadow: none;
+}
+
 .sidebar-btn.active {
   background: var(--nx-accent-soft);
   color: var(--nx-accent-bright);
-  border-color: var(--nx-accent);
-  box-shadow: var(--nx-glow-sm), inset 0 0 8px var(--nx-accent-soft);
-}
-
-.sidebar-btn.active {
-  animation: nxActiveRailGlow 3.2s ease-in-out infinite;
+  box-shadow: none;
 }
 
 .sidebar-btn.active::before {
@@ -1798,7 +2013,7 @@ body {
 .nx-sidebar-panel {
   width: 380px;
   min-width: 260px;
-  max-width: 800px;
+  max-width: 1600px;
   height: 100%;
   background: var(--bg-chrome);
   border-right: none;
@@ -1912,7 +2127,7 @@ body {
   min-width: 340px;
   height: 100%;
   background: var(--bg-chrome);
-  border-right: 1px solid var(--nx-accent);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
   display: flex;
   flex-direction: column;
   z-index: 22;
@@ -1924,7 +2139,7 @@ body {
   min-width: 360px;
   height: 100%;
   background: var(--bg-chrome);
-  border-left: 1px solid var(--nx-accent);
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
   display: flex;
   flex-direction: column;
   z-index: 22;
@@ -3244,4 +3459,163 @@ body.battery-saver .nx-toast,
 body.battery-saver .nx-right-drawer {
   animation-duration: 0.01ms !important;
   transition-duration: 0.05s !important;
+}
+
+/* Reduce animations & colorize sidebar icons global classes */
+body.reduce-animations *,
+body.reduce-animations *::before,
+body.reduce-animations *::after {
+  animation-duration: 0.01ms !important;
+  transition-duration: 0.01ms !important;
+}
+
+body.colorize-sidebar-icons .nx-sidebar .sidebar-btn svg {
+  color: var(--nx-accent-bright) !important;
+  filter: drop-shadow(0 0 4px var(--nx-accent-soft));
+}
+
+body.hide-left-sidebar .nx-sidebar {
+  display: none !important;
+}
+
+/* Easy Setup Redesign (Opera GX clean minimal cards + themes + AI wallpapers) */
+.es-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 2px 2px;
+}
+
+.es-section-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(215, 220, 238, 0.56);
+}
+
+.es-card {
+  padding: 10px 12px !important;
+  gap: 8px !important;
+  background: rgba(18, 16, 28, 0.72) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+
+.es-themes-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.es-theme-card {
+  background: rgba(10, 9, 17, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 7px;
+  padding: 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--text-main);
+  transition: border-color 140ms ease, transform 140ms ease, box-shadow 140ms ease;
+}
+
+.es-theme-card:hover {
+  border-color: color-mix(in srgb, var(--es-swatch) 65%, rgba(255, 255, 255, 0.16));
+  transform: translateY(-1px);
+}
+
+.es-theme-card.active {
+  border-color: var(--es-swatch);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--es-swatch) 50%, transparent);
+}
+
+.es-theme-mock {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  height: 36px;
+  padding: 6px 5px;
+  border-radius: 5px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--es-swatch) 18%, #0c0a14), #090811);
+  border-top: 1.5px solid var(--es-swatch);
+  border-left: 1.5px solid color-mix(in srgb, var(--es-swatch) 70%, transparent);
+}
+
+.es-theme-mock i {
+  display: block;
+  width: 5px;
+  height: 5px;
+  border-radius: 1.5px;
+  background: var(--es-swatch);
+}
+
+.es-theme-mock i.d2 { opacity: 0.72; }
+.es-theme-mock i.d3 { opacity: 0.45; }
+
+.es-theme-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(235, 238, 250, 0.86);
+}
+
+.es-radio {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  position: relative;
+  flex-shrink: 0;
+}
+
+.es-theme-card.active .es-radio {
+  border-color: var(--es-swatch);
+  background: radial-gradient(circle, var(--es-swatch) 48%, transparent 54%);
+}
+
+.es-wp-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.es-wp-thumb {
+  height: 44px;
+  border-radius: 6px;
+  border: 1.5px solid rgba(255, 255, 255, 0.08);
+  background-size: cover;
+  background-position: center;
+  cursor: pointer;
+  transition: border-color 140ms ease, transform 140ms ease, box-shadow 140ms ease;
+}
+
+.es-wp-thumb:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.es-wp-thumb.active {
+  border-color: var(--nx-accent-bright);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--nx-accent) 45%, transparent);
+}
+
+.es-add-wp-btn {
+  width: 100%;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(238, 240, 252, 0.88);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.es-add-wp-btn:hover {
+  background: color-mix(in srgb, var(--nx-accent) 18%, rgba(255, 255, 255, 0.06));
+  border-color: var(--nx-accent);
 }

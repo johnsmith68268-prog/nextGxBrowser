@@ -80,7 +80,7 @@ function createBrowserWindow({ incognito = false, restoreTabs = null, profileId 
       if (typeof applySessionPrivacyAndPrefs === 'function') {
         applySessionPrivacyAndPrefs(winSession, { incognito: true, profileId: resolvedProfileId });
       }
-    } catch (_) {}
+    } catch (_) { }
   }
 
   const profileSettings = state.storage ? state.storage.getSettings(resolvedProfileId) : {};
@@ -208,8 +208,24 @@ function createBrowserWindow({ incognito = false, restoreTabs = null, profileId 
       closePopover(ctx, { restoreFocus: false });
     }
   });
-  win.on('maximize', () => updateActiveViewBounds(ctx));
-  win.on('unmaximize', () => updateActiveViewBounds(ctx));
+  const sendMaxState = (isMax) => {
+    try {
+      if (!win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
+        win.webContents.send('window:maximize-changed', Boolean(isMax));
+      }
+    } catch (_) { }
+  };
+  win.webContents.on('did-finish-load', () => sendMaxState(win.isMaximized()));
+  win.on('maximize', () => {
+    updateActiveViewBounds(ctx);
+    if (ctx.sidebarPanel?.open) syncSidebarFrameViewState(ctx);
+    sendMaxState(true);
+  });
+  win.on('unmaximize', () => {
+    updateActiveViewBounds(ctx);
+    if (ctx.sidebarPanel?.open) syncSidebarFrameViewState(ctx);
+    sendMaxState(false);
+  });
   win.on('close', () => {
     if (state.isAppQuitting || ctx.incognito || ctx.skipSessionSave || !state.storage) return;
     const pid = ctx.profileId || 'default';
@@ -244,7 +260,7 @@ function createBrowserWindow({ incognito = false, restoreTabs = null, profileId 
     try {
       const { closeExtensionPopup } = require('./extension-popup');
       if (typeof closeExtensionPopup === 'function') closeExtensionPopup(ctx);
-    } catch (_) {}
+    } catch (_) { }
     if (ctx.screenshotView) {
       try {
         const wc = ctx.screenshotView.webContents;
@@ -252,7 +268,7 @@ function createBrowserWindow({ incognito = false, restoreTabs = null, profileId 
           webContentsToWinId.delete(wc.id);
           if (typeof wc.isDestroyed === 'function' && !wc.isDestroyed()) wc.close();
         }
-      } catch (_) {}
+      } catch (_) { }
       ctx.screenshotView = null;
     }
     ctx.pendingScreenshotDataUrl = '';
@@ -263,7 +279,7 @@ function createBrowserWindow({ incognito = false, restoreTabs = null, profileId 
           webContentsToWinId.delete(wc.id);
           if (typeof wc.isDestroyed === 'function' && !wc.isDestroyed()) wc.close();
         }
-      } catch (_) {}
+      } catch (_) { }
       ctx.popoverView = null;
     }
     // [FIXUP] Destroy the window's remaining tab views. closeTab() does this
@@ -277,7 +293,7 @@ function createBrowserWindow({ incognito = false, restoreTabs = null, profileId 
           try {
             const wc = tab.view.webContents;
             if (wc && typeof wc.isDestroyed === 'function' && !wc.isDestroyed()) wc.close();
-          } catch (_) {}
+          } catch (_) { }
           tab.view = null;
         }
       }
@@ -302,9 +318,9 @@ function createBrowserWindow({ incognito = false, restoreTabs = null, profileId 
     if (win.isDestroyed()) return;
     const restoreSpec =
       !ctx.incognito &&
-      ctx.pendingRestoreTabs &&
-      Array.isArray(ctx.pendingRestoreTabs.tabs) &&
-      ctx.pendingRestoreTabs.tabs.length > 0
+        ctx.pendingRestoreTabs &&
+        Array.isArray(ctx.pendingRestoreTabs.tabs) &&
+        ctx.pendingRestoreTabs.tabs.length > 0
         ? ctx.pendingRestoreTabs
         : null;
 
@@ -518,7 +534,11 @@ function openStartupWindows() {
       return;
     }
   }
-  createBrowserWindow({ incognito: false, profileId: activeProfileId });
+  createBrowserWindow({
+    incognito: false,
+    profileId: activeProfileId,
+    initialUrl: settings.onboardingCompleted === false ? 'nextgx://welcome' : null
+  });
 }
 
 module.exports = {

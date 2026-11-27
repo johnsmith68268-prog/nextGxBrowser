@@ -2,21 +2,21 @@
 
 :root,
 html[data-theme="gx-violet"] {
-  --nx-accent: #9d4edd;
-  --nx-accent-bright: #c77dff;
-  --nx-accent-soft: rgba(157, 78, 221, 0.22);
-  --nx-grid-line: rgba(157, 78, 221, 0.05);
+  --nx-accent: #7c66dc;
+  --nx-accent-bright: #a48fff;
+  --nx-accent-soft: rgba(124, 102, 220, 0.16);
+  --nx-grid-line: rgba(124, 102, 220, 0.025);
   --nx-on-accent: #ffffff;
-  --gx-logo-highlight: #e0aaff;
-  --gx-logo-primary: #b65bfa;
-  --gx-logo-secondary: #7c3aed;
-  --gx-logo-tile-top: #1d162c;
-  --gx-logo-tile-bot: #0e0b16;
-  --gx-emblem-filter: hue-rotate(222deg) saturate(1.3) brightness(0.96);
-  --bg-deep: #12101b;
-  --bg-chrome: #181524;
-  --bg-surface: #221e33;
-  --bg-elevated: #2d2844;
+  --gx-logo-highlight: #d8ccff;
+  --gx-logo-primary: #8e79eb;
+  --gx-logo-secondary: #634ec2;
+  --gx-logo-tile-top: #171427;
+  --gx-logo-tile-bot: #0c0b14;
+  --gx-emblem-filter: hue-rotate(222deg) saturate(1.15) brightness(0.96);
+  --bg-deep: #0b0a12;
+  --bg-chrome: #100f1a;
+  --bg-surface: #181626;
+  --bg-elevated: #211e33;
   --nx-wallpaper: var(--nx-wallpaper-gx-violet);
 }
 
@@ -176,15 +176,15 @@ html[data-incognito="true"][data-theme] {
 :root {
   color-scheme: dark;
 
-  /* Shared Text & Surface Glass Tokens */
-  --text-main: #f1eff7;
-  --text-muted: #9690ab;
+  /* Shared Text & Surface Glass Tokens — Whisper-subtle borders, zero clutter */
+  --text-main: #edeaf6;
+  --text-muted: #8a84a3;
   --nx-white: #ffffff;
-  --border-glass: rgba(255, 255, 255, 0.08);
-  --specular-top: inset 0 1px 0 rgba(255, 255, 255, 0.09);
-  --nx-glass-subtle: rgba(255, 255, 255, 0.04);
-  --nx-glass-hover: rgba(255, 255, 255, 0.08);
-  --nx-glass-strong: rgba(255, 255, 255, 0.14);
+  --border-glass: rgba(255, 255, 255, 0.055);
+  --specular-top: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  --nx-glass-subtle: rgba(255, 255, 255, 0.035);
+  --nx-glass-hover: rgba(255, 255, 255, 0.065);
+  --nx-glass-strong: rgba(255, 255, 255, 0.11);
   --nx-shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.3);
   --nx-shadow-md: 0 6px 16px rgba(0, 0, 0, 0.34);
   --nx-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.36);
@@ -262,10 +262,10 @@ html[data-incognito="true"][data-theme] {
   --success: #10b981;
   --warning: #f59e0b;
 
-  /* Gaming (GX-Style) Glow Scale */
-  --nx-glow-sm: 0 0 8px var(--nx-accent-soft);
-  --nx-glow-md: 0 0 14px var(--nx-accent-soft), 0 0 4px var(--nx-accent-soft);
-  --nx-glow-lg: 0 0 24px var(--nx-accent-soft), 0 0 8px var(--nx-accent-soft);
+  /* Subtle Minimalist Opera GX Glow Scale (no harsh radioactive bloom) */
+  --nx-glow-sm: 0 2px 8px rgba(0, 0, 0, 0.24);
+  --nx-glow-md: 0 4px 14px rgba(0, 0, 0, 0.32);
+  --nx-glow-lg: 0 8px 24px rgba(0, 0, 0, 0.42);
 
   /* Gaming (GX-Style) Chamfer Clip-Paths */
   --nx-chamfer-sm: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));
