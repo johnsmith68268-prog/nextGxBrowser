@@ -390,7 +390,9 @@ class StorageManager {
             textSelectionPopup: true,
             copiedToastEnabled: true,
             videoPopOutEnabled: true,
-            onboardingCompleted: false
+            onboardingCompleted: false,
+            autoCheckUpdates: true,
+            autoDownloadUpdates: true
           },
       speedDial: [
         { id: 'sd-1', title: 'YouTube', url: 'https://www.youtube.com', domain: 'youtube.com' },
@@ -1199,6 +1201,8 @@ class StorageManager {
     merged.copiedToastEnabled = merged.copiedToastEnabled !== false;
     merged.videoPopOutEnabled = merged.videoPopOutEnabled !== false;
     merged.onboardingCompleted = Boolean(merged.onboardingCompleted);
+    merged.autoCheckUpdates = merged.autoCheckUpdates !== false;
+    merged.autoDownloadUpdates = merged.autoDownloadUpdates !== false;
     // [Fix2] Battery saver, page effects, local audio toggles, local Mods.
     merged.batterySaverEnabled = Boolean(merged.batterySaverEnabled);
     merged.shaderPreset = [
@@ -1471,7 +1475,9 @@ class StorageManager {
       'textSelectionPopup',
       'copiedToastEnabled',
       'videoPopOutEnabled',
-      'onboardingCompleted'
+      'onboardingCompleted',
+      'autoCheckUpdates',
+      'autoDownloadUpdates'
     ]) {
       if (Object.prototype.hasOwnProperty.call(safePartial, boolKey)) {
         safePartial[boolKey] = Boolean(safePartial[boolKey]);

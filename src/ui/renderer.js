@@ -1429,6 +1429,9 @@ let omniboxSuggestReqId = 0;
 let omniboxSuggestItems = [];
 let omniboxSuggestSelectedIdx = -1;
 const addressDraftByTabId = new Map();
+const lastTabUrlById = new Map();
+const lastTabNavSeqById = new Map();
+const lastTabExplicitNavSeqById = new Map();
 let selectAllOnMouseUp = false;
 
 async function getHistoryForSuggestions() {
@@ -1950,16 +1953,52 @@ function syncActiveTabBarControls(state, activeChanged = false) {
     btnReload.title = isLoading ? 'Stop loading (Esc)' : 'Reload (Ctrl+R)';
     btnReload.setAttribute('aria-label', isLoading ? 'Stop loading' : 'Reload');
 
-    const activeDraft = active.id ? addressDraftByTabId.get(active.id) : undefined;
-    if (activeChanged) {
-      if (typeof activeDraft === 'string') {
-        addressInput.value = activeDraft;
-      } else {
-        addressInput.value = active.url === 'nextgx://newtab' ? '' : elideUrlForDisplay(active.url);
+    const tabId = active.id || '';
+    const prevTabUrl = tabId ? lastTabUrlById.get(tabId) : undefined;
+    const prevNavSeq = tabId ? lastTabNavSeqById.get(tabId) : undefined;
+    const prevExplicitNavSeq = tabId ? lastTabExplicitNavSeqById.get(tabId) : undefined;
+    const curNavSeq = Number(active.navSeq) || 0;
+    const curExplicitNavSeq = Number(active.explicitNavSeq) || 0;
+    const explicitNavTriggered = Boolean(
+      tabId && prevExplicitNavSeq !== undefined && curExplicitNavSeq !== prevExplicitNavSeq
+    );
+    const navCommitted = Boolean(
+      tabId &&
+        (explicitNavTriggered ||
+          (prevTabUrl !== undefined && active.url !== prevTabUrl) ||
+          (prevNavSeq !== undefined && curNavSeq !== prevNavSeq))
+    );
+    if (tabId) {
+      lastTabUrlById.set(tabId, active.url || '');
+      lastTabNavSeqById.set(tabId, curNavSeq);
+      lastTabExplicitNavSeqById.set(tabId, curExplicitNavSeq);
+    }
+
+    const displayAddr = active.url === 'nextgx://newtab' ? '' : elideUrlForDisplay(active.url);
+    if (explicitNavTriggered) {
+      addressDraftByTabId.delete(tabId);
+      hideOmniboxSuggestions();
+      if (document.activeElement === addressInput) {
+        addressInput.blur();
       }
-    } else if (document.activeElement !== addressInput && typeof activeDraft !== 'string') {
-      // [URLBAR-3.1] Unfocused omnibox shows the elided display value (no scheme).
-      addressInput.value = active.url === 'nextgx://newtab' ? '' : elideUrlForDisplay(active.url);
+      addressInput.value = displayAddr;
+    } else {
+      if (navCommitted) {
+        addressDraftByTabId.delete(tabId);
+      }
+      const activeDraft = tabId ? addressDraftByTabId.get(tabId) : undefined;
+      const isActivelyEditingAddress = document.activeElement === addressInput && document.hasFocus();
+      if (activeChanged) {
+        addressInput.value = typeof activeDraft === 'string' ? activeDraft : displayAddr;
+      } else if (navCommitted && !isActivelyEditingAddress) {
+        if (document.activeElement === addressInput) {
+          addressInput.blur();
+        }
+        addressInput.value = displayAddr;
+      } else if (!isActivelyEditingAddress && typeof activeDraft !== 'string') {
+        // [URLBAR-3.1] Unfocused omnibox shows the elided display value (no scheme).
+        addressInput.value = displayAddr;
+      }
     }
 
     if (siteInfoPopoverUrl && active.url !== siteInfoPopoverUrl) {
@@ -5141,6 +5180,58 @@ function updateToolbarDownloadProgress(list) {
 window.gxAPI.onDownloadsUpdate((list) => {
   cachedDownloads = list || [];
   updateToolbarDownloadProgress(cachedDownloads);
+});
+
+let latestUpdaterState = null;
+function renderToolbarUpdatePill(st) {
+  latestUpdaterState = st || null;
+  const pill = document.getElementById('btnUpdatePill');
+  const txt = document.getElementById('updatePillText');
+  if (!pill || !txt) return;
+  const status = st?.status || 'idle';
+  if (status === 'available') {
+    pill.classList.remove('hidden', 'ready');
+    txt.textContent = `Update v${st.latestVersion || ''}`;
+    pill.title = `nextGx Browser v${st.latestVersion || ''} is available — click to download`;
+  } else if (status === 'downloading') {
+    pill.classList.remove('hidden', 'ready');
+    const pct = Number(st.progressPercent) || 0;
+    txt.textContent = `Updating ${pct}%`;
+    pill.title = `Downloading nextGx Browser v${st.latestVersion || ''} (${pct}%)`;
+  } else if (status === 'downloaded') {
+    pill.classList.remove('hidden');
+    pill.classList.add('ready');
+    txt.textContent = st.canSilentInstall ? 'Restart to Update' : `Install v${st.latestVersion || ''}`;
+    pill.title = st.canSilentInstall
+      ? `nextGx Browser v${st.latestVersion || ''} verified & ready — click to restart and update`
+      : `nextGx Browser v${st.latestVersion || ''} downloaded & verified — click to open folder`;
+  } else {
+    pill.classList.add('hidden');
+    pill.classList.remove('ready');
+  }
+}
+
+document.getElementById('btnUpdatePill')?.addEventListener('click', async () => {
+  window.gxSounds?.playClick();
+  const status = latestUpdaterState?.status;
+  if (status === 'downloaded') {
+    const res = await window.gxAPI.installUpdate?.({ relaunch: true });
+    if (res && !res.ok) showToast(res.error || 'Could not start installer');
+    else if (res?.mode === 'reveal-folder') showToast('Opened verified update package in Explorer');
+    return;
+  }
+  if (status === 'available') {
+    window.gxAPI.downloadUpdate?.();
+    showToast(`Downloading nextGx Browser v${latestUpdaterState?.latestVersion || ''}…`);
+    return;
+  }
+  window.gxAPI.createTab({ url: 'nextgx://settings/about', active: true });
+});
+
+window.gxAPI.onUpdaterState?.((st) => renderToolbarUpdatePill(st));
+window.gxAPI.getUpdaterState?.().then((st) => renderToolbarUpdatePill(st)).catch(() => { });
+window.addEventListener('online', () => {
+  window.gxAPI.notifyOnline?.();
 });
 window.gxAPI.onSystemStats((stats) => renderSystemStats(stats));
 window.gxAPI.onSettingsUpdate?.((s) => syncSettingsUI(s));

@@ -50,14 +50,14 @@ const POPOVER_KIND_SPECS = {
   'permission-prompt': {
     isMenu: false,
     align: 'left',
-    // Chrome parity (worker A): grown for the reworked prompt — three
-    // full-width pills plus a live camera preview and device dropdowns.
-    defaultW: 360,
-    defaultH: 300,
-    minW: 320,
-    maxW: 390,
-    minH: 180,
-    maxH: 560
+    // Compact Chrome-style permission bubble; grows automatically for
+    // camera preview & device selectors without leaving empty dead space.
+    defaultW: 324,
+    defaultH: 136,
+    minW: 296,
+    maxW: 372,
+    minH: 104,
+    maxH: 540
   },
   // Chrome parity (worker A): centred screen-share picker (Tab / Window /
   // Entire Screen) with thumbnails. Opened centred by permissions.js.

@@ -634,26 +634,68 @@
       box-shadow: none;
     }
 
-    /* Chrome parity (worker A): permission prompt pills + device picker */
+    /* Chrome parity (worker A): compact sleek permission prompt + device picker */
+    #view-permission-prompt {
+      padding: 4px 2px 2px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
     .perm-prompt-head {
       display: flex;
       align-items: flex-start;
-      gap: 8px;
-      margin-bottom: 6px;
+      gap: 10px;
+    }
+
+    .perm-icon-badge {
+      width: 32px;
+      height: 32px;
+      border-radius: 9px;
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: color-mix(in srgb, var(--accent) 14%, rgba(255, 255, 255, 0.04));
+      border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+      color: var(--accent-bright, var(--accent));
+      margin-top: 1px;
+    }
+
+    .perm-prompt-host {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.25;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      letter-spacing: 0.005em;
+    }
+
+    .perm-prompt-desc {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.38;
+      margin-top: 2px;
     }
 
     .perm-prompt-x {
       flex-shrink: 0;
       width: 24px;
       height: 24px;
-      border-radius: 50%;
+      border-radius: 6px;
       border: 1px solid transparent;
       background: transparent;
       color: var(--muted);
-      font-size: 13px;
+      font-size: 12px;
       line-height: 1;
       cursor: pointer;
       padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 120ms ease, color 120ms ease;
     }
 
     .perm-prompt-x:hover {
@@ -664,10 +706,17 @@
     .perm-lines {
       display: flex;
       flex-direction: column;
-      gap: 2px;
-      margin-bottom: 8px;
-      font-size: 12px;
+      gap: 4px;
+      padding: 6px 10px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.035);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      font-size: 11.5px;
       color: var(--muted);
+    }
+
+    .perm-lines:empty {
+      display: none;
     }
 
     .perm-lines span {
@@ -679,7 +728,7 @@
     .perm-preview-box {
       position: relative;
       width: 100%;
-      height: 150px;
+      height: 146px;
       border-radius: var(--nx-radius-sm);
       overflow: hidden;
       background: #000;
@@ -724,49 +773,62 @@
       background: var(--bg-input);
       color: var(--text);
       font-size: 12px;
-      margin-bottom: 8px;
+      margin-bottom: 4px;
       cursor: pointer;
     }
 
     .perm-pill {
-      display: block;
-      width: 100%;
-      padding: 10px 12px;
-      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 32px;
+      padding: 0 15px;
+      border-radius: 8px;
       border: 1px solid transparent;
-      font-size: 13px;
+      font-family: inherit;
+      font-size: 12px;
       font-weight: 600;
       text-align: center;
       cursor: pointer;
-      transition: filter var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
+      transition: background 140ms ease, border-color 140ms ease, filter 140ms ease, color 140ms ease;
     }
 
     .perm-pill:hover {
-      filter: brightness(1.12);
+      filter: brightness(1.08);
     }
 
     .perm-pill-primary {
       background: var(--accent);
-      color: #fff;
-      box-shadow: var(--nx-glow-sm);
+      color: var(--nx-on-accent, #ffffff);
+      border-color: color-mix(in srgb, var(--accent) 85%, #ffffff);
+      box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 28%, transparent);
     }
 
     .perm-pill-soft {
-      background: var(--nx-accent-soft);
+      background: color-mix(in srgb, var(--accent) 14%, rgba(255, 255, 255, 0.04));
       color: var(--text);
-      border-color: var(--accent);
+      border-color: color-mix(in srgb, var(--accent) 42%, transparent);
     }
 
     .perm-pill-ghost {
       background: transparent;
+      color: var(--muted);
+      border-color: rgba(255, 255, 255, 0.10);
+    }
+
+    .perm-pill-ghost:hover {
+      background: rgba(255, 255, 255, 0.06);
       color: var(--text);
-      border-color: var(--border);
     }
 
     .perm-pill-grey {
-      background: rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.065);
       color: var(--text);
-      border-color: var(--border);
+      border-color: rgba(255, 255, 255, 0.11);
+    }
+
+    .perm-pill-grey:hover {
+      background: rgba(255, 255, 255, 0.11);
     }
 
     .perm-pill:disabled {
@@ -779,18 +841,23 @@
     .perm-btns-col {
       display: flex;
       flex-direction: column;
-      gap: 8px;
-      margin-top: 6px;
+      gap: 6px;
+      margin-top: 2px;
+    }
+
+    .perm-btns-col .perm-pill {
+      width: 100%;
     }
 
     .perm-btns-row {
       display: flex;
+      justify-content: flex-end;
       gap: 8px;
-      margin-top: 6px;
+      margin-top: 2px;
     }
 
     .perm-btns-row .perm-pill {
-      flex: 1;
+      min-width: 78px;
     }
 
     /* Chrome parity (worker A): screen-share picker */
@@ -2489,16 +2556,15 @@
        + device pickers for camera/mic) -->
   <div id="view-permission-prompt" class="hidden" role="dialog" aria-label="Permission request">
     <div class="perm-prompt-head">
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--accent)" stroke-width="2"
-        stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:2px;">
-        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-      </svg>
+      <div class="perm-icon-badge" id="permPromptIcon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+        </svg>
+      </div>
       <div style="min-width:0;flex:1;">
-        <div id="permPromptHost" class="nx-heading"
-          style="font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-          Site</div>
-        <div id="permPromptDesc" style="font-size:12px;color:var(--muted);margin-top:2px;">wants to access permission
-        </div>
+        <div id="permPromptHost" class="perm-prompt-host">Site</div>
+        <div id="permPromptDesc" class="perm-prompt-desc">wants to access permission</div>
       </div>
       <button type="button" class="perm-prompt-x" id="btnPermPromptClose" title="Dismiss — ask again next time"
         aria-label="Dismiss">✕</button>
@@ -4930,12 +4996,47 @@
         showOnly('view-permission-prompt');
         const hostEl = document.getElementById('permPromptHost');
         const descEl = document.getElementById('permPromptDesc');
+        const iconEl = document.getElementById('permPromptIcon');
         const incogEl = document.getElementById('permPromptIncognitoNote');
         const linesEl = document.getElementById('permPromptLines');
         const labels = Array.isArray(payload?.labels) && payload.labels.length ? payload.labels : ['Site permission'];
         const keys = Array.isArray(payload?.keys) ? payload.keys : [];
-        if (hostEl) hostEl.textContent = payload?.host || payload?.origin || 'This site';
-        if (descEl) descEl.textContent = `wants to use your ${labels.join(' & ')}`;
+        const rawHost = String(payload?.host || payload?.origin || 'This site').replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+        const cleanHost = rawHost.replace(/^www\.(?=[^.]+\.)/i, '') || rawHost;
+        if (hostEl) hostEl.textContent = cleanHost;
+        const singleDescMap = {
+          notifications: 'wants to show notifications',
+          camera: 'wants to use your camera',
+          microphone: 'wants to use your microphone',
+          geolocation: 'wants to know your location',
+          'screen-share': 'wants to share your screen',
+          'clipboard-read': 'wants to read text and images from your clipboard'
+        };
+        if (descEl) {
+          if (keys.length === 1 && singleDescMap[keys[0]]) {
+            descEl.textContent = singleDescMap[keys[0]];
+          } else {
+            descEl.textContent = `wants to use your ${labels.join(' & ').toLowerCase()}`;
+          }
+        }
+        if (iconEl) {
+          const primaryKey = keys[0] || '';
+          const iconSvgMap = {
+            notifications:
+              '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',
+            camera:
+              '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>',
+            microphone:
+              '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>',
+            geolocation:
+              '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
+            'clipboard-read':
+              '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>'
+          };
+          iconEl.innerHTML =
+            iconSvgMap[primaryKey] ||
+            '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>';
+        }
         if (linesEl) {
           linesEl.innerHTML = '';
           const lineText = {
@@ -4946,10 +5047,12 @@
             'screen-share': 'Share your screen',
             'clipboard-read': 'See text and images copied to the clipboard'
           };
-          for (const k of keys) {
-            const row = document.createElement('span');
-            row.textContent = lineText[k] || k;
-            linesEl.appendChild(row);
+          if (keys.length > 1) {
+            for (const k of keys) {
+              const row = document.createElement('span');
+              row.textContent = `• ${lineText[k] || k}`;
+              linesEl.appendChild(row);
+            }
           }
         }
         if (incogEl) incogEl.classList.toggle('hidden', !payload?.incognito);

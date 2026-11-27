@@ -69,6 +69,11 @@ const {
 } = require('./main/windows');
 const { ensureProfileSessionInitialized } = require('./main/profiles');
 const { registerIpcHandlers } = require('./main/ipc');
+const {
+  startUpdaterBackgroundChecks,
+  stopUpdaterBackgroundChecks,
+  handleAppBeforeQuitAutoUpdate
+} = require('./main/updater');
 
 configureShortcuts({
   createTab,
@@ -131,6 +136,7 @@ if (gotSingleInstanceLock) {
     openStartupWindows();
     startBackgroundTimers();
     startCornerBackgroundRefresh();
+    startUpdaterBackgroundChecks();
 
     // Non-blocking post-window startup tasks so first frame renders immediately
     setTimeout(() => {
@@ -168,6 +174,7 @@ app.on('before-quit', () => {
   clearCertExceptions();
   stopBackgroundTimers();
   stopCornerBackgroundRefresh();
+  stopUpdaterBackgroundChecks();
   gxControl.shutdown();
   cancelScheduledSessionSave();
   cancelScheduledCookiesBroadcast();
@@ -177,6 +184,7 @@ app.on('before-quit', () => {
     if (typeof state.storage.flushAll === 'function') state.storage.flushAll();
     state.storage.flushSettings();
   }
+  handleAppBeforeQuitAutoUpdate();
 });
 
 app.on('window-all-closed', () => {

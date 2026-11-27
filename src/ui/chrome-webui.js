@@ -5562,6 +5562,36 @@ async function renderSettingsPage() {
           <div class="row-sub">Designed for Windows &amp; Linux · Built-in AdGuard MV3 Shield, Media Dock &amp; Memory Saver</div>
         </div>
       </div>
+      <div class="card-row" style="flex-wrap:wrap;gap:12px;">
+        <div class="row-info" style="min-width:240px;">
+          <div class="row-title">Software Updates (GitHub Releases + SHA256)</div>
+          <div class="row-sub" id="aboutUpdateStatus">Checking update status…</div>
+          <div id="aboutUpdateProgressWrap" style="display:none;margin-top:8px;width:100%;max-width:360px;height:6px;border-radius:999px;background:rgba(255,255,255,0.08);overflow:hidden;">
+            <div id="aboutUpdateProgressFill" style="height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--accent-bright));transition:width 200ms ease;"></div>
+          </div>
+        </div>
+        <button type="button" class="btn primary" id="btnAboutUpdateAction">Check for updates</button>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Automatically check for updates when online</div>
+          <div class="row-sub">Quietly checks GitHub Releases on launch, every 6 hours, and when reconnecting to the internet</div>
+        </div>
+        <label class="nx-switch">
+          <input type="checkbox" id="setAutoCheckUpdatesChk" ${s.autoCheckUpdates !== false ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
+      <div class="card-row">
+        <div class="row-info">
+          <div class="row-title">Automatically download &amp; prepare updates</div>
+          <div class="row-sub">Downloads &amp; SHA256-verifies new versions in the background so updates apply automatically on restart</div>
+        </div>
+        <label class="nx-switch">
+          <input type="checkbox" id="setAutoDownloadUpdatesChk" ${s.autoDownloadUpdates !== false ? 'checked' : ''} />
+          <span class="nx-slider"></span>
+        </label>
+      </div>
     </div>
       </div>
     </div>
@@ -6276,6 +6306,79 @@ async function renderSettingsPage() {
   bindSetBool('setDnsOverHttpsChk', 'dnsOverHttps');
   bindSetBool('setVideoPopOutChk', 'videoPopOutEnabled');
   bindSetBool('setCopiedToastChk', 'copiedToastEnabled');
+  bindSetBool('setAutoCheckUpdatesChk', 'autoCheckUpdates');
+  bindSetBool('setAutoDownloadUpdatesChk', 'autoDownloadUpdates');
+
+  let liveUpdaterState = null;
+  const renderAboutUpdater = (st) => {
+    liveUpdaterState = st || null;
+    const statusEl = document.getElementById('aboutUpdateStatus');
+    const progWrap = document.getElementById('aboutUpdateProgressWrap');
+    const progFill = document.getElementById('aboutUpdateProgressFill');
+    const actionBtn = document.getElementById('btnAboutUpdateAction');
+    if (!statusEl || !actionBtn) return;
+    const stateName = st?.status || 'idle';
+    if (progWrap) progWrap.style.display = stateName === 'downloading' ? 'block' : 'none';
+    if (progFill) progFill.style.width = `${Number(st?.progressPercent) || 0}%`;
+
+    if (stateName === 'checking') {
+      statusEl.textContent = 'Checking GitHub Releases for updates…';
+      actionBtn.textContent = 'Checking…';
+      actionBtn.disabled = true;
+    } else if (stateName === 'up-to-date') {
+      statusEl.textContent = `nextGx Browser is up to date (v${st.currentVersion || ''})`;
+      actionBtn.textContent = 'Check for updates';
+      actionBtn.disabled = false;
+    } else if (stateName === 'available') {
+      statusEl.textContent = `New version v${st.latestVersion || ''} is available!`;
+      actionBtn.textContent = `Download v${st.latestVersion || ''}`;
+      actionBtn.disabled = false;
+    } else if (stateName === 'downloading') {
+      const speedTxt = st.speedBytesPerSec > 0 ? ` · ${formatBytes(st.speedBytesPerSec)}/s` : '';
+      statusEl.textContent = `Downloading v${st.latestVersion || ''} — ${st.progressPercent || 0}% (${formatBytes(st.receivedBytes || 0)} / ${formatBytes(st.totalBytes || 0)}${speedTxt})`;
+      actionBtn.textContent = 'Downloading…';
+      actionBtn.disabled = true;
+    } else if (stateName === 'downloaded') {
+      statusEl.textContent = st.canSilentInstall
+        ? `v${st.latestVersion || ''} downloaded & SHA256-verified — ready to install.`
+        : `v${st.latestVersion || ''} downloaded & SHA256-verified — click to open folder.`;
+      actionBtn.textContent = st.canSilentInstall ? 'Restart & Update' : 'Open Update Package';
+      actionBtn.disabled = false;
+    } else if (stateName === 'error') {
+      statusEl.textContent = st.error || 'Update check failed.';
+      actionBtn.textContent = 'Retry check';
+      actionBtn.disabled = false;
+    } else {
+      statusEl.textContent = `Current version: v${st?.currentVersion || ''} — automatic background checks active.`;
+      actionBtn.textContent = 'Check for updates';
+      actionBtn.disabled = false;
+    }
+  };
+
+  document.getElementById('btnAboutUpdateAction')?.addEventListener('click', async () => {
+    const stateName = liveUpdaterState?.status;
+    if (stateName === 'downloaded') {
+      await window.gxChromePagesAPI?.installUpdate?.({ relaunch: true });
+    } else if (stateName === 'available') {
+      renderAboutUpdater({ ...liveUpdaterState, status: 'downloading', progressPercent: 0 });
+      const next = await window.gxChromePagesAPI?.downloadUpdate?.();
+      renderAboutUpdater(next);
+    } else {
+      renderAboutUpdater({ ...liveUpdaterState, status: 'checking' });
+      const next = await window.gxChromePagesAPI?.checkForUpdates?.({ manual: true });
+      renderAboutUpdater(next);
+    }
+  });
+
+  if (window.gxChromePagesAPI?.getUpdaterState) {
+    window.gxChromePagesAPI.getUpdaterState().then(renderAboutUpdater).catch(() => { });
+  }
+  if (!window._nxAboutUpdaterListenerAttached && window.gxChromePagesAPI?.onUpdaterState) {
+    window._nxAboutUpdaterListenerAttached = true;
+    window.gxChromePagesAPI.onUpdaterState((st) => {
+      if (currentPage === 'settings') renderAboutUpdater(st);
+    });
+  }
 
   document.getElementById('setDefaultZoomSel')?.addEventListener('change', async (e) => {
     await window.gxChromePagesAPI.updateSettings({ defaultPageZoom: Number(e.target.value) || 100 });

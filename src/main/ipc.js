@@ -1820,6 +1820,17 @@ function registerIpcHandlers() {
     return { ok: true };
   });
 
+  // Auto-Updater (GitHub Releases + SHA256 verification)
+  const updater = require('./updater');
+  handleInternal('updater:get-state', () => updater.getUpdaterState());
+  handleInternal('updater:check', (_e, opts) => updater.checkForUpdates({ manual: Boolean(opts?.manual) }));
+  handleInternal('updater:download', () => updater.downloadUpdate());
+  handleInternal('updater:install', (_e, opts) => updater.installDownloadedUpdate({ relaunch: opts?.relaunch !== false }));
+  handleInternal('updater:online', () => {
+    updater.notifyNetworkOnline();
+    return { ok: true };
+  });
+
   // [Wave2-D] Apply stored spellcheck / third-party-cookie / download-path
   // settings to the live sessions at startup (settings:update re-applies
   // them whenever they change).

@@ -1173,7 +1173,9 @@
     .modal-backdrop {
       position: fixed;
       inset: 0;
-      background: var(--nx-backdrop);
+      background: rgba(5, 6, 12, 0.68);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
       display: none;
       align-items: center;
       justify-content: center;
@@ -1185,94 +1187,132 @@
     }
 
     .modal-box {
-      width: 340px;
-      background: var(--bg-surface);
-      border: 1px solid var(--accent);
-      box-shadow: var(--nx-glow-lg), var(--nx-shadow-lg);
-      border-radius: var(--nx-radius-lg);
-      padding: 18px;
+      width: 440px;
+      max-width: calc(100vw - 32px);
+      background: rgba(16, 17, 27, 0.94);
+      backdrop-filter: blur(22px);
+      -webkit-backdrop-filter: blur(22px);
+      border: 1px solid color-mix(in srgb, var(--accent) 46%, rgba(255, 255, 255, 0.12));
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.74), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+      border-radius: 14px;
+      padding: 24px 24px 20px;
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 14px;
     }
 
-    /* Fix2-shell (item 4): the Speed Dial Add/Edit modal uses the red brand
-       accent, not the theme accent — same rule as the shell profile modal. */
     #addModal .modal-box {
-      border-color: #fa1e4e;
+      border-color: color-mix(in srgb, var(--accent) 52%, rgba(255, 255, 255, 0.12));
     }
 
     #addModal .modal-box h3 {
-      color: #ff4d73;
+      color: var(--text-main);
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      margin: 0;
     }
 
-    #addModal .modal-box input:focus {
-      border-color: #fa1e4e;
+    .modal-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 2px;
     }
 
-    #addModal .btn.primary {
-      background: #fa1e4e;
-      border-color: #ff4d73;
+    .modal-sub {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 3px;
     }
 
-    #addModal .btn.primary:hover {
-      background: #ff4d73;
+    .modal-field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .modal-label {
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: 0.03em;
     }
 
     .modal-box h3 {
-      font-size: 14px;
+      font-size: 15px;
       color: var(--accent-bright);
     }
 
     .modal-box input {
-      background: var(--bg-input);
-      border: 1px solid var(--border);
+      height: 40px;
+      background: rgba(8, 9, 16, 0.78);
+      border: 1px solid rgba(255, 255, 255, 0.10);
       color: var(--text-main);
-      padding: 8px 10px;
-      border-radius: var(--nx-radius-sm);
-      font-size: 12.5px;
+      padding: 0 13px;
+      border-radius: 9px;
+      font-family: inherit;
+      font-size: 13.5px;
       outline: none;
+      transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
     }
 
-    .modal-box input:focus {
+    .modal-box input::placeholder {
+      color: rgba(180, 186, 208, 0.45);
+    }
+
+    .modal-box input:focus,
+    #addModal .modal-box input:focus {
       border-color: var(--accent);
-      box-shadow: var(--nx-glow-sm);
+      background: rgba(10, 12, 20, 0.94);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
     }
 
     .modal-actions {
       display: flex;
       justify-content: flex-end;
-      gap: 8px;
+      gap: 10px;
+      margin-top: 6px;
     }
 
     .btn {
-      padding: 6px 12px;
-      border-radius: var(--nx-radius-sm);
-      clip-path: var(--nx-chamfer-sm);
-      border: 1px solid var(--border);
-      background: var(--bg-elevated);
+      height: 36px;
+      padding: 0 16px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.11);
+      background: rgba(255, 255, 255, 0.05);
       color: var(--text-main);
-      font-size: 12px;
+      font-family: inherit;
+      font-size: 12.5px;
       font-weight: 600;
       cursor: pointer;
       transition: background var(--nx-motion-fast) var(--nx-motion-ease), border-color var(--nx-motion-fast) var(--nx-motion-ease), color var(--nx-motion-fast) var(--nx-motion-ease), box-shadow var(--nx-motion-fast) var(--nx-motion-ease);
     }
 
     .btn:hover {
-      border-color: var(--accent-bright);
-      color: var(--accent-bright);
-      box-shadow: var(--nx-glow-sm);
+      background: rgba(255, 255, 255, 0.09);
+      border-color: color-mix(in srgb, var(--accent) 55%, rgba(255, 255, 255, 0.2));
+      color: var(--text-main);
     }
 
-    .btn.primary {
+    .btn.primary,
+    #addModal .btn.primary {
       background: var(--accent);
-      border-color: var(--accent-bright);
-      color: var(--nx-on-accent);
-      box-shadow: var(--nx-glow-sm);
+      border-color: var(--accent);
+      color: var(--nx-on-accent, #ffffff);
+      box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 34%, transparent);
       font-weight: 700;
+      min-width: 84px;
     }
 
-    .btn.primary:hover {
+    .btn.primary:hover,
+    #addModal .btn.primary:hover {
+      background: var(--accent-bright);
+      border-color: var(--accent-bright);
+      color: var(--nx-on-accent, #ffffff);
+      box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 44%, transparent);
+    }
       background: var(--accent-bright);
       color: var(--nx-on-accent);
       box-shadow: var(--nx-glow-md);
@@ -1628,9 +1668,20 @@
 
   <div class="modal-backdrop" id="addModal">
     <form class="modal-box" id="addDialForm">
-      <h3 class="nx-heading" id="addDialTitle">Add Speed Dial</h3>
-      <input type="text" id="dialTitleInput" placeholder="Title (e.g. Twitch)" required />
-      <input type="text" id="dialUrlInput" placeholder="Address (e.g. twitch.tv)" required />
+      <div class="modal-head">
+        <div>
+          <h3 id="addDialTitle">Add Speed Dial</h3>
+          <div class="modal-sub">Pin your favorite site to the Start Page</div>
+        </div>
+      </div>
+      <div class="modal-field">
+        <label class="modal-label" for="dialTitleInput">Title</label>
+        <input type="text" id="dialTitleInput" placeholder="e.g. Twitch, GitHub, IGN" required />
+      </div>
+      <div class="modal-field">
+        <label class="modal-label" for="dialUrlInput">Website Address</label>
+        <input type="text" id="dialUrlInput" placeholder="e.g. twitch.tv" required />
+      </div>
       <div class="modal-actions">
         <button type="button" class="btn" id="btnCancelModal">Cancel</button>
         <button type="submit" class="btn primary">Add</button>

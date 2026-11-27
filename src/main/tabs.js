@@ -265,6 +265,9 @@ function buildWebContentsViewForTab(ctx, tab) {
   const handleUrlChange = (url) => {
     if (url && url.startsWith('chrome-error://')) return;
     const prevOrigin = getOriginForUrl(tab.url);
+    if (url && url !== tab.url) {
+      tab.navSeq = (tab.navSeq || 0) + 1;
+    }
     tab.url = url;
     // [TABS-W2] Mute follows the site: navigating a muted tab to another
     // origin unmutes it, navigating onto a muted origin mutes it.
@@ -377,6 +380,14 @@ function buildWebContentsViewForTab(ctx, tab) {
     pumpQueuedBackgroundTabs(ctx);
   });
 
+  wc.on('did-redirect-navigation', (_e, url, _isInPlace, isMainFrame) => {
+    if (!isMainFrame || !url || url.startsWith('chrome-error://')) return;
+    if (url !== tab.url) {
+      tab.url = url;
+      tab.navSeq = (tab.navSeq || 0) + 1;
+      broadcastState(ctx);
+    }
+  });
   wc.on('did-navigate', (_e, url) => {
     clearTabAudioHoldTimer(tab);
     tab.readerMode = false;
@@ -1781,7 +1792,14 @@ function navigateActiveTab(ctx, input) {
   const resolvedUrl = appendInternalUrlParams(resolveNavigateInput(input), ctx);
   tab.failedUrl = '';
   tab.url = resolvedUrl;
+  tab.navSeq = (tab.navSeq || 0) + 1;
+  tab.explicitNavSeq = (tab.explicitNavSeq || 0) + 1;
   tab.view.webContents.loadURL(resolvedUrl).catch(() => {});
+  if (tab.view && tab.view.webContents && !tab.view.webContents.isDestroyed()) {
+    try {
+      tab.view.webContents.focus();
+    } catch (_) {}
+  }
   broadcastState(ctx);
   scheduleSessionSave(ctx);
 }

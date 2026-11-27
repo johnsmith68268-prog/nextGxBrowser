@@ -118,8 +118,8 @@ test('item 4: shell/modal/toast/popover accent is red #FA1E4E; gx-violet stays a
   assert.match(css, /\.nx-toast \{\s*[\s\S]*?border: 1px solid var\(--nx-brand\);/, 'toast border is not brand red');
   assert.match(css, /\.nx-toast-action \{\s*[\s\S]*?color: var\(--nx-brand-bright\);/, 'toast action is not brand red');
   const newtab = read('src/ui/newtab.html');
-  assert.match(newtab, /#addModal \.modal-box \{\s*border-color: #fa1e4e;/, 'Speed Dial modal border is not brand red');
-  assert.match(newtab, /#addModal \.btn\.primary \{\s*background: #fa1e4e;/, 'Speed Dial modal button is not brand red');
+  assert.match(newtab, /#addModal \.modal-box \{\s*border-color: color-mix\(in srgb, var\(--accent\)/, 'Speed Dial modal border must match active theme accent');
+  assert.match(newtab, /#addModal \.btn\.primary \{\s*background: var\(--accent\);/, 'Speed Dial modal button must match active theme accent');
   const popover = read('src/ui/popover.html');
   assert.match(popover, /--nx-brand: #fa1e4e;/, 'popover has no brand token');
   assert.match(popover, /border: 1px solid var\(--nx-brand\);/, 'popover frame border is not brand red');

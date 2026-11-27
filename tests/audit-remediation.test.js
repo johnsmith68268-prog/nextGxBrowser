@@ -312,7 +312,8 @@ test('LIVE-UX: sidebar hover never slices behind webview, panic hidden in toolba
   assert.match(css, /\.nx-address-capsule\s*\{[^}]*height:\s*31px;[^}]*border-radius:\s*7px;/);
   assert.match(css, /\.nx-top-chrome\s*\{[^}]*box-shadow:\s*none;/);
   assert.match(css, /\.nx-sidebar\s*\{[^}]*box-shadow:\s*none;/);
-  assert.match(css, /\.nav-icon-btn\.is-stop::after\s*\{[^}]*animation:\s*nxSpin/);
+  assert.match(css, /\.nav-icon-btn\.is-stop\s*\{/);
+  assert.ok(!css.includes('.nav-icon-btn.is-stop::after'), 'stop button must stay a clean static Chrome-style X without a dizzy spinning ring');
   assert.ok(!css.includes('.nx-sidebar.rail-hover-expand:hover,'), 'hover-expanding 184px rail over WebContentsView must be disabled');
 
   const popover = read('src/ui/popover.html');
@@ -491,4 +492,89 @@ test('ENTERPRISE-UX: AI wallpapers, live download progress ring/wave, Easy Setup
   assert.ok(onboardingHtml.includes('Welcome to nextGx Browser') && onboardingHtml.includes('btnObDefaultBrowser'));
   assert.equal(resolveNavigateInput('nextgx://welcome'), ONBOARDING_FILE_URL);
   assert.equal(formatDisplayUrl(ONBOARDING_FILE_URL), 'nextgx://welcome');
+});
+
+test('AUTO-UPDATER: semver compare, strict HTTPS GitHub host allowlist, platform asset selection, SHA256 parsing, and UI wiring', () => {
+  const {
+    compareSemver,
+    isTrustedUpdateDownloadUrl,
+    selectReleaseAsset,
+    parseSha256Sums
+  } = require('../src/main/updater');
+
+  assert.equal(compareSemver('3.3.0', '3.2.0'), 1);
+  assert.equal(compareSemver('v3.2.1', '3.2.0'), 1);
+  assert.equal(compareSemver('v3.2.0', '3.2.0'), 0);
+  assert.equal(compareSemver('3.1.9', '3.2.0'), -1);
+
+  assert.equal(
+    isTrustedUpdateDownloadUrl('https://github.com/johnsmith68268-prog/nextGxBrowser/releases/download/v3.3.0/nextGx.Browser-Setup-3.3.0-x64.exe'),
+    true
+  );
+  assert.equal(
+    isTrustedUpdateDownloadUrl('https://objects.githubusercontent.com/github-production-release-asset-2e65be/file.exe'),
+    true
+  );
+  assert.equal(isTrustedUpdateDownloadUrl('http://github.com/johnsmith68268-prog/nextGxBrowser/releases/latest'), false);
+  assert.equal(isTrustedUpdateDownloadUrl('https://github.com/attacker/fake-repo/releases/download/v9.0.0/malware.exe'), false);
+  assert.equal(isTrustedUpdateDownloadUrl('https://evil.example/update.exe'), false);
+
+  const mockAssets = [
+    { name: 'nextGx.Browser-Setup-3.3.0-x64.exe', browser_download_url: 'https://github.com/johnsmith68268-prog/nextGxBrowser/releases/download/v3.3.0/nextGx.Browser-Setup-3.3.0-x64.exe', size: 1000 },
+    { name: 'nextGx.Browser-Portable-3.3.0-x64.exe', browser_download_url: 'https://github.com/johnsmith68268-prog/nextGxBrowser/releases/download/v3.3.0/nextGx.Browser-Portable-3.3.0-x64.exe', size: 1000 },
+    { name: 'nextGx-Browser-3.3.0-x86_64.AppImage', browser_download_url: 'https://github.com/johnsmith68268-prog/nextGxBrowser/releases/download/v3.3.0/nextGx-Browser-3.3.0-x86_64.AppImage', size: 1000 },
+    { name: 'nextGx-Browser-3.3.0-amd64.deb', browser_download_url: 'https://github.com/johnsmith68268-prog/nextGxBrowser/releases/download/v3.3.0/nextGx-Browser-3.3.0-amd64.deb', size: 1000 },
+    { name: 'SHA256SUMS.txt', browser_download_url: 'https://github.com/johnsmith68268-prog/nextGxBrowser/releases/download/v3.3.0/SHA256SUMS.txt', size: 200 }
+  ];
+
+  const winSetup = selectReleaseAsset(mockAssets, { platform: 'win32', isPortable: false });
+  assert.equal(winSetup.asset.name, 'nextGx.Browser-Setup-3.3.0-x64.exe');
+  assert.equal(winSetup.canSilentInstall, true);
+  assert.equal(winSetup.shaAsset.name, 'SHA256SUMS.txt');
+
+  const winPortable = selectReleaseAsset(mockAssets, { platform: 'win32', isPortable: true });
+  assert.equal(winPortable.asset.name, 'nextGx.Browser-Portable-3.3.0-x64.exe');
+  assert.equal(winPortable.canSilentInstall, false);
+
+  const linuxAppImg = selectReleaseAsset(mockAssets, { platform: 'linux', isAppImage: true });
+  assert.equal(linuxAppImg.asset.name, 'nextGx-Browser-3.3.0-x86_64.AppImage');
+
+  const linuxDeb = selectReleaseAsset(mockAssets, { platform: 'linux', isAppImage: false });
+  assert.equal(linuxDeb.asset.name, 'nextGx-Browser-3.3.0-amd64.deb');
+
+  const hash = 'a'.repeat(64);
+  const parsed = parseSha256Sums(`${hash}  nextGx.Browser-Setup-3.3.0-x64.exe\n`);
+  assert.equal(parsed.get('nextGx.Browser-Setup-3.3.0-x64.exe'), hash);
+
+  const indexHtml = read('src/ui/index.html');
+  const renderer = read('src/ui/renderer.js');
+  const webuiJs = read('src/ui/chrome-webui.js');
+  assert.ok(indexHtml.includes('id="btnUpdatePill"'));
+  assert.ok(renderer.includes('renderToolbarUpdatePill') && renderer.includes("addEventListener('online'"));
+  assert.ok(webuiJs.includes('btnAboutUpdateAction') && webuiJs.includes('setAutoCheckUpdatesChk') && webuiJs.includes('setAutoDownloadUpdatesChk'));
+});
+
+test('UX-POLISH-321: static stop icon, expanded theme-matched Speed Dial modal, compact permission prompt, and redirect-safe address bar sync', () => {
+  const css = read('src/ui/styles.css');
+  assert.ok(!css.includes('.nav-icon-btn.is-stop::after'), 'stop button must not draw a spinning animation ring');
+
+  const newtab = read('src/ui/newtab.html');
+  assert.match(newtab, /\.modal-box\s*\{[^}]*width:\s*440px;/, 'Add Speed Dial modal must be expanded to 440px');
+  assert.ok(!newtab.includes('border-color: #fa1e4e;'), 'Add Speed Dial modal must not hardcode pink-red #fa1e4e');
+  assert.ok(!newtab.includes('background: #fa1e4e;'), 'Add Speed Dial primary button must not hardcode #fa1e4e');
+
+  const popoversJs = read('src/main/popovers.js');
+  assert.match(popoversJs, /'permission-prompt':\s*\{[\s\S]*?minH:\s*104,/, 'permission-prompt minH must be compact to prevent empty dead space');
+
+  const popoverHtml = read('src/ui/popover.html');
+  assert.ok(popoverHtml.includes('id="permPromptHost" class="perm-prompt-host"'), 'permission prompt host must not force ALL-CAPS nx-heading');
+  assert.ok(popoverHtml.includes('id="permPromptIcon"'), 'permission prompt must render a dynamic permission icon badge');
+
+  const tabsJs = read('src/main/tabs.js');
+  const broadcastJs = read('src/main/broadcast.js');
+  const rendererJs = read('src/ui/renderer.js');
+  assert.ok(tabsJs.includes("wc.on('did-redirect-navigation'"), 'tabs.js must sync URL on server redirects');
+  assert.ok(tabsJs.includes('tab.explicitNavSeq = (tab.explicitNavSeq || 0) + 1;'), 'navigateActiveTab must bump explicitNavSeq');
+  assert.ok(broadcastJs.includes('explicitNavSeq: Number(t.explicitNavSeq) || 0'), 'broadcast must serialize explicitNavSeq');
+  assert.ok(rendererJs.includes('explicitNavTriggered') && rendererJs.includes('document.hasFocus()'), 'renderer must clear stale address drafts and reflect navigated/redirected URLs');
 });

@@ -63,6 +63,8 @@ function serializeTabs(ctx) {
         id: t.id,
         title: t.title || (ctx.incognito ? 'Private Start' : 'Start Page'),
         url: displayUrl,
+        navSeq: Number(t.navSeq) || 0,
+        explicitNavSeq: Number(t.explicitNavSeq) || 0,
         origin,
         isSecure,
         isHttpInsecure,

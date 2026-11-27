@@ -248,6 +248,13 @@ contextBridge.exposeInMainWorld('gxAPI', {
   setDefaultBrowser: () => ipcRenderer.invoke('app:set-default-browser'),
   openProxySettings: () => ipcRenderer.invoke('system:open-proxy-settings'),
   openOnboarding: () => ipcRenderer.invoke('system:open-onboarding'),
+  // Auto-Updater
+  getUpdaterState: () => ipcRenderer.invoke('updater:get-state'),
+  checkForUpdates: (opts) => ipcRenderer.invoke('updater:check', opts || {}),
+  downloadUpdate: () => ipcRenderer.invoke('updater:download'),
+  installUpdate: (opts) => ipcRenderer.invoke('updater:install', opts || {}),
+  notifyOnline: () => ipcRenderer.invoke('updater:online'),
+  onUpdaterState: (cb) => ipcRenderer.on('updater:state', (_e, data) => cb(data)),
 
   // System / RAM Saver Stats & GX Control
   getSystemStats: () => ipcRenderer.invoke('system:stats'),
